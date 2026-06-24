@@ -1,0 +1,227 @@
+package com.example.data
+
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+
+enum class TransactionType {
+    EXPENSE, INCOME
+}
+
+enum class ExpenseCategory(
+    val displayName: String,
+    val icon: ImageVector,
+    val color: Color,
+    val type: String = "EXPENSE"
+) {
+    // Legacy / original categories
+    FOOD("Food & Dining", Icons.Default.Restaurant, Color(0xFFFF9800)),
+    SHOPPING("Shopping", Icons.Default.ShoppingBag, Color(0xFFE91E63)),
+    TRANSPORT("Transport", Icons.Default.DirectionsCar, Color(0xFF03A9F4)),
+    BILLS("Bills & Utilities", Icons.Default.ReceiptLong, Color(0xFF9C27B0)),
+    ENTERTAINMENT("Entertainment", Icons.Default.LocalPlay, Color(0xFFFF5722)),
+    HEALTHCARE("Healthcare", Icons.Default.MedicalServices, Color(0xFF4CAF50)),
+    EDUCATION("Education", Icons.Default.School, Color(0xFF009688)),
+    INCOME("Salary & Income", Icons.Default.AttachMoney, Color(0xFF2E7D32), "INCOME"),
+    OTHERS("Others / Misc", Icons.Default.Category, Color(0xFF607D8B)),
+
+    // Newly requested Expense categories
+    CAR("Car", Icons.Default.DirectionsCar, Color(0xFF0288D1)),
+    ELECTRONICS("Electronics", Icons.Default.Devices, Color(0xFF607D8B)),
+    INSURANCE("Insurance", Icons.Default.Security, Color(0xFFEC407A)),
+    SOCIAL("Social", Icons.Default.Group, Color(0xFF00BCD4)),
+    TAX("Tax", Icons.Default.Percent, Color(0xFF795548)),
+    TRANSPORTATION("Transportation", Icons.Default.AirportShuttle, Color(0xFF03A9F4)),
+    SPORT("Sport", Icons.Default.SportsSoccer, Color(0xFF8BC34A)),
+    GYM("Gym", Icons.Default.FitnessCenter, Color(0xFF455A64)),
+    RECHARGE("Recharge", Icons.Default.Smartphone, Color(0xFF009688)),
+    
+    // Additional requested standard categories (Expense)
+    DEBT("Debt / Loan", Icons.Default.CreditCard, Color(0xFF795548)),
+    FUEL("Fuel & Petrol", Icons.Default.LocalGasStation, Color(0xFFFF9800)),
+    CLOTHES("Clothes", Icons.Default.Checkroom, Color(0xFFEC407A)),
+    SHOES("Shoes & Footwear", Icons.Default.ShoppingBag, Color(0xFF9C27B0)),
+    POCKET_MONEY("Pocket Money (Spent)", Icons.Default.Payments, Color(0xFFFF5722)),
+    FRUITS("Fruits & Veggies", Icons.Default.Eco, Color(0xFF4CAF50)),
+    TRAVEL("Travel & Commute", Icons.Default.Flight, Color(0xFF03A9F4)),
+    BIKE("Bike & Maintenance", Icons.Default.TwoWheeler, Color(0xFF00BCD4)),
+    PROTEIN_POWDERS("Protein Powders & Gym", Icons.Default.FitnessCenter, Color(0xFF455A64)),
+    GIFTING_FRIENDS("Gifting Friends", Icons.Default.CardGiftcard, Color(0xFFE91E63)),
+
+    // Newly requested Income categories
+    AWARDS("Awards", Icons.Default.EmojiEvents, Color(0xFFFFD700), "INCOME"),
+    COUPONS("Coupons", Icons.Default.CardGiftcard, Color(0xFFFF4081), "INCOME"),
+    GRANTS("Grants", Icons.Default.Handshake, Color(0xFF00E676), "INCOME"),
+    REFUNDS("Refunds", Icons.Default.Cached, Color(0xFF00B0FF), "INCOME"),
+    RENTAL("Rental", Icons.Default.Domain, Color(0xFF651FFF), "INCOME"),
+    SALARY("Salary", Icons.Default.AttachMoney, Color(0xFF2E7D32), "INCOME"),
+    SALE("Sale", Icons.Default.Storefront, Color(0xFFFF9100), "INCOME"),
+    REWARDS("Rewards", Icons.Default.MilitaryTech, Color(0xFF76FF03), "INCOME"),
+    COINS("Coins", Icons.Default.Savings, Color(0xFFFBC02D), "INCOME"),
+    POCKET_MONEY_INC("Pocket Money (Received)", Icons.Default.Savings, Color(0xFF2E7D32), "INCOME");
+
+    companion object {
+        fun fromString(name: String): ExpenseCategory {
+            return entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: OTHERS
+        }
+    }
+}
+
+data class DisplayCategory(
+    val name: String,
+    val displayName: String,
+    val icon: ImageVector,
+    val color: Color,
+    val isCustom: Boolean = false,
+    val customId: Int = 0,
+    val type: String = "EXPENSE"
+)
+
+object CategoryResolver {
+    fun getIconFromIconName(name: String): ImageVector {
+        val cleanName = name.split(":").firstOrNull() ?: name
+        return when (cleanName.lowercase()) {
+            "restaurant" -> Icons.Default.Restaurant
+            "shopping" -> Icons.Default.ShoppingBag
+            "transport" -> Icons.Default.DirectionsCar
+            "car" -> Icons.Default.DirectionsCar
+            "bills" -> Icons.Default.ReceiptLong
+            "entertainment" -> Icons.Default.LocalPlay
+            "healthcare" -> Icons.Default.MedicalServices
+            "education" -> Icons.Default.School
+            "home" -> Icons.Default.Home
+            "work" -> Icons.Default.Work
+            "fitness" -> Icons.Default.FitnessCenter
+            "gym" -> Icons.Default.FitnessCenter
+            "flight" -> Icons.Default.Flight
+            "coffee" -> Icons.Default.LocalCafe
+            "recharge" -> Icons.Default.Smartphone
+            "sport" -> Icons.Default.SportsSoccer
+            "electronics" -> Icons.Default.Devices
+            "insurance" -> Icons.Default.Security
+            "social" -> Icons.Default.Group
+            "tax" -> Icons.Default.Percent
+            "transportation" -> Icons.Default.AirportShuttle
+            "awards" -> Icons.Default.EmojiEvents
+            "coupons" -> Icons.Default.CardGiftcard
+            "grants" -> Icons.Default.Handshake
+            "refunds" -> Icons.Default.Cached
+            "rental" -> Icons.Default.Domain
+            "salary" -> Icons.Default.AttachMoney
+            "sale" -> Icons.Default.Storefront
+            "rewards" -> Icons.Default.MilitaryTech
+            "coins" -> Icons.Default.Savings
+            "handshake" -> Icons.Default.Handshake
+            "localgasstation" -> Icons.Default.LocalGasStation
+            "checkroom" -> Icons.Default.Checkroom
+            "payments" -> Icons.Default.Payments
+            "eco" -> Icons.Default.Eco
+            "twowheeler" -> Icons.Default.TwoWheeler
+            "bolt" -> Icons.Default.Bolt
+            "cardgiftcard" -> Icons.Default.CardGiftcard
+            "creditcard" -> Icons.Default.CreditCard
+            "qrcode" -> Icons.Default.QrCode
+            "upi" -> Icons.Default.QrCode
+            else -> Icons.Default.Category
+        }
+    }
+
+    fun resolve(name: String, customList: List<CustomCategory>): DisplayCategory {
+        val custom = customList.firstOrNull { it.name.equals(name, ignoreCase = true) && !it.iconName.startsWith("hidden:") && it.iconName != "hidden" }
+        if (custom != null) {
+            val parts = custom.iconName.split(":")
+            val actualIconName = parts.getOrNull(0) ?: "category"
+            val customType = parts.getOrNull(1) ?: "EXPENSE"
+            
+            val icon = getIconFromIconName(actualIconName)
+            val parsedColor = try {
+                Color(android.graphics.Color.parseColor(custom.colorHex))
+            } catch (e: Exception) {
+                Color(0xFF6750A4)
+            }
+            return DisplayCategory(
+                name = custom.name,
+                displayName = custom.name,
+                icon = icon,
+                color = parsedColor,
+                isCustom = true,
+                customId = custom.id,
+                type = customType
+            )
+        }
+
+        val standard = ExpenseCategory.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
+        if (standard != null) {
+            return DisplayCategory(
+                name = standard.name,
+                displayName = standard.displayName,
+                icon = standard.icon,
+                color = standard.color,
+                isCustom = false,
+                type = standard.type
+            )
+        }
+        
+        return DisplayCategory(
+            name = name,
+            displayName = name,
+            icon = Icons.Default.Category,
+            color = Color(0xFF607D8B),
+            isCustom = false,
+            type = "EXPENSE"
+        )
+    }
+
+    fun getAll(customList: List<CustomCategory>): List<DisplayCategory> {
+        val list = mutableListOf<DisplayCategory>()
+        val hiddenNames = customList.filter { it.iconName.startsWith("hidden:") || it.iconName == "hidden" }.map { it.name.lowercase() }
+
+        ExpenseCategory.entries.forEach { standard ->
+            if (!hiddenNames.contains(standard.name.lowercase())) {
+                list.add(
+                    DisplayCategory(
+                        name = standard.name,
+                        displayName = standard.displayName,
+                        icon = standard.icon,
+                        color = standard.color,
+                        isCustom = false,
+                        type = standard.type
+                    )
+                )
+            }
+        }
+
+        customList.forEach { custom ->
+            if (!custom.iconName.startsWith("hidden:") && custom.iconName != "hidden") {
+                val parts = custom.iconName.split(":")
+                val actualIconName = parts.getOrNull(0) ?: "category"
+                val customType = parts.getOrNull(1) ?: "EXPENSE"
+
+                val icon = getIconFromIconName(actualIconName)
+                val parsedColor = try {
+                    Color(android.graphics.Color.parseColor(custom.colorHex))
+                } catch (e: Exception) {
+                    Color(0xFF6750A4)
+                }
+                
+                // Remove override first
+                list.removeAll { it.name.equals(custom.name, ignoreCase = true) }
+                
+                list.add(
+                    DisplayCategory(
+                        name = custom.name,
+                        displayName = custom.name,
+                        icon = icon,
+                        color = parsedColor,
+                        isCustom = true,
+                        customId = custom.id,
+                        type = customType
+                    )
+                )
+            }
+        }
+        return list
+    }
+}
+

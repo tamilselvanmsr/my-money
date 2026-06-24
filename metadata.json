@@ -1,0 +1,6 @@
+{
+  "name": "MyMoney",
+  "description": "MyMoney - A professional PlayStore clone for tracking expenses and budget with automatic SMS parsing and elegant analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

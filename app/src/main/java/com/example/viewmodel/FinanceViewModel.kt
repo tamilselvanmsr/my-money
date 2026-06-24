@@ -16,6 +16,10 @@ import com.example.data.*
 import com.example.utils.ExcelExporter
 import com.example.utils.PdfExporter
 import com.example.utils.SecurityUtils
+import com.example.utils.inferSmsBankCode
+import com.example.utils.isSmsTrackingBlocked
+import com.example.utils.smsBankMatchesAccount
+import com.example.utils.smsDisplayBankName
 import com.example.utils.SmsParser
 import com.example.utils.isDuplicateImportedTransaction
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +68,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     private val _consolidateAccounts = MutableStateFlow(prefs.getBoolean("consolidate_accounts", false))
     val consolidateAccounts: StateFlow<Boolean> = _consolidateAccounts.asStateFlow()
+    private val _blockedSmsAccountIds = MutableStateFlow(prefs.getStringSet("blocked_sms_account_ids", emptySet())?.toSet() ?: emptySet())
+    val blockedSmsAccountIds: StateFlow<Set<String>> = _blockedSmsAccountIds.asStateFlow()
 
     fun setCarryOverPreviousAmount(value: Boolean) {
         _carryOverPreviousAmount.value = value
@@ -78,6 +84,17 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun setConsolidateAccounts(value: Boolean) {
         _consolidateAccounts.value = value
         prefs.edit().putBoolean("consolidate_accounts", value).apply()
+    }
+
+    fun setAccountSmsTrackingBlocked(account: Account, blocked: Boolean) {
+        val updated = _blockedSmsAccountIds.value.toMutableSet()
+        if (blocked) {
+            updated.add(account.id)
+        } else {
+            updated.remove(account.id)
+        }
+        _blockedSmsAccountIds.value = updated
+        prefs.edit().putStringSet("blocked_sms_account_ids", updated).apply()
     }
 
     // Custom Categories
@@ -297,7 +314,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun addAccount(name: String, balance: Double, type: String, lastFour: String? = null) {
+    fun addAccount(
+        name: String,
+        balance: Double,
+        type: String,
+        lastFour: String? = null,
+        openingBalanceTimestamp: Long = System.currentTimeMillis()
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             if (name.isBlank()) return@launch
             val cleanName = name.trim()
@@ -306,8 +329,20 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 _toastMessage.emit("Wallet named '$cleanName' already exists!")
                 return@launch
             }
-            val acc = Account(name = cleanName, balance = balance, type = type.uppercase(), lastFour = lastFour?.trim())
+            val acc = Account(name = cleanName, balance = 0.0, type = type.uppercase(), lastFour = lastFour?.trim())
             repository.insertAccount(acc)
+            if (balance != 0.0) {
+                repository.insertTransaction(
+                    TransactionEntry(
+                        title = "Opening Balance",
+                        amount = kotlin.math.abs(balance),
+                        category = if (balance >= 0.0) "SALARY" else "OTHERS",
+                        type = if (balance >= 0.0) "INCOME" else "EXPENSE",
+                        timestamp = openingBalanceTimestamp,
+                        note = "Opening balance [Acc: $cleanName]"
+                    )
+                )
+            }
             _toastMessage.emit("Successfully configured account: $cleanName ($type)")
         }
     }
@@ -361,7 +396,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    suspend fun ensureAccountExists(accountRef: String?, senderHeader: String?, smsBody: String): String {
+    suspend fun ensureAccountExists(accountRef: String?, senderHeader: String?, smsBody: String): String? {
         val last4Ref = accountRef ?: return "Cash Wallet"
         
         // Check in-memory cache first to avoid race conditions during batch scan
@@ -372,65 +407,25 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         var extractedBank = if (hyphenIndex != -1) last4Ref.substring(0, hyphenIndex) else ""
         
         if (extractedBank.isBlank()) {
-            val headerUpper = (senderHeader ?: "Bank").uppercase()
-            val bodyLower = smsBody.lowercase()
-            extractedBank = when {
-                headerUpper.contains("SBI") || bodyLower.contains("sbi") || bodyLower.contains("state bank") -> "SBI"
-                headerUpper.contains("HDFC") || bodyLower.contains("hdfc") -> "HDFC"
-                headerUpper.contains("ICICI") || bodyLower.contains("icici") -> "ICICI"
-                headerUpper.contains("AXIS") || bodyLower.contains("axis") -> "AXIS"
-                headerUpper.contains("IND") || bodyLower.contains("indusind") || bodyLower.contains("indian bank") -> "IND"
-                headerUpper.contains("PNB") || bodyLower.contains("pnb") || bodyLower.contains("punjab national") -> "PNB"
-                else -> {
-                    val cleanHeader = headerUpper.replace("[^A-Z]".toRegex(), "")
-                    if (cleanHeader.isNotEmpty()) cleanHeader.take(4) else "Bank"
-                }
-            }
+            extractedBank = inferSmsBankCode(senderHeader, smsBody, accountRef)
         }
         if (extractedBank.isBlank() || extractedBank.length <= 1) {
             extractedBank = "Bank"
         }
 
         val list = repository.allAccounts.first()
-        val match = list.find { 
-            val lastFourMatches = (it.lastFour == actualLast4) || (actualLast4.isNotEmpty() && it.name.contains(actualLast4))
-            if (!lastFourMatches) return@find false
-            
-            val accNameUpper = it.name.uppercase()
-            val extBankUpper = extractedBank.uppercase()
-            when (extBankUpper) {
-                "SBI" -> accNameUpper.contains("SBI") || accNameUpper.contains("STATE BANK")
-                "IND" -> accNameUpper.split("\\s+".toRegex()).any { it.startsWith("IND") }
-                "HDFC" -> accNameUpper.contains("HDFC")
-                "ICICI" -> accNameUpper.contains("ICICI")
-                "AXIS" -> accNameUpper.contains("AXIS")
-                "PNB" -> accNameUpper.contains("PNB") || accNameUpper.contains("PUNJAB")
-                else -> accNameUpper.contains(extBankUpper)
-            }
+        val candidates = list.filter {
+            (it.lastFour == actualLast4) || (actualLast4.isNotEmpty() && it.name.contains(actualLast4))
         }
+        val match = candidates.firstOrNull { smsBankMatchesAccount(extractedBank, it.name) }
+            ?: candidates.singleOrNull()
         if (match != null) {
+            if (isSmsTrackingBlocked(match, blockedSmsAccountIds.value)) {
+                createdAccountsCache[last4Ref] = match.name
+                return null
+            }
             createdAccountsCache[last4Ref] = match.name
             return match.name
-        }
-
-        // Direct database lookup fallback
-        val directMatch = repository.getAccountByLastFour(actualLast4)
-        if (directMatch != null) {
-            val accNameUpper = directMatch.name.uppercase()
-            val extBankUpper = extractedBank.uppercase()
-            val bankMatches = when (extBankUpper) {
-                "SBI" -> accNameUpper.contains("SBI") || accNameUpper.contains("STATE BANK")
-                "IND" -> accNameUpper.split("\\s+".toRegex()).any { it.startsWith("IND") }
-                "HDFC" -> accNameUpper.contains("HDFC")
-                "ICICI" -> accNameUpper.contains("ICICI")
-                "AXIS" -> accNameUpper.contains("AXIS")
-                "PNB" -> accNameUpper.contains("PNB") || accNameUpper.contains("PUNJAB")
-                else -> accNameUpper.contains(extBankUpper)
-            }
-            if (bankMatches) {
-                createdAccountsCache[last4Ref] = directMatch.name
-                return directMatch.name
-            }
         }
 
         val bodyLower = smsBody.lowercase()
@@ -440,15 +435,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                            bodyLower.contains("spent on") || 
                            (senderHeader ?: "").uppercase().contains("CARD")
          val acType = if (isCreditCard) "CREDIT_CARD" else "BANK"
-         val displayName = when (extractedBank.uppercase()) {
-             "IND" -> "Indian Bank"
-             "SBI" -> "SBI"
-             "HDFC" -> "HDFC"
-             "ICICI" -> "ICICI"
-             "AXIS" -> "AXIS"
-             "PNB" -> "PNB"
-             else -> extractedBank
-         }
+         val displayName = smsDisplayBankName(extractedBank)
          val nameLabel = if (isCreditCard) {
              if (displayName == "SBI" || displayName == "HDFC" || displayName == "ICICI" || displayName == "AXIS" || displayName == "PNB") {
                  "$displayName Credit Card Ending $actualLast4"
@@ -701,7 +688,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         if (parsed != null) {
                             val targetTime = parsed.parsedTimestamp ?: smsDate
 
-                            val walletName = ensureAccountExists(parsed.accountRef, sender, body)
+                            val walletName = ensureAccountExists(parsed.accountRef, sender, body) ?: continue
                             val potentialDuplicates = repository.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
                             val incomingRef = com.example.utils.SmsParser.getReferenceNumber(body)
                             val duplicate = allTransactions.value.any { existing ->
@@ -786,6 +773,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val targetTime = parsed.parsedTimestamp ?: System.currentTimeMillis()
 
                 val walletName = ensureAccountExists(parsed.accountRef, sender, smsBody)
+                if (walletName == null) {
+                    _toastMessage.emit("SMS import skipped because this wallet is blocked from tracking.")
+                    return@launch
+                }
                 val potentialDuplicates = repository.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
                 val incomingRef = com.example.utils.SmsParser.getReferenceNumber(smsBody)
                 val duplicate = allTransactions.value.any { existing ->

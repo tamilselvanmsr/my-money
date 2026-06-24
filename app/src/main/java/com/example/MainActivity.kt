@@ -1571,7 +1571,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Expense Budgets",
+                    text = if (activeCategoryTypeTab == "EXPENSE") "Expense Budgets" else "Income Categories",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     color = Color.White
@@ -1596,17 +1596,44 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         )
                     }
 
-                    Surface(
-                        color = Color(0xFF131A26),
-                        shape = RoundedCornerShape(12.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(
-                            text = formatDisplay.format(currentMonthDate),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = Color(0xFF00E5FF),
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
+                        FilledTonalIconButton(
+                            onClick = { viewModel.setMonthYear(shiftMonthYear(rawMonthYear, -1)) },
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = Color.White.copy(alpha = 0.06f),
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Default.ChevronLeft, contentDescription = "Previous month")
+                        }
+
+                        Surface(
+                            color = Color(0xFF131A26),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = formatDisplay.format(currentMonthDate),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = Color(0xFF00E5FF),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+
+                        FilledTonalIconButton(
+                            onClick = { viewModel.setMonthYear(shiftMonthYear(rawMonthYear, 1)) },
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = Color.White.copy(alpha = 0.06f),
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Default.ChevronRight, contentDescription = "Next month")
+                        }
                     }
                 }
             }
@@ -1835,12 +1862,15 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                         .clip(RoundedCornerShape(3.dp))
                                 )
                             } else {
-                                Text(
-                                    "No limit configured. Tap to set monthly budget limit.",
-                                    fontSize = 11.sp,
-                                    color = Color.White.copy(alpha = 0.35f),
-                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-                                )
+                                OutlinedButton(
+                                    onClick = { showSetBudgetDialog = cat },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF00E5FF)),
+                                    border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f)),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Set Budget", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
                             }
                         } else {
                             Text(
@@ -2272,6 +2302,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
     val carryOverPreviousAmount by viewModel.carryOverPreviousAmount.collectAsStateWithLifecycle()
     val showTotal by viewModel.showTotal.collectAsStateWithLifecycle()
+    val blockedSmsAccountIds by viewModel.blockedSmsAccountIds.collectAsStateWithLifecycle()
     val walletsBalances = computeWalletBalances(txs, accounts, carryOverPreviousAmount)
     
     var showTransferDialog by remember { mutableStateOf(false) }
@@ -2429,6 +2460,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
             items(activeAccounts.size) { index ->
                 val acc = activeAccounts[index]
                 val bal = walletsBalances[acc.name] ?: 0.0
+                val smsTrackingBlocked = blockedSmsAccountIds.contains(acc.id)
                 val color = when(acc.type) {
                     "CASH" -> Color(0xFF10B981)
                     "BANK" -> Color(0xFF00E5FF)
@@ -2482,6 +2514,14 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                 fontSize = 11.sp,
                                 color = Color.White.copy(alpha = 0.4f)
                             )
+                            if (smsTrackingBlocked) {
+                                Text(
+                                    text = "SMS auto-tracking blocked",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFB923C)
+                                )
+                            }
                         }
 
                         Text(
@@ -2609,6 +2649,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
         var baseBalanceInput by remember { mutableStateOf("") }
         var typeInput by remember { mutableStateOf("BANK") }
         var last4Input by remember { mutableStateOf("") }
+        var openingBalanceTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
 
         val types = listOf("CASH", "BANK", "CREDIT_CARD", "SAVINGS")
 
@@ -2632,6 +2673,12 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF)),
                         modifier = Modifier.fillMaxWidth()
+                    )
+
+                    TransactionDateTimePicker(
+                        selectedTimestamp = openingBalanceTimestamp,
+                        onTimestampChange = { openingBalanceTimestamp = it },
+                        label = "Opening Balance Date & Time"
                     )
 
                     OutlinedTextField(
@@ -2673,7 +2720,8 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                             name = nameInput,
                             balance = initBal,
                             type = typeInput,
-                            lastFour = if (last4Input.isBlank()) null else last4Input
+                            lastFour = if (last4Input.isBlank()) null else last4Input,
+                            openingBalanceTimestamp = openingBalanceTimestamp
                         )
                         showAddAccountDialog = false
                     },
@@ -2695,6 +2743,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
         var editBalanceInput by remember(acc) { mutableStateOf(acc.balance.toString()) }
         var editType by remember(acc) { mutableStateOf(acc.type) }
         var editLast4 by remember(acc) { mutableStateOf(acc.lastFour ?: "") }
+        var smsTrackingEnabled by remember(acc, blockedSmsAccountIds) { mutableStateOf(!blockedSmsAccountIds.contains(acc.id)) }
 
         val types = listOf("CASH", "BANK", "CREDIT_CARD", "SAVINGS")
 
@@ -2730,6 +2779,36 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF)),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Track this wallet from SMS",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "Turn this off to block future inbox and real-time auto imports for this account.",
+                                color = Color.White.copy(alpha = 0.55f),
+                                fontSize = 11.sp
+                            )
+                        }
+                        Switch(
+                            checked = smsTrackingEnabled,
+                            onCheckedChange = { smsTrackingEnabled = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF00E5FF),
+                                checkedTrackColor = Color(0xFF00E5FF).copy(alpha = 0.45f),
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = Color.White.copy(alpha = 0.2f)
+                            )
+                        )
+                    }
 
                     Column {
                         Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
@@ -2781,6 +2860,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                     lastFour = if (editLast4.isBlank()) null else editLast4
                                 )
                             )
+                            viewModel.setAccountSmsTrackingBlocked(acc, blocked = !smsTrackingEnabled)
 
                             if (oldName != editName) {
                                 viewModel.renameAccountTransactions(oldName, editName)
@@ -2808,15 +2888,25 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
     var simSmsSender by remember { mutableStateOf("SBI-INB-7281") }
     var simSmsBody by remember { mutableStateOf("Dear customer, your bank account associated with SBI Card ending in 7281 is debited of INR 9,500.00 at AMZN-ECommerce on 2026-06-22. Ref-ID TXN90281.") }
     val isSmsParsing by viewModel.isSmsParsing.collectAsStateWithLifecycle()
-
-    val pGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+    var hasReadSmsPermission by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED)
+    }
+    var hasReceiveSmsPermission by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED)
+    }
+    val hasSmsPermissions = hasReadSmsPermission && hasReceiveSmsPermission
     val requestSmsLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            Toast.makeText(context, "SMS read permission granted successfully!", Toast.LENGTH_SHORT).show()
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        hasReadSmsPermission = result[Manifest.permission.READ_SMS] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+        hasReceiveSmsPermission = result[Manifest.permission.RECEIVE_SMS] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+        if (hasReadSmsPermission) {
+            Toast.makeText(context, "SMS access enabled. Importing inbox now.", Toast.LENGTH_SHORT).show()
+            viewModel.scanDeviceSmsInbox(context)
         } else {
-            Toast.makeText(context, "Permission denied. Automatic scan may fail.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "SMS read permission is required for inbox import.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2876,14 +2966,14 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     ) {
                         Text("Permission Status", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         Surface(
-                            color = if (pGranted) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF43F5E).copy(alpha = 0.15f),
+                            color = if (hasSmsPermissions) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF43F5E).copy(alpha = 0.15f),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text(
-                                text = if (pGranted) "GRANTED" else "REQUIRED",
+                                text = if (hasSmsPermissions) "GRANTED" else "REQUIRED",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (pGranted) Color(0xFF10B981) else Color(0xFFF43F5E),
+                                color = if (hasSmsPermissions) Color(0xFF10B981) else Color(0xFFF43F5E),
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
@@ -2892,10 +2982,10 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
                         onClick = {
-                            if (pGranted) {
+                            if (hasReadSmsPermission) {
                                 viewModel.scanDeviceSmsInbox(context)
                             } else {
-                                requestSmsLauncher.launch(Manifest.permission.READ_SMS)
+                                requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19)),
@@ -2905,7 +2995,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             .height(48.dp)
                             .testTag("scan_device_sms_button")
                     ) {
-                        Text("Scan Device SMS Inbox Now", fontWeight = FontWeight.Bold)
+                        Text(if (hasReadSmsPermission) "Scan Device SMS Inbox Now" else "Enable SMS Auto-Import", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -3011,6 +3101,8 @@ fun AddTransactionDialog(
     var accountSelection by remember { mutableStateOf("Cash Wallet") }
     var notesStr by remember { mutableStateOf("") }
     var selectedTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
+    var showWalletPicker by remember { mutableStateOf(false) }
+    var showCategoryPicker by remember { mutableStateOf(false) }
 
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
     val allCategories = CategoryResolver.getAll(customCats)
@@ -3020,6 +3112,13 @@ fun AddTransactionDialog(
     } else {
         accounts.map { it.name }
     }
+    val filteredCats = if (transactionType == "EXPENSE") {
+        allCategories.filter { it.type == "EXPENSE" }
+    } else {
+        allCategories.filter { it.type == "INCOME" }
+    }
+    val selectedCategory = filteredCats.firstOrNull { it.name == categorySelection }
+        ?: allCategories.firstOrNull { it.name == categorySelection }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -3093,48 +3192,21 @@ fun AddTransactionDialog(
                     onTimestampChange = { selectedTimestamp = it }
                 )
 
-                // Selectable wallets drop-in
-                Text("Select Wallet", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(selectablesWallets) { wName ->
-                        val active = accountSelection == wName
-                        Box(
-                            modifier = Modifier
-                                .background(if (active) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-                                .border(1.dp, if (active) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                .clickable { accountSelection = wName }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(wName, fontSize = 10.sp, color = if (active) Color(0xFF00E5FF) else Color.White, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
+                PickerButton(
+                    label = "Select Wallet",
+                    title = accountSelection,
+                    icon = walletIconFor(accountSelection, accounts.find { it.name == accountSelection }?.type),
+                    tint = Color(0xFF00E5FF),
+                    onClick = { showWalletPicker = true }
+                )
 
-                // Select category row
-                Text("Select Category", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val filteredCats = if (transactionType == "EXPENSE") {
-                        allCategories.filter { it.type == "EXPENSE" }
-                    } else {
-                        allCategories.filter { it.type == "INCOME" }
-                    }
-                    items(filteredCats) { cat ->
-                        val active = categorySelection == cat.name
-                        Box(
-                            modifier = Modifier
-                                .background(if (active) cat.color.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-                                .border(1.dp, if (active) cat.color else Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                .clickable { categorySelection = cat.name }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(cat.icon, contentDescription = "", tint = if (active) cat.color else Color.White, modifier = Modifier.size(12.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(cat.displayName, fontSize = 10.sp, color = if (active) cat.color else Color.White)
-                            }
-                        }
-                    }
-                }
+                PickerButton(
+                    label = "Select Category",
+                    title = selectedCategory?.displayName ?: "Choose category",
+                    icon = selectedCategory?.icon ?: Icons.Default.Category,
+                    tint = selectedCategory?.color ?: Color(0xFF00E5FF),
+                    onClick = { showCategoryPicker = true }
+                )
 
                 OutlinedTextField(
                     value = notesStr,
@@ -3173,6 +3245,32 @@ fun AddTransactionDialog(
         },
         containerColor = Color(0xFF131A26)
     )
+
+    if (showWalletPicker) {
+        WalletSelectionDialog(
+            walletOptions = selectablesWallets.map { walletName ->
+                walletName to (accounts.find { it.name == walletName }?.type)
+            },
+            selectedWallet = accountSelection,
+            onSelect = {
+                accountSelection = it
+                showWalletPicker = false
+            },
+            onDismiss = { showWalletPicker = false }
+        )
+    }
+
+    if (showCategoryPicker) {
+        CategorySelectionDialog(
+            categories = filteredCats,
+            selectedCategoryName = categorySelection,
+            onSelect = {
+                categorySelection = it
+                showCategoryPicker = false
+            },
+            onDismiss = { showCategoryPicker = false }
+        )
+    }
 }
 
 @Composable
@@ -3329,7 +3427,8 @@ fun EditTransactionDialog(
 @Composable
 fun TransactionDateTimePicker(
     selectedTimestamp: Long,
-    onTimestampChange: (Long) -> Unit
+    onTimestampChange: (Long) -> Unit,
+    label: String = "Transaction Date & Time"
 ) {
     val context = LocalContext.current
     val dateLabel = remember(selectedTimestamp) {
@@ -3340,7 +3439,7 @@ fun TransactionDateTimePicker(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Transaction Date & Time", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+        Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             OutlinedButton(
                 onClick = {
@@ -3389,6 +3488,147 @@ fun TransactionDateTimePicker(
                 Text(timeLabel)
             }
         }
+    }
+}
+
+@Composable
+private fun PickerButton(
+    label: String,
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    onClick: () -> Unit
+) {
+    Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = title, tint = tint, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(title, fontWeight = FontWeight.Bold)
+            }
+            Icon(Icons.Default.ExpandMore, contentDescription = label, tint = Color.White.copy(alpha = 0.7f))
+        }
+    }
+}
+
+@Composable
+private fun WalletSelectionDialog(
+    walletOptions: List<Pair<String, String?>>,
+    selectedWallet: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Wallet", fontWeight = FontWeight.Bold, color = Color.White) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                walletOptions.forEach { (walletName, walletType) ->
+                    val active = selectedWallet == walletName
+                    Surface(
+                        color = if (active) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.White.copy(alpha = 0.04f),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, if (active) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.08f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(walletName) }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = walletIconFor(walletName, walletType),
+                                contentDescription = walletName,
+                                tint = if (active) Color(0xFF00E5FF) else Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(walletName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close", color = Color.White) }
+        },
+        containerColor = Color(0xFF131A26)
+    )
+}
+
+@Composable
+private fun CategorySelectionDialog(
+    categories: List<DisplayCategory>,
+    selectedCategoryName: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Category", fontWeight = FontWeight.Bold, color = Color.White) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                categories.forEach { category ->
+                    val active = selectedCategoryName == category.name
+                    Surface(
+                        color = if (active) category.color.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.04f),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, if (active) category.color else Color.White.copy(alpha = 0.08f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(category.name) }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = category.icon,
+                                contentDescription = category.displayName,
+                                tint = category.color,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(category.displayName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close", color = Color.White) }
+        },
+        containerColor = Color(0xFF131A26)
+    )
+}
+
+private fun walletIconFor(name: String, type: String?): androidx.compose.ui.graphics.vector.ImageVector {
+    return when {
+        type == "CASH" || name.contains("cash", ignoreCase = true) -> Icons.Default.Money
+        type == "BANK" || name.contains("bank", ignoreCase = true) -> Icons.Default.AccountBalance
+        type == "CREDIT_CARD" || name.contains("card", ignoreCase = true) -> Icons.Default.CreditCard
+        type == "SAVINGS" || name.contains("saving", ignoreCase = true) -> Icons.Default.Savings
+        else -> Icons.Default.AccountBalanceWallet
     }
 }
 
@@ -3585,9 +3825,27 @@ fun getAnalyticsRange(monthYear: String, filter: String): Pair<Long, Long> {
         set(Calendar.MILLISECOND, 0)
     }
 
+    val periodEnd = (baseCalendar.clone() as Calendar).apply {
+        set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
+        set(Calendar.HOUR_OF_DAY, 23)
+        set(Calendar.MINUTE, 59)
+        set(Calendar.SECOND, 59)
+        set(Calendar.MILLISECOND, 999)
+    }
+
+    if (filter == "WEEKLY") {
+        val start = (periodEnd.clone() as Calendar).apply {
+            add(Calendar.DAY_OF_MONTH, -6)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return start to periodEnd.timeInMillis
+    }
+
     val start = (baseCalendar.clone() as Calendar).apply {
         when (filter) {
-            "WEEKLY" -> add(Calendar.DAY_OF_MONTH, -6)
             "3M" -> add(Calendar.MONTH, -2)
             "6M" -> add(Calendar.MONTH, -5)
             "1Y" -> add(Calendar.MONTH, -11)
@@ -3597,15 +3855,22 @@ fun getAnalyticsRange(monthYear: String, filter: String): Pair<Long, Long> {
         }
     }.timeInMillis
 
-    val end = (baseCalendar.clone() as Calendar).apply {
-        set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
-        set(Calendar.HOUR_OF_DAY, 23)
-        set(Calendar.MINUTE, 59)
-        set(Calendar.SECOND, 59)
-        set(Calendar.MILLISECOND, 999)
-    }.timeInMillis
+    val end = periodEnd.timeInMillis
 
     return start to end
+}
+
+fun shiftMonthYear(monthYear: String, amount: Int): String {
+    val calendar = Calendar.getInstance().apply {
+        try {
+            time = SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(monthYear) ?: Date()
+        } catch (_: Exception) {
+            time = Date()
+        }
+        set(Calendar.DAY_OF_MONTH, 1)
+        add(Calendar.MONTH, amount)
+    }
+    return SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
 }
 
 fun budgetProgressColor(percent: Double): Color {

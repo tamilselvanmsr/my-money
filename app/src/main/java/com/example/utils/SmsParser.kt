@@ -198,26 +198,7 @@ object SmsParser {
         }
 
         // Also identify bank source header properties (e.g. SBI, IND, HDFC)
-        var bankName = "Bank"
-        val cleanSender = senderId?.uppercase() ?: ""
-        val lowerBodyStr = lowerBody ?: ""
-        when {
-            cleanSender.contains("SBI") || lowerBodyStr.contains("sbi") || lowerBodyStr.contains("state bank") -> bankName = "SBI"
-            cleanSender.contains("HDFC") || lowerBodyStr.contains("hdfc") -> bankName = "HDFC"
-            cleanSender.contains("ICICI") || lowerBodyStr.contains("icici") -> bankName = "ICICI"
-            cleanSender.contains("AXIS") || lowerBodyStr.contains("axis") -> bankName = "AXIS"
-            cleanSender.contains("IND") || cleanSender.contains("IDIB") || lowerBodyStr.contains("indusind") || lowerBodyStr.contains("indian bank") || lowerBodyStr.contains("indianbank") -> bankName = "IND"
-            cleanSender.contains("PNB") || lowerBodyStr.contains("pnb") || lowerBodyStr.contains("punjab national") -> bankName = "PNB"
-            else -> {
-                // Parse standard prefix from vm-sbi or similar structure
-                val parts = cleanSender.split("-")
-                if (parts.size > 1 && parts[1].length >= 3) {
-                    bankName = parts[1].take(4)
-                } else if (cleanSender.length >= 2) {
-                    bankName = cleanSender.split("").filter { it.firstOrNull()?.isLetter() ?: false }.joinToString("").take(4)
-                }
-            }
-        }
+        var bankName = inferSmsBankCode(senderId, cleanBody)
         if (bankName.isBlank() || bankName.length <= 1) {
             bankName = "Bank"
         }

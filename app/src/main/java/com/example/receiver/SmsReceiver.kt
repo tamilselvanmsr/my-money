@@ -11,7 +11,10 @@ import com.example.data.Account
 import com.example.data.FinanceDatabase
 import com.example.data.TransactionEntry
 import com.example.utils.SmsParser
+import com.example.utils.inferSmsBankCode
 import com.example.utils.isDuplicateImportedTransaction
+import com.example.utils.smsBankMatchesAccount
+import com.example.utils.smsDisplayBankName
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,7 +51,7 @@ class SmsReceiver : BroadcastReceiver() {
 
                         val targetTime = parsed.parsedTimestamp ?: sms.timestampMillis
 
-                        val walletName = ensureAccountExists(dao, parsed.accountRef, sender, body)
+                        val walletName = ensureAccountExists(context, dao, parsed.accountRef, sender, body) ?: return@launch
                         val potentialDuplicates = dao.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
                         val incomingRef = com.example.utils.SmsParser.getReferenceNumber(body)
 
@@ -108,7 +111,7 @@ class SmsReceiver : BroadcastReceiver() {
         }
     }
 
-    private suspend fun ensureAccountExists(dao: com.example.data.FinanceDao, accountRef: String?, senderHeader: String?, smsBody: String): String {
+    private suspend fun ensureAccountExists(context: Context, dao: com.example.data.FinanceDao, accountRef: String?, senderHeader: String?, smsBody: String): String? {
         val last4Ref = accountRef ?: return "Cash Wallet"
         
         val hyphenIndex = last4Ref.indexOf('-')
@@ -116,63 +119,27 @@ class SmsReceiver : BroadcastReceiver() {
         var extractedBank = if (hyphenIndex != -1) last4Ref.substring(0, hyphenIndex) else ""
         
         if (extractedBank.isBlank()) {
-            val headerUpper = (senderHeader ?: "Bank").uppercase()
-            val bodyLower = smsBody.lowercase()
-            extractedBank = when {
-                headerUpper.contains("SBI") || bodyLower.contains("sbi") || bodyLower.contains("state bank") -> "SBI"
-                headerUpper.contains("HDFC") || bodyLower.contains("hdfc") -> "HDFC"
-                headerUpper.contains("ICICI") || bodyLower.contains("icici") -> "ICICI"
-                headerUpper.contains("AXIS") || bodyLower.contains("axis") -> "AXIS"
-                headerUpper.contains("IND") || bodyLower.contains("indusind") || bodyLower.contains("indian bank") -> "IND"
-                headerUpper.contains("PNB") || bodyLower.contains("pnb") || bodyLower.contains("punjab national") -> "PNB"
-                else -> {
-                    val cleanHeader = headerUpper.replace("[^A-Z]".toRegex(), "")
-                    if (cleanHeader.isNotEmpty()) cleanHeader.take(4) else "Bank"
-                }
-            }
+            extractedBank = inferSmsBankCode(senderHeader, smsBody, accountRef)
         }
         if (extractedBank.isBlank() || extractedBank.length <= 1) {
             extractedBank = "Bank"
         }
 
         val list = dao.getAllAccounts().first()
-        val match = list.find { 
-            val lastFourMatches = (it.lastFour == actualLast4) || (actualLast4.isNotEmpty() && it.name.contains(actualLast4))
-            if (!lastFourMatches) return@find false
-            
-            val accNameUpper = it.name.uppercase()
-            val extBankUpper = extractedBank.uppercase()
-            when (extBankUpper) {
-                "SBI" -> accNameUpper.contains("SBI") || accNameUpper.contains("STATE BANK")
-                "IND" -> accNameUpper.split("\\s+".toRegex()).any { it.startsWith("IND") }
-                "HDFC" -> accNameUpper.contains("HDFC")
-                "ICICI" -> accNameUpper.contains("ICICI")
-                "AXIS" -> accNameUpper.contains("AXIS")
-                "PNB" -> accNameUpper.contains("PNB") || accNameUpper.contains("PUNJAB")
-                else -> accNameUpper.contains(extBankUpper)
-            }
+        val candidates = list.filter {
+            (it.lastFour == actualLast4) || (actualLast4.isNotEmpty() && it.name.contains(actualLast4))
         }
+        val match = candidates.firstOrNull { smsBankMatchesAccount(extractedBank, it.name) }
+            ?: candidates.singleOrNull()
         if (match != null) {
+            val blockedIds = context.getSharedPreferences("finance_settings", Context.MODE_PRIVATE)
+                .getStringSet("blocked_sms_account_ids", emptySet())
+                ?.toSet()
+                ?: emptySet()
+            if (blockedIds.contains(match.id)) {
+                return null
+            }
             return match.name
-        }
-
-        // Direct database lookup fallback
-        val directMatch = dao.getAccountByLastFour(actualLast4)
-        if (directMatch != null) {
-            val accNameUpper = directMatch.name.uppercase()
-            val extBankUpper = extractedBank.uppercase()
-            val bankMatches = when (extBankUpper) {
-                "SBI" -> accNameUpper.contains("SBI") || accNameUpper.contains("STATE BANK")
-                "IND" -> accNameUpper.split("\\s+".toRegex()).any { it.startsWith("IND") }
-                "HDFC" -> accNameUpper.contains("HDFC")
-                "ICICI" -> accNameUpper.contains("ICICI")
-                "AXIS" -> accNameUpper.contains("AXIS")
-                "PNB" -> accNameUpper.contains("PNB") || accNameUpper.contains("PUNJAB")
-                else -> accNameUpper.contains(extBankUpper)
-            }
-            if (bankMatches) {
-                return directMatch.name
-            }
         }
 
         val bodyLower = smsBody.lowercase()
@@ -182,15 +149,7 @@ class SmsReceiver : BroadcastReceiver() {
                            bodyLower.contains("spent on") || 
                            (senderHeader ?: "").uppercase().contains("CARD")
         val acType = if (isCreditCard) "CREDIT_CARD" else "BANK"
-        val displayName = when (extractedBank.uppercase()) {
-            "IND" -> "Indian Bank"
-            "SBI" -> "SBI"
-            "HDFC" -> "HDFC"
-            "ICICI" -> "ICICI"
-            "AXIS" -> "AXIS"
-            "PNB" -> "PNB"
-            else -> extractedBank
-        }
+        val displayName = smsDisplayBankName(extractedBank)
         val nameLabel = if (isCreditCard) {
             if (displayName == "SBI" || displayName == "HDFC" || displayName == "ICICI" || displayName == "AXIS" || displayName == "PNB") {
                 "$displayName Credit Card Ending $actualLast4"

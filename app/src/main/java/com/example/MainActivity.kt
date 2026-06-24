@@ -43,6 +43,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -70,6 +72,7 @@ import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+import androidx.compose.ui.graphics.toArgb
 
 // Enum representing the five core tabs mimicking MyMoney by Ananta Raha
 enum class AppTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
@@ -1532,26 +1535,39 @@ private fun AnalyticsOverviewSection(
                                     if (activeSectorIndex != -1) {
                                         val item = categoryTotals.getOrNull(activeSectorIndex)
                                         if (item != null) {
-                                            var midAngle = -90f
-                                            for (i in 0 until activeSectorIndex) {
-                                                midAngle += (categoryTotals[i].percentage * 360f).toFloat()
-                                            }
-                                            midAngle += (item.percentage * 360f / 2f).toFloat()
-                                            val midRad = Math.toRadians(midAngle.toDouble())
                                             val cx2 = size.width / 2f
                                             val cy2 = size.height / 2f
-                                            val outerEdge = (sizeMin - strokeWidthValue) / 2f + strokeWidthValue * 0.6f
-                                            val lineLen = 10.dp.toPx()
-                                            val lineStart = Offset(
-                                                cx2 + outerEdge * kotlin.math.cos(midRad).toFloat(),
-                                                cy2 + outerEdge * kotlin.math.sin(midRad).toFloat()
-                                            )
-                                            val lineEnd = Offset(
-                                                cx2 + (outerEdge + lineLen) * kotlin.math.cos(midRad).toFloat(),
-                                                cy2 + (outerEdge + lineLen) * kotlin.math.sin(midRad).toFloat()
-                                            )
-                                            drawLine(item.category.color, lineStart, lineEnd, 1.5.dp.toPx(), StrokeCap.Round)
-                                            drawCircle(item.category.color, 3.5.dp.toPx(), lineEnd)
+                                            val namePaint = android.graphics.Paint().apply {
+                                                color = item.category.color.toArgb()
+                                                textSize = 13.sp.toPx()
+                                                isAntiAlias = true
+                                                textAlign = android.graphics.Paint.Align.CENTER
+                                                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                                            }
+                                            val pctPaint = android.graphics.Paint().apply {
+                                                color = android.graphics.Color.WHITE
+                                                alpha = 220
+                                                textSize = 14.sp.toPx()
+                                                isAntiAlias = true
+                                                textAlign = android.graphics.Paint.Align.CENTER
+                                                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                                            }
+                                            val innerRadius = (sizeMin - strokeWidthValue) / 2f - strokeWidthValue * 0.65f
+                                            val maxNameWidth = innerRadius * 1.6f
+                                            var displayName = item.category.displayName
+                                            while (displayName.isNotEmpty() && namePaint.measureText(displayName) > maxNameWidth) {
+                                                displayName = displayName.dropLast(1)
+                                            }
+                                            if (displayName.length < item.category.displayName.length) displayName = "$displayName…"
+                                            drawIntoCanvas { nativeCanvasWrapper ->
+                                                nativeCanvasWrapper.nativeCanvas.drawText(
+                                                    displayName, cx2, cy2 - 7.dp.toPx(), namePaint
+                                                )
+                                                nativeCanvasWrapper.nativeCanvas.drawText(
+                                                    String.format(java.util.Locale.getDefault(), "%.1f%%", item.percentage * 100),
+                                                    cx2, cy2 + 11.dp.toPx(), pctPaint
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -1562,7 +1578,7 @@ private fun AnalyticsOverviewSection(
                         val legendContent: @Composable () -> Unit = {
                             Column(
                                 modifier = Modifier.widthIn(max = 130.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 categoryTotals.forEachIndexed { idx, stats ->
                                     Row(
@@ -1606,34 +1622,6 @@ private fun AnalyticsOverviewSection(
                             legendContent()
                         }
 
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        val activeItem = categoryTotals.getOrNull(activeSectorIndex)
-                        Surface(
-                            color = Color.White.copy(alpha = 0.04f),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                if (activeItem != null) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Box(modifier = Modifier.size(8.dp).background(activeItem.category.color))
-                                        Text(activeItem.category.displayName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text(String.format(Locale.getDefault(), "%.1f%%", activeItem.percentage * 100), color = Color.White.copy(alpha = 0.55f), fontSize = 11.sp)
-                                        Text(decFormat.format(activeItem.total), color = activeItem.category.color, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                } else {
-                                    Text(totalLabel, color = Color.White.copy(alpha = 0.55f), fontSize = 11.sp)
-                                    Text(decFormat.format(totalAmount), color = Color(0xFF00E5FF), fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -1660,43 +1648,60 @@ private fun AnalyticsOverviewSection(
                             activeSectorIndex = if (activeSectorIndex == idx) -1 else idx
                         }
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                shape = CircleShape,
-                                color = stats.category.color.copy(alpha = 0.15f),
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = stats.category.icon,
-                                        contentDescription = stats.category.displayName,
-                                        tint = stats.category.color,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(stats.category.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
-                                Text(
-                                    text = "${String.format(Locale.getDefault(), "%.1f", stats.percentage * 100)}% $percentSuffix",
-                                    fontSize = 11.sp,
-                                    color = Color.White.copy(alpha = 0.4f)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = stats.category.color.copy(alpha = 0.15f),
+                            modifier = Modifier.size(52.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = stats.category.icon,
+                                    contentDescription = stats.category.displayName,
+                                    tint = stats.category.color,
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
-                            Text(decFormat.format(stats.total), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
                         }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-                        LinearProgressIndicator(
-                            progress = stats.percentage.toFloat(),
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    stats.category.displayName,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Color.White,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(decFormat.format(stats.total), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                            }
+                            LinearProgressIndicator(
+                                progress = stats.percentage.toFloat(),
+                                color = stats.category.color,
+                                trackColor = Color.White.copy(alpha = 0.06f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "${String.format(Locale.getDefault(), "%.1f", stats.percentage * 100)}%",
+                            fontSize = 12.sp,
                             color = stats.category.color,
-                            trackColor = Color.White.copy(alpha = 0.06f),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp))
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.widthIn(min = 44.dp),
+                            textAlign = TextAlign.End
                         )
                     }
                 }
@@ -2400,7 +2405,9 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
     
     // Dialog setups
-    var showSetBudgetDialog by remember { mutableStateOf<DisplayCategory?>(null) }
+    var showEditCategoryDialog by remember { mutableStateOf<DisplayCategory?>(null) }
+    var showBudgetAmountDialog by remember { mutableStateOf<DisplayCategory?>(null) }
+    var showCategoryMenuFor by remember { mutableStateOf<String?>(null) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var activeCategoryTypeTab by remember { mutableStateOf("EXPENSE") }
     var categoryOrderKeys by remember(activeCategoryTypeTab) { mutableStateOf<List<String>>(emptyList()) }
@@ -2581,13 +2588,14 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                 Text(
                                     text = decFormat.format(globalBudgetSpend),
                                     fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 24.sp,
+                                    fontSize = 28.sp,
                                     color = if (globalBudgetSpend > globalBudgetLimit && globalBudgetLimit > 0) Color(0xFFF43F5E) else Color.White
                                 )
                                 Text(
-                                    "Spent of ${decFormat.format(globalBudgetLimit)} set limit",
-                                    fontSize = 11.sp,
-                                    color = Color.White.copy(alpha = 0.4f)
+                                    "of ${decFormat.format(globalBudgetLimit)}",
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White.copy(alpha = 0.55f)
                                 )
                             }
                             
@@ -2624,6 +2632,70 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
             }
         }
 
+        if (activeCategoryTypeTab == "INCOME") {
+            val incomeExpectedTotal = activeBudgets.filter { budget ->
+                baseCategories.any { it.name.equals(budget.category, ignoreCase = true) }
+            }.sumOf { it.amountLimit }
+            val incomeReceivedTotal = txs.filter {
+                val txMonth = sdfMonth.format(Date(it.timestamp))
+                txMonth == rawMonthYear && it.type == "INCOME"
+            }.sumOf { it.amount }
+            if (incomeExpectedTotal > 0) {
+                item {
+                    Surface(
+                        color = Color(0xFF131A26),
+                        shape = RoundedCornerShape(24.dp),
+                        border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Text(
+                                text = "INCOME OVERVIEW",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                letterSpacing = 1.sp,
+                                color = Color.White.copy(alpha = 0.5f)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Text("EXPECTED", fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.8.sp, color = Color.White.copy(alpha = 0.45f))
+                                    Text(
+                                        text = decFormat.format(incomeExpectedTotal),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 22.sp,
+                                        color = Color.White
+                                    )
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text("RECEIVED", fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.8.sp, color = Color.White.copy(alpha = 0.45f))
+                                    Text(
+                                        text = decFormat.format(incomeReceivedTotal),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 22.sp,
+                                        color = Color(0xFF10B981)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LinearProgressIndicator(
+                                progress = (incomeReceivedTotal / incomeExpectedTotal).toFloat().coerceIn(0f, 1f),
+                                color = Color(0xFF10B981),
+                                trackColor = Color.White.copy(alpha = 0.05f),
+                                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // List of configured or unconfigured limits
         item {
             Text(
@@ -2635,157 +2707,179 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
             )
         }
 
+        val budgetedCats = standardCategoriesList.filter { cat ->
+            activeBudgets.any { it.category.equals(cat.name, ignoreCase = true) }
+        }
+        val unbudgetedCats = standardCategoriesList.filter { cat ->
+            activeBudgets.none { it.category.equals(cat.name, ignoreCase = true) }
+        }
+
         item {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                standardCategoriesList.forEach { cat ->
+                if (budgetedCats.isNotEmpty()) {
+                    Text(
+                        text = if (activeCategoryTypeTab == "EXPENSE") "BUDGETED" else "EXPECTED INCOME",
+                        fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp,
+                        color = Color(0xFF00E5FF), modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+                budgetedCats.forEach { cat ->
                     val isDragging = draggingItemKey == cat.name
-                    val budgetObj = activeBudgets.firstOrNull { it.category.equals(cat.name, ignoreCase = true) }
-                    val catExpense = monthExpenses.filter { it.category.equals(cat.name, ignoreCase = true) }.sumOf { it.amount }
-                    val catIncome = txs.filter {
-                        val txMonth = sdfMonth.format(Date(it.timestamp))
-                        txMonth == rawMonthYear && it.type == "INCOME" && it.category.equals(cat.name, ignoreCase = true)
-                    }.sumOf { it.amount }
-
+                    val budgetObj = activeBudgets.first { it.category.equals(cat.name, ignoreCase = true) }
+                    val catSpend = if (activeCategoryTypeTab == "EXPENSE") {
+                        monthExpenses.filter { it.category.equals(cat.name, ignoreCase = true) }.sumOf { it.amount }
+                    } else {
+                        txs.filter {
+                            val txMonth = sdfMonth.format(Date(it.timestamp))
+                            txMonth == rawMonthYear && it.type == "INCOME" && it.category.equals(cat.name, ignoreCase = true)
+                        }.sumOf { it.amount }
+                    }
+                    val limit = budgetObj.amountLimit
+                    val ratio = if (limit > 0) (catSpend / limit) else 0.0
+                    val percent = ratio * 100
+                    val progressColor = budgetProgressColor(percent)
+                    val remaining = limit - catSpend
                     Surface(
                         color = if (isDragging) Color(0xFF1E3048) else Color(0xFF131A26),
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(
-                            1.dp,
-                            when {
-                                isDragging -> cat.color
-                                budgetObj != null -> cat.color.copy(alpha = 0.45f)
-                                else -> Color(0xFF1E293B)
-                            }
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .pointerInput(cat.name) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = { _ ->
-                                        draggingItemKey = cat.name
-                                        draggingItemOffsetY = 0f
-                                    },
-                                    onDragEnd = {
-                                        draggingItemKey = null
-                                        draggingItemOffsetY = 0f
-                                    },
-                                    onDragCancel = {
-                                        draggingItemKey = null
-                                        draggingItemOffsetY = 0f
-                                    },
-                                    onDrag = { _, dragAmount ->
-                                        val currentKey = draggingItemKey ?: return@detectDragGesturesAfterLongPress
-                                        draggingItemOffsetY += dragAmount.y
-                                        val currentIndex = categoryOrderKeys.indexOf(currentKey)
-                                        if (currentIndex == -1) return@detectDragGesturesAfterLongPress
-                                        val itemHeight = size.height.toFloat().coerceAtLeast(1f)
-                                        val steps = (draggingItemOffsetY / itemHeight).roundToInt()
-                                        val targetIndex = (currentIndex + steps).coerceIn(0, categoryOrderKeys.lastIndex)
-                                        if (targetIndex != currentIndex) {
-                                            val newOrder = categoryOrderKeys.toMutableList()
-                                            val moved = newOrder.removeAt(currentIndex)
-                                            newOrder.add(targetIndex, moved)
-                                            categoryOrderKeys = newOrder
-                                            draggingItemOffsetY -= (targetIndex - currentIndex) * itemHeight
-                                        }
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, if (isDragging) cat.color else cat.color.copy(alpha = 0.45f)),
+                        modifier = Modifier.fillMaxWidth().pointerInput(cat.name) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { _ -> draggingItemKey = cat.name; draggingItemOffsetY = 0f },
+                                onDragEnd = { draggingItemKey = null; draggingItemOffsetY = 0f },
+                                onDragCancel = { draggingItemKey = null; draggingItemOffsetY = 0f },
+                                onDrag = { _, dragAmount ->
+                                    val currentKey = draggingItemKey ?: return@detectDragGesturesAfterLongPress
+                                    draggingItemOffsetY += dragAmount.y
+                                    val currentIndex = categoryOrderKeys.indexOf(currentKey)
+                                    if (currentIndex == -1) return@detectDragGesturesAfterLongPress
+                                    val itemHeight = size.height.toFloat().coerceAtLeast(1f)
+                                    val steps = (draggingItemOffsetY / itemHeight).roundToInt()
+                                    val targetIndex = (currentIndex + steps).coerceIn(0, categoryOrderKeys.lastIndex)
+                                    if (targetIndex != currentIndex) {
+                                        val newOrder = categoryOrderKeys.toMutableList()
+                                        val moved = newOrder.removeAt(currentIndex)
+                                        newOrder.add(targetIndex, moved)
+                                        categoryOrderKeys = newOrder
+                                        draggingItemOffsetY -= (targetIndex - currentIndex) * itemHeight
                                     }
-                                )
-                            }
-                            .clickable { showSetBudgetDialog = cat }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.DragHandle,
-                                contentDescription = "Drag to reorder",
-                                tint = Color.White.copy(alpha = if (isDragging) 0.8f else 0.3f),
-                                modifier = Modifier.size(16.dp)
-                            )
-
-                            Spacer(modifier = Modifier.width(6.dp))
-
-                            Surface(
-                                shape = CircleShape,
-                                color = cat.color.copy(alpha = 0.15f),
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = cat.icon,
-                                        contentDescription = cat.name,
-                                        tint = cat.color,
-                                        modifier = Modifier.size(14.dp)
-                                    )
                                 }
-                            }
-
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = cat.displayName,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    color = Color.White,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                if (activeCategoryTypeTab == "EXPENSE") {
-                                    if (budgetObj != null) {
-                                        val limit = budgetObj.amountLimit
-                                        val ratio = if (limit > 0) (catExpense / limit) else 0.0
-                                        val percent = ratio * 100
-                                        val progressColor = budgetProgressColor(percent)
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(
-                                                text = "${compactCurrency(catExpense)} / ${compactCurrency(limit)}",
-                                                fontSize = 9.sp,
-                                                color = if (percent > 100) Color(0xFFF43F5E) else Color.White.copy(alpha = 0.45f)
-                                            )
-                                            Text(
-                                                text = "${String.format(Locale.getDefault(), "%.0f", percent)}%",
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = progressColor
-                                            )
-                                        }
+                            )
+                        }
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(shape = CircleShape, color = cat.color.copy(alpha = 0.15f), modifier = Modifier.size(52.dp)) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(imageVector = cat.icon, contentDescription = cat.name, tint = cat.color, modifier = Modifier.size(26.dp))
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White,
+                                            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("${compactCurrency(catSpend)} / ${compactCurrency(limit)}", fontSize = 13.sp, color = Color.White.copy(alpha = 0.65f), fontWeight = FontWeight.SemiBold)
+                                    }
+                                    Text(
+                                        text = "Remaining: ${compactCurrency(remaining)}",
+                                        fontSize = 12.sp,
+                                        color = if (remaining < 0) Color(0xFFF43F5E) else Color(0xFF10B981)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
                                         LinearProgressIndicator(
                                             progress = ratio.toFloat().coerceIn(0f, 1f),
                                             color = progressColor,
                                             trackColor = Color.White.copy(alpha = 0.05f),
-                                            modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp))
+                                            modifier = Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp))
                                         )
-                                    } else {
-                                        Text("No limit set", fontSize = 9.sp, color = Color.White.copy(alpha = 0.35f))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "${String.format(Locale.getDefault(), "%.1f", percent)}%",
+                                            fontSize = 13.sp, fontWeight = FontWeight.Bold, color = progressColor,
+                                            modifier = Modifier.widthIn(min = 44.dp), textAlign = TextAlign.End
+                                        )
                                     }
-                                } else {
-                                    Text(
-                                        text = "${compactCurrency(catIncome)} received",
-                                        fontSize = 9.sp,
-                                        color = Color(0xFF10B981),
-                                        fontWeight = FontWeight.SemiBold
-                                    )
+                                }
+                                Box {
+                                    IconButton(onClick = { showCategoryMenuFor = cat.name }, modifier = Modifier.size(32.dp)) {
+                                        Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+                                    }
+                                    DropdownMenu(
+                                        expanded = showCategoryMenuFor == cat.name,
+                                        onDismissRequest = { showCategoryMenuFor = null },
+                                        containerColor = Color(0xFF1E293B)
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text(if (activeCategoryTypeTab == "INCOME") "Edit Expected Amount" else "Edit Budget", color = Color.White, fontSize = 13.sp) },
+                                            onClick = { showBudgetAmountDialog = cat; showCategoryMenuFor = null }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Remove Budget", color = Color(0xFFF43F5E), fontSize = 13.sp) },
+                                            onClick = { viewModel.deleteBudget(budgetObj.id); showCategoryMenuFor = null }
+                                        )
+                                    }
                                 }
                             }
-
-                            IconButton(
-                                onClick = { showSetBudgetDialog = cat },
-                                modifier = Modifier.size(28.dp)
+                        }
+                    }
+                }
+                if (unbudgetedCats.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "NOT BUDGETED",
+                        fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp,
+                        color = Color.White.copy(alpha = 0.4f), modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+                unbudgetedCats.forEach { cat ->
+                    val catIncome = txs.filter {
+                        val txMonth = sdfMonth.format(Date(it.timestamp))
+                        txMonth == rawMonthYear && it.type == "INCOME" && it.category.equals(cat.name, ignoreCase = true)
+                    }.sumOf { it.amount }
+                    Surface(
+                        color = Color(0xFF131A26),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showEditCategoryDialog = cat }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(shape = CircleShape, color = cat.color.copy(alpha = 0.15f), modifier = Modifier.size(52.dp)) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(imageVector = cat.icon, contentDescription = cat.name, tint = cat.color, modifier = Modifier.size(26.dp))
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            if (activeCategoryTypeTab == "INCOME") {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    if (catIncome > 0) {
+                                        Text("${compactCurrency(catIncome)} received", fontSize = 12.sp, color = Color(0xFF10B981), fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            } else {
+                                Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White,
+                                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            OutlinedButton(
+                                onClick = { showBudgetAmountDialog = cat },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF00E5FF)),
+                                border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.6f)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(32.dp)
                             ) {
-                                Icon(
-                                    Icons.Default.Edit,
-                                    contentDescription = "Edit",
-                                    tint = Color(0xFF00E5FF),
-                                    modifier = Modifier.size(14.dp)
-                                )
+                                Text(if (activeCategoryTypeTab == "INCOME") "Set Expected" else "Set Budget", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -2795,27 +2889,18 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
     }
 
     // Modal Sheet or Alert Dialog for writing categories budgets
-    showSetBudgetDialog?.let { cat ->
-        var budgetValStr by remember { mutableStateOf("") }
-        var editCatName by remember { mutableStateOf(cat.displayName) }
-        var selectedIconName by remember { mutableStateOf("others") }
-        var selectedColorHex by remember { mutableStateOf("#607D8B") }
-        var selectedColor by remember { mutableStateOf(cat.color) }
-        
+    showEditCategoryDialog?.let { cat ->
+        var editCatName by remember(cat) { mutableStateOf(cat.displayName) }
+        var selectedIconName by remember(cat) { mutableStateOf("others") }
+        var selectedColorHex by remember(cat) { mutableStateOf("#607D8B") }
+        var selectedColor by remember(cat) { mutableStateOf(cat.color) }
         val checkCurrent = activeBudgets.firstOrNull { it.category.equals(cat.name, ignoreCase = true) }
-        
+
         LaunchedEffect(cat) {
-            checkCurrent?.let { budgetValStr = it.amountLimit.toInt().toString() }
             editCatName = cat.displayName
-            
             val matchedIcon = suitableIconsList.firstOrNull { it.second == cat.icon }?.first
-            if (matchedIcon != null) {
-                selectedIconName = matchedIcon
-            }
-            
-            val matchedColorHex = categoryColorsList.firstOrNull {
-                it.second.value == cat.color.value
-            }?.first
+            if (matchedIcon != null) selectedIconName = matchedIcon
+            val matchedColorHex = categoryColorsList.firstOrNull { it.second.value == cat.color.value }?.first
             if (matchedColorHex != null) {
                 selectedColorHex = matchedColorHex
             } else {
@@ -2825,15 +2910,8 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
         }
 
         AlertDialog(
-            onDismissRequest = { showSetBudgetDialog = null },
-            title = {
-                Text(
-                    "Edit Category",
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    fontSize = 16.sp
-                )
-            },
+            onDismissRequest = { showEditCategoryDialog = null },
+            title = { Text("Edit Category", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 16.sp) },
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2853,24 +2931,6 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         ),
                         modifier = Modifier.fillMaxWidth().testTag("edit_category_name_field")
                     )
-
-                    if (cat.type == "EXPENSE") {
-                        OutlinedTextField(
-                            value = budgetValStr,
-                            onValueChange = { budgetValStr = it },
-                            label = { Text("Budget Limit Amount (₹)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color(0xFF00E5FF),
-                                focusedLabelColor = Color(0xFF00E5FF),
-                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                                unfocusedLabelColor = Color.White.copy(alpha = 0.5f)
-                            ),
-                            modifier = Modifier.fillMaxWidth().testTag("edit_category_budget_field")
-                        )
-                    }
 
                     Text("Select Icon", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
                     LazyRow(
@@ -2913,10 +2973,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                 border = BorderStroke(2.dp, if (isSelected) Color.White else Color.Transparent),
                                 modifier = Modifier
                                     .size(36.dp)
-                                    .clickable {
-                                        selectedColorHex = hexStr
-                                        selectedColor = colorObj
-                                    }
+                                    .clickable { selectedColorHex = hexStr; selectedColor = colorObj }
                                     .testTag("edit_color_$hexStr")
                             ) {
                                 if (isSelected) {
@@ -2941,15 +2998,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                 ) {
                     Button(
                         onClick = {
-                            if (cat.isCustom) {
-                                viewModel.deleteCustomCategory(cat.customId)
-                            } else {
-                                viewModel.hideStandardCategory(cat.name, cat.type)
-                            }
-                            if (checkCurrent != null) {
-                                viewModel.deleteBudget(checkCurrent.id)
-                            }
-                            showSetBudgetDialog = null
+                            if (cat.isCustom) viewModel.deleteCustomCategory(cat.customId)
+                            else viewModel.hideStandardCategory(cat.name, cat.type)
+                            if (checkCurrent != null) viewModel.deleteBudget(checkCurrent.id)
+                            showEditCategoryDialog = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF43F5E), contentColor = Color.White),
                         modifier = Modifier.testTag("delete_custom_category_button")
@@ -2961,10 +3013,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
 
                     Button(
                         onClick = {
-                            val limitAmt = budgetValStr.toDoubleOrNull() ?: 0.0
                             val cleanName = editCatName.trim()
-                            val effectiveBudgetCategory = resolveBudgetCategoryName(cat, cleanName)
-                            
                             if (cat.isCustom) {
                                 viewModel.updateCustomCategory(
                                     id = cat.customId,
@@ -2974,13 +3023,6 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                     colorHex = selectedColorHex,
                                     type = cat.type
                                 )
-                                if (cat.type == "EXPENSE") {
-                                    if (limitAmt > 0) {
-                                        viewModel.saveBudget(effectiveBudgetCategory, cleanName, limitAmt, cat.name)
-                                    } else if (checkCurrent != null) {
-                                        viewModel.deleteBudget(checkCurrent.id)
-                                    }
-                                }
                             } else {
                                 viewModel.customizeStandardCategory(
                                     oldName = cat.name,
@@ -2989,15 +3031,8 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                     colorHex = selectedColorHex,
                                     type = cat.type
                                 )
-                                if (cat.type == "EXPENSE") {
-                                    if (limitAmt > 0) {
-                                        viewModel.saveBudget(effectiveBudgetCategory, cleanName, limitAmt, cat.name)
-                                    } else if (checkCurrent != null) {
-                                        viewModel.deleteBudget(checkCurrent.id)
-                                    }
-                                }
                             }
-                            showSetBudgetDialog = null
+                            showEditCategoryDialog = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19)),
                         modifier = Modifier.testTag("save_category_changes_button")
@@ -3008,11 +3043,86 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
             },
             dismissButton = {
                 TextButton(
-                    onClick = { showSetBudgetDialog = null },
+                    onClick = { showEditCategoryDialog = null },
                     modifier = Modifier.testTag("cancel_category_changes_button")
                 ) {
                     Text("Cancel", color = Color.White)
                 }
+            },
+            containerColor = Color(0xFF131A26)
+        )
+    }
+
+    showBudgetAmountDialog?.let { cat ->
+        var budgetValStr by remember(cat) { mutableStateOf("") }
+        val checkCurrent = activeBudgets.firstOrNull { it.category.equals(cat.name, ignoreCase = true) }
+
+        LaunchedEffect(cat) {
+            checkCurrent?.let { budgetValStr = it.amountLimit.toInt().toString() }
+        }
+
+        AlertDialog(
+            onDismissRequest = { showBudgetAmountDialog = null },
+            title = {
+                Text(
+                    if (cat.type == "INCOME") "Set Expected Income" else "Set Budget Limit",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = if (cat.type == "INCOME")
+                            "Set the expected monthly income for ${cat.displayName}"
+                        else
+                            "Set a monthly budget limit for ${cat.displayName}",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                    OutlinedTextField(
+                        value = budgetValStr,
+                        onValueChange = { budgetValStr = it },
+                        label = { Text(if (cat.type == "INCOME") "Expected Amount (₹)" else "Budget Limit (₹)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF00E5FF),
+                            focusedLabelColor = Color(0xFF00E5FF),
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                            unfocusedLabelColor = Color.White.copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier.fillMaxWidth().testTag("edit_category_budget_field")
+                    )
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (checkCurrent != null) {
+                        TextButton(
+                            onClick = { viewModel.deleteBudget(checkCurrent.id); showBudgetAmountDialog = null },
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFF43F5E))
+                        ) { Text("Remove", fontWeight = FontWeight.Bold) }
+                    }
+                    Button(
+                        onClick = {
+                            val limitAmt = budgetValStr.toDoubleOrNull() ?: 0.0
+                            val effectiveBudgetCategory = resolveBudgetCategoryName(cat, cat.displayName)
+                            if (limitAmt > 0) {
+                                viewModel.saveBudget(effectiveBudgetCategory, cat.displayName, limitAmt, cat.name)
+                            }
+                            showBudgetAmountDialog = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
+                    ) {
+                        Text(if (checkCurrent != null) "Update" else "Set Budget", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBudgetAmountDialog = null }) { Text("Cancel", color = Color.White) }
             },
             containerColor = Color(0xFF131A26)
         )
@@ -3216,30 +3326,11 @@ fun AccountScreen(viewModel: FinanceViewModel) {
     var showTransferDialog by remember { mutableStateOf(false) }
     var showAddAccountDialog by remember { mutableStateOf(false) }
     var selectedAccountForEdit by remember { mutableStateOf<Account?>(null) }
-    var accountOrderIds by remember { mutableStateOf<List<String>>(emptyList()) }
-    var draggingAccountId by remember { mutableStateOf<String?>(null) }
-    var draggingAccountOffsetY by remember { mutableStateOf(0f) }
 
-    LaunchedEffect(accounts) {
-        if (accountOrderIds.isEmpty()) {
-            accountOrderIds = accounts.map { it.id }
-        } else {
-            val currentIds = accounts.map { it.id }.toSet()
-            val newIds = accounts.filter { it.id !in accountOrderIds }.map { it.id }
-            accountOrderIds = accountOrderIds.filter { it in currentIds } + newIds
-        }
-    }
-    
     val decFormat = DecimalFormat("₹#,##0.00")
 
     val activeAccounts = accounts
-    val orderedAccounts = remember(accountOrderIds, activeAccounts) {
-        if (accountOrderIds.isEmpty()) activeAccounts
-        else {
-            val lookup = activeAccounts.associateBy { it.id }
-            accountOrderIds.mapNotNull { lookup[it] } + activeAccounts.filter { it.id !in accountOrderIds }
-        }
-    }
+    val orderedAccounts = activeAccounts
 
     val totalAllAccounts = activeAccounts.sumOf { walletsBalances[it.name] ?: 0.0 }
     val totalIncomeSoFar = txs.filter { it.type == "INCOME" }.sumOf { it.amount }
@@ -3391,7 +3482,6 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     orderedAccounts.forEach { acc ->
-                        val isDragging = draggingAccountId == acc.id
                         val bal = walletsBalances[acc.name] ?: 0.0
                         val smsTrackingBlocked = blockedSmsAccountIds.contains(acc.id)
                         val color = when(acc.type) {
@@ -3403,58 +3493,17 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         }
 
                         Surface(
-                            color = if (isDragging) Color(0xFF1A2540) else Color(0xFF131A26),
+                            color = Color(0xFF131A26),
                             shape = RoundedCornerShape(20.dp),
-                            border = BorderStroke(1.dp, if (isDragging) color else Color(0xFF1E293B)),
+                            border = BorderStroke(1.dp, Color(0xFF1E293B)),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .pointerInput(acc.id) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = { _ ->
-                                            draggingAccountId = acc.id
-                                            draggingAccountOffsetY = 0f
-                                        },
-                                        onDragEnd = {
-                                            draggingAccountId = null
-                                            draggingAccountOffsetY = 0f
-                                        },
-                                        onDragCancel = {
-                                            draggingAccountId = null
-                                            draggingAccountOffsetY = 0f
-                                        },
-                                        onDrag = { _, dragAmount ->
-                                            val currentId = draggingAccountId ?: return@detectDragGesturesAfterLongPress
-                                            draggingAccountOffsetY += dragAmount.y
-                                            val currentIndex = accountOrderIds.indexOf(currentId)
-                                            if (currentIndex == -1) return@detectDragGesturesAfterLongPress
-                                            val itemHeight = size.height.toFloat().coerceAtLeast(1f)
-                                            val steps = (draggingAccountOffsetY / itemHeight).roundToInt()
-                                            val targetIndex = (currentIndex + steps).coerceIn(0, accountOrderIds.lastIndex)
-                                            if (targetIndex != currentIndex) {
-                                                val newOrder = accountOrderIds.toMutableList()
-                                                val moved = newOrder.removeAt(currentIndex)
-                                                newOrder.add(targetIndex, moved)
-                                                accountOrderIds = newOrder
-                                                draggingAccountOffsetY -= (targetIndex - currentIndex) * itemHeight
-                                            }
-                                        }
-                                    )
-                                }
                                 .clickable { selectedAccountForEdit = acc }
                         ) {
                             Row(
                                 modifier = Modifier.padding(18.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    Icons.Default.DragHandle,
-                                    contentDescription = "Drag to reorder",
-                                    tint = Color.White.copy(alpha = if (isDragging) 0.7f else 0.25f),
-                                    modifier = Modifier.size(18.dp)
-                                )
-
-                                Spacer(modifier = Modifier.width(10.dp))
-
                                 Icon(
                                     imageVector = when(acc.type) {
                                         "CASH" -> Icons.Default.Money
@@ -3498,12 +3547,29 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                     }
                                 }
 
-                                Text(
-                                    decFormat.format(bal),
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 16.sp,
-                                    color = if (bal >= 0) Color(0xFF10B981) else Color(0xFFF43F5E)
-                                )
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        decFormat.format(bal),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 16.sp,
+                                        color = if (bal >= 0) Color(0xFF10B981) else Color(0xFFF43F5E)
+                                    )
+                                    if (acc.type == "CREDIT_CARD" && acc.availableLimit > 0) {
+                                        Text(
+                                            text = "Avail: ${decFormat.format(acc.availableLimit)}",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF00E5FF)
+                                        )
+                                        if (acc.creditLimit > 0) {
+                                            val outstanding = acc.creditLimit - acc.availableLimit
+                                            Text(
+                                                text = "Due: ${decFormat.format(outstanding.coerceAtLeast(0.0))}",
+                                                fontSize = 11.sp,
+                                                color = Color(0xFFFB923C)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -3719,6 +3785,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
         var editBalanceInput by remember(acc) { mutableStateOf(acc.balance.toString()) }
         var editType by remember(acc) { mutableStateOf(acc.type) }
         var editLast4 by remember(acc) { mutableStateOf(acc.lastFour ?: "") }
+        var editCreditLimit by remember(acc) { mutableStateOf(if (acc.creditLimit > 0) acc.creditLimit.toString() else "") }
         var smsTrackingEnabled by remember(acc, blockedSmsAccountIds) { mutableStateOf(!blockedSmsAccountIds.contains(acc.id)) }
 
         val types = listOf("CASH", "BANK", "CREDIT_CARD", "SAVINGS")
@@ -3756,6 +3823,16 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    if (editType == "CREDIT_CARD") {
+                        OutlinedTextField(
+                            value = editCreditLimit,
+                            onValueChange = { editCreditLimit = it },
+                            label = { Text("Credit Limit (₹)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF)),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -3833,7 +3910,8 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                     name = editName,
                                     balance = adjustedBase,
                                     type = editType,
-                                    lastFour = if (editLast4.isBlank()) null else editLast4
+                                    lastFour = if (editLast4.isBlank()) null else editLast4,
+                                    creditLimit = editCreditLimit.toDoubleOrNull() ?: acc.creditLimit
                                 )
                             )
                             viewModel.setAccountSmsTrackingBlocked(acc, blocked = !smsTrackingEnabled)
@@ -4396,6 +4474,7 @@ fun EditTransactionDialog(
 ) {
     var title by remember { mutableStateOf(tx.title) }
     var amountStr by remember { mutableStateOf(tx.amount.toInt().toString()) }
+    var editType by remember { mutableStateOf(tx.type) }
     var categorySelection by remember {
         mutableStateOf(if (tx.category.equals("INCOME", ignoreCase = true)) "SALARY" else tx.category)
     }
@@ -4415,10 +4494,9 @@ fun EditTransactionDialog(
     } else {
         accounts.map { it.name }
     }
-    val filteredCats = if (tx.type == "EXPENSE") {
-        allCategories.filter { it.type == "EXPENSE" }
-    } else {
-        allCategories.filter { it.type == "INCOME" }
+    val filteredCats = when (editType) {
+        "INCOME" -> allCategories.filter { it.type == "INCOME" }
+        else -> allCategories.filter { it.type == "EXPENSE" }
     }
     val selectedCategory = filteredCats.firstOrNull { it.name == categorySelection }
         ?: allCategories.firstOrNull { it.name == categorySelection }
@@ -4441,6 +4519,32 @@ fun EditTransactionDialog(
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Column {
+                    Text("TRANSACTION TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("EXPENSE", "INCOME", "TRANSFER", "DUPLICATE").forEach { t ->
+                            val sel = editType == t
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(if (sel) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                    .border(1.dp, if (sel) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                    .clickable { editType = t }
+                                    .padding(6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    t, fontSize = 9.sp,
+                                    color = if (sel) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.6f),
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
 
                 OutlinedTextField(
                     value = title,
@@ -4502,6 +4606,7 @@ fun EditTransactionDialog(
                                     title = title,
                                     amount = dAmt,
                                     category = categorySelection,
+                                    type = editType,
                                     timestamp = selectedTimestamp,
                                     note = makeNoteWithAccount(notesStr, accountSelection)
                                 )
@@ -5098,7 +5203,7 @@ fun ExportCsvDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
-                        val fileName = "mymoney-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.xls"
+                        val fileName = "mymoney-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.xlsx"
                         excelExporter.launch(fileName)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))

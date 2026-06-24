@@ -732,6 +732,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 repository.insertTransaction(tx)
                                 projectedTransactions.add(tx)
                                 maybeNotifyBudgetAlert(tx, projectedTransactions)
+                                // Update available credit limit if parsed from CC payment SMS
+                                if (parsed.availableLimit != null && parsed.accountRef != null) {
+                                    val linkedAccount = repository.getAccountByLastFour(parsed.accountRef)
+                                    if (linkedAccount != null) {
+                                        repository.updateAccountAvailableLimit(linkedAccount.id, parsed.availableLimit)
+                                    }
+                                }
                                 matchedCount++
                             }
                         }
@@ -894,6 +901,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             )
             repository.insertTransaction(tx)
             maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
+
+            // Update available credit limit for credit card accounts if parsed from SMS
+            if (parsed.availableLimit != null && parsed.accountRef != null) {
+                val linkedAccount = repository.getAccountByLastFour(parsed.accountRef)
+                if (linkedAccount != null) {
+                    repository.updateAccountAvailableLimit(linkedAccount.id, parsed.availableLimit)
+                }
+            }
+
             _toastMessage.emit("Auto-Tracked Expense: ₹${parsed.amount} at ${parsed.title}")
         } else {
             _toastMessage.emit("SMS analyzed, but no valid transaction data was detected.")

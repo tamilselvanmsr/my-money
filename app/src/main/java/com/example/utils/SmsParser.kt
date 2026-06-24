@@ -23,7 +23,8 @@ data class SmsParsingResult(
     val accountRef: String? = null, // Linked account ending/identifier e.g. "4321"
     val sender: String? = null,     // Source of transfer
     val receiver: String? = null,    // Destination of transfer
-    val parsedTimestamp: Long? = null
+    val parsedTimestamp: Long? = null,
+    val availableLimit: Double? = null // Parsed available credit limit from CC SMS
 )
 
 object SmsParser {
@@ -208,7 +209,50 @@ object SmsParser {
         // 5b. Extract exact Date and Time parameters from body
         val parsedTime = extractTimestampFromSms(cleanBody, smsTimestamp)
 
-        // 6. EXTRACT PAYEE / MERCHANT / SENDER / RECEIVER DETAILS
+        // 5c. Early detection: credit card payment acknowledgment (duplicate of payment, no balance update)
+        val isCcPaymentAck = (lowerBody.contains("was credited to your card") ||
+            (lowerBody.contains("online payment") && lowerBody.contains("vide ref") && lowerBody.contains("card")))
+        if (isCcPaymentAck) {
+            return SmsParsingResult(
+                title = "CC Payment ACK",
+                amount = amount,
+                category = ExpenseCategory.DEBT,
+                type = "INCOME",
+                isGeminiParsed = false,
+                accountRef = last4Digits,
+                sender = accountRef,
+                receiver = "CC Payment ACK",
+                parsedTimestamp = parsedTime,
+                availableLimit = null
+            )
+        }
+
+        // 5d. Early detection: credit card bill payment (e.g. "payment of Rs. X received towards your credit card")
+        val isCreditCardPayment = lowerBody.contains("credit card") &&
+            (lowerBody.contains("received towards") || lowerBody.contains("towards your credit card") ||
+             (lowerBody.contains("payment") && lowerBody.contains("received") && lowerBody.contains("card")))
+        if (isCreditCardPayment) {
+            val availLimitPattern = Pattern.compile(
+                "(?:available|avl|avail)\\s*(?:credit\\s*)?(?:limit|bal|balance)\\s+(?:is\\s+)?(?:rs\\.?\\s*|inr\\s*)?([0-9,]+(?:\\.[0-9]{1,2})?)",
+                Pattern.CASE_INSENSITIVE
+            )
+            val availLimitMatcher = availLimitPattern.matcher(cleanBody)
+            val parsedAvailableLimit = if (availLimitMatcher.find()) {
+                availLimitMatcher.group(1)?.replace(",", "")?.toDoubleOrNull()
+            } else null
+            return SmsParsingResult(
+                title = "Credit Card Payment",
+                amount = amount,
+                category = ExpenseCategory.DEBT,
+                type = "INCOME",
+                isGeminiParsed = false,
+                accountRef = last4Digits,
+                sender = accountRef,
+                receiver = "Credit Card Payment",
+                parsedTimestamp = parsedTime,
+                availableLimit = parsedAvailableLimit
+            )
+        }
         var titleText = ""
         
         // Exact high-priority VPA / UPI ID lookup

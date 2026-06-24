@@ -108,5 +108,8 @@ interface FinanceDao {
 
     @Query("DELETE FROM accounts")
     suspend fun clearAllAccounts()
+
+    @Query("UPDATE accounts SET availableLimit = :availableLimit WHERE id = :accountId")
+    suspend fun updateAccountAvailableLimit(accountId: String, availableLimit: Double)
 }
 

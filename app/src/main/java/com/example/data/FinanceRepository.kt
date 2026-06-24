@@ -123,5 +123,9 @@ class FinanceRepository(private val financeDao: FinanceDao) {
     suspend fun clearAccounts() {
         financeDao.clearAllAccounts()
     }
+
+    suspend fun updateAccountAvailableLimit(accountId: String, availableLimit: Double) {
+        financeDao.updateAccountAvailableLimit(accountId, availableLimit)
+    }
 }
 

@@ -13,7 +13,7 @@ import androidx.room.RoomDatabase
         RecurringTransaction::class,
         Account::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class FinanceDatabase : RoomDatabase() {

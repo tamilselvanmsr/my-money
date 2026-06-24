@@ -10,6 +10,8 @@ data class Account(
     val name: String,
     val balance: Double, // This is the current running/adjusted balance
     val type: String, // "CASH", "BANK", "CREDIT_CARD", "SAVINGS"
-    val lastFour: String? = null // Linked last 4 digits for SMS matching (e.g., "1234")
+    val lastFour: String? = null, // Linked last 4 digits for SMS matching (e.g., "1234")
+    val creditLimit: Double = 0.0,    // User-set total credit limit (CREDIT_CARD only)
+    val availableLimit: Double = 0.0  // Latest available limit parsed from bank SMS
 )
 

@@ -60,7 +60,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     // Configurable options backed by persistent SharedPreferences
     private val prefs = application.getSharedPreferences("finance_settings", android.content.Context.MODE_PRIVATE)
 
-    private val _carryOverPreviousAmount = MutableStateFlow(prefs.getBoolean("carry_over_previous_amount", true))
+    private val _carryOverPreviousAmount = MutableStateFlow(prefs.getBoolean("carry_over_previous_amount", false))
     val carryOverPreviousAmount: StateFlow<Boolean> = _carryOverPreviousAmount.asStateFlow()
 
     private val _showTotal = MutableStateFlow(prefs.getBoolean("show_total", true))
@@ -826,6 +826,115 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun simulateSmsReceived(smsBody: String, sender: String) {
         analyzePastedSms(smsBody, sender, forcedKeys = listOf("txn"), customPatterns = emptyList())
+    }
+
+    /**
+     * Scans the device SMS inbox applying custom force-patterns and custom regex patterns in addition
+     * to the default SmsParser rules.  For each message that fails the default parse, this function
+     * retries with bypassExclusionFilter=true if the body contains at least one of the user-supplied
+     * patterns — making the rules "global" for the full inbox run.
+     */
+    fun scanInboxWithCustomRules(
+        context: android.content.Context,
+        forcePatterns: List<String>,
+        customPatterns: List<String>
+    ) {
+        viewModelScope.launch {
+            try {
+                val contentResolver = context.contentResolver
+                val cursor = contentResolver.query(
+                    android.net.Uri.parse("content://sms/inbox"),
+                    arrayOf("address", "body", "date"),
+                    null, null, "date DESC"
+                )
+
+                val threeMonthsAgo = System.currentTimeMillis() - 90L * 24 * 60 * 60 * 1000
+                var matchedCount = 0
+                val projectedTransactions = allTransactions.value.toMutableList()
+                val allPatterns = (forcePatterns + customPatterns).map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
+
+                if (cursor != null) {
+                    val bodyIndex = cursor.getColumnIndex("body")
+                    val addressIndex = cursor.getColumnIndex("address")
+                    val dateIndex = cursor.getColumnIndex("date")
+
+                    while (cursor.moveToNext()) {
+                        val smsDate = if (dateIndex != -1) cursor.getLong(dateIndex) else System.currentTimeMillis()
+                        if (smsDate < threeMonthsAgo) break
+
+                        val body = cursor.getString(bodyIndex) ?: ""
+                        val sender = cursor.getString(addressIndex) ?: "Unknown"
+
+                        // 1. Standard parse
+                        var parsed = com.example.utils.SmsParser.parseOffline(body, sender, smsDate, false)
+
+                        // 2. Retry with custom rules if default parse failed and body matches any pattern
+                        if (parsed == null && allPatterns.isNotEmpty()) {
+                            val lowerBody = body.lowercase()
+                            val matchesAny = allPatterns.any { pattern ->
+                                runCatching { Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(body) }
+                                    .getOrDefault(lowerBody.contains(pattern))
+                            }
+                            if (matchesAny) {
+                                val assistedBody = buildString {
+                                    append(body)
+                                    val helpers = allPatterns.flatMap { p ->
+                                        p.split(Regex("[^A-Za-z0-9@._-]+"))
+                                            .map { it.trim() }
+                                            .filter { it.length > 1 }
+                                    }.distinct()
+                                    if (helpers.isNotEmpty()) { append(' '); append(helpers.joinToString(" ")) }
+                                }
+                                parsed = com.example.utils.SmsParser.parseOffline(assistedBody, sender, smsDate, true)
+                            }
+                        }
+
+                        if (parsed != null) {
+                            val targetTime = parsed.parsedTimestamp ?: smsDate
+                            val walletName = ensureAccountExists(parsed.accountRef, sender, body) ?: continue
+                            val potentialDuplicates = repository.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
+                            val incomingRef = com.example.utils.SmsParser.getReferenceNumber(body)
+                            val duplicate = allTransactions.value.any { existing ->
+                                isDuplicateImportedTransaction(existing, body, parsed.title, parsed.amount, parsed.type, targetTime, incomingRef, walletName)
+                            } || potentialDuplicates.any { existing ->
+                                isDuplicateImportedTransaction(existing, body, parsed.title, parsed.amount, parsed.type, targetTime, incomingRef, walletName)
+                            }
+                            if (!duplicate) {
+                                val tx = TransactionEntry(
+                                    title = parsed.title,
+                                    amount = parsed.amount,
+                                    category = parsed.category.name,
+                                    type = parsed.type,
+                                    smsSender = sender,
+                                    smsBody = body,
+                                    timestamp = targetTime,
+                                    note = "$body [Acc: $walletName]"
+                                )
+                                repository.insertTransaction(tx)
+                                projectedTransactions.add(tx)
+                                maybeNotifyBudgetAlert(tx, projectedTransactions)
+                                if (parsed.availableLimit != null && parsed.accountRef != null) {
+                                    val linkedAccount = repository.getAccountByLastFour(parsed.accountRef)
+                                    if (linkedAccount != null) repository.updateAccountAvailableLimit(linkedAccount.id, parsed.availableLimit)
+                                }
+                                matchedCount++
+                            }
+                        }
+                    }
+                    cursor.close()
+                }
+
+                val rulesDesc = if (allPatterns.isNotEmpty()) " (with ${allPatterns.size} custom rule${if (allPatterns.size > 1) "s" else ""})" else ""
+                if (matchedCount > 0) {
+                    _toastMessage.emit("Imported $matchedCount transaction(s) from inbox$rulesDesc!")
+                } else {
+                    _toastMessage.emit("Scan complete$rulesDesc. No new transactions matched.")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Custom rule inbox scan failed: ${e.message}", e)
+                _toastMessage.emit("SMS scan failed. Ensure SMS read permission is granted.")
+            }
+        }
     }
 
     private suspend fun processManualSmsImport(

@@ -158,6 +158,7 @@ fun computeWalletBalances(
         }
     }
     for (tx in transactions) {
+        if (tx.type == "DUPLICATE") continue
         val account = tx.getAccountName(consolidate)
         val change = if (tx.type == "INCOME") tx.amount else -tx.amount
         balances[account] = (balances[account] ?: 0.0) + change
@@ -712,7 +713,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = if (selectedWallet == "All") "NET WALLET ASSETS" else "${selectedWallet.uppercase()} VALUE",
+                        text = if (selectedWallet == "All") "NET WALLET ASSETS" else "${selectedWallet.uppercase()}",
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         letterSpacing = 1.sp,
@@ -996,7 +997,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             color = Color(0xFF00E5FF)
                         )
                         
-                        val dateNet = txList.sumOf { if (it.type == "INCOME") it.amount else -it.amount }
+                        val dateNet = txList.filter { it.type != "DUPLICATE" }.sumOf { if (it.type == "INCOME") it.amount else -it.amount }
                         Text(
                             text = (if (dateNet >= 0) "+" else "") + decFormat.format(dateNet),
                             fontSize = 11.sp,
@@ -1071,10 +1072,18 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(
-                                    text = (if (tx.type == "INCOME") "+" else "-") + decFormat.format(tx.amount),
+                                    text = when (tx.type) {
+                                        "INCOME" -> "+" + decFormat.format(tx.amount)
+                                        "DUPLICATE" -> "DUP"
+                                        else -> "-" + decFormat.format(tx.amount)
+                                    },
                                     fontWeight = FontWeight.ExtraBold,
                                     fontSize = 15.sp,
-                                    color = if (tx.type == "INCOME") Color(0xFF10B981) else Color(0xFFF43F5E)
+                                    color = when (tx.type) {
+                                        "INCOME" -> Color(0xFF10B981)
+                                        "DUPLICATE" -> Color.White.copy(alpha = 0.35f)
+                                        else -> Color(0xFFF43F5E)
+                                    }
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
@@ -1578,7 +1587,7 @@ private fun AnalyticsOverviewSection(
                         val legendContent: @Composable () -> Unit = {
                             Column(
                                 modifier = Modifier.widthIn(max = 110.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                                verticalArrangement = Arrangement.spacedBy(0.dp)
                             ) {
                                 categoryTotals.forEachIndexed { idx, stats ->
                                     Row(
@@ -1589,7 +1598,7 @@ private fun AnalyticsOverviewSection(
                                                 activeSectorIndex = if (activeSectorIndex == idx) -1 else idx
                                             }
                                             .background(if (activeSectorIndex == idx) Color.White.copy(alpha = 0.06f) else Color.Transparent)
-                                            .padding(horizontal = 4.dp, vertical = 3.dp),
+                                            .padding(horizontal = 4.dp, vertical = 1.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Box(
@@ -1744,13 +1753,7 @@ private fun AnalyticsFlowSection(
     val calendarCells = remember(points) { buildAnalyticsCalendarCells(points) }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Surface(
-            color = Color(0xFF131A26),
-            shape = RoundedCornerShape(24.dp),
-            border = BorderStroke(1.dp, Color(0xFF1E293B)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1903,7 +1906,6 @@ private fun AnalyticsFlowSection(
                         }
                     }
                 }
-            }
         }
 
         Text(
@@ -1914,19 +1916,15 @@ private fun AnalyticsFlowSection(
             color = Color.White.copy(alpha = 0.6f)
         )
 
-        Surface(
-            color = Color(0xFF0F172A),
-            shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, Color(0xFF1E293B)),
+        Column(
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White.copy(alpha = 0.03f))
-                        .padding(vertical = 6.dp)
-                ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(alpha = 0.03f))
+                    .padding(vertical = 6.dp)
+            ) {
                     listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat").forEach { day ->
                         Text(
                             text = day,
@@ -1993,7 +1991,6 @@ private fun AnalyticsFlowSection(
             }
         }
     }
-}
 
 @Composable
 private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>) {
@@ -2015,6 +2012,14 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                     }
                 } else {
                     activeAccount?.let { stats ->
+                        Text(
+                            text = stats.accountName,
+                            color = stats.color,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -2149,7 +2154,15 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                     ) {
                         accountStats.forEachIndexed { index, stats ->
                             Text(
-                                text = stats.accountName.split(" ").first().take(5),
+                                text = run {
+                                    val n = stats.accountName
+                                    val upper = n.uppercase(java.util.Locale.getDefault())
+                                    val tag = if (upper.contains("CARD") || upper.contains("CREDIT") || upper.contains(" CC ")) {
+                                        val digits = n.filter { it.isDigit() }.takeLast(2)
+                                        "CC${if (digits.isNotEmpty()) " $digits" else ""}"
+                                    } else "BNK"
+                                    "${n.split(" ").first().take(4).uppercase(java.util.Locale.getDefault())} $tag"
+                                },
                                 color = if (index == activeAccountIndex) stats.color else Color.White.copy(alpha = 0.45f),
                                 fontSize = 10.sp,
                                 fontWeight = if (index == activeAccountIndex) FontWeight.Bold else FontWeight.Medium,
@@ -3883,7 +3896,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         onClick = {
                             val targetBal = editBalanceInput.toDoubleOrNull() ?: 0.0
                             val oldName = acc.name
-                            val txOffset = txs.filter { it.getAccountName() == oldName }
+                            val txOffset = txs.filter { it.getAccountName() == oldName && it.type != "DUPLICATE" }
                                 .sumOf { if (it.type == "INCOME") it.amount else -it.amount }
                             val adjustedBase = targetBal - txOffset
 
@@ -4046,49 +4059,23 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
                     Text(
-                        "PASTE MISSED SMS",
+                        "PARSER KEY RULES",
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         letterSpacing = 1.sp,
                         color = Color.White.copy(alpha = 0.5f)
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Paste a real bank SMS here. Core parser keys are selected by default, and you can keep adding more repeated words or patterns below.",
+                        "Select core keys and/or add custom patterns. Hit \"Scan Inbox\" to apply these rules globally across your SMS inbox. You can also paste a single SMS below to test.",
                         fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.6f)
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    OutlinedTextField(
-                        value = manualSmsSender,
-                        onValueChange = { manualSmsSender = it },
-                        label = { Text("Sender ID") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    OutlinedTextField(
-                        value = manualSmsBody,
-                        onValueChange = { manualSmsBody = it },
-                        label = { Text("Real SMS Body") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(120.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
                     Text(
-                        "Parser keys",
+                        "Parser keys (must contain at least one)",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White.copy(alpha = 0.55f)
@@ -4096,7 +4083,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     if (suggestedForcePatterns.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "Suggested from this SMS: ${suggestedForcePatterns.joinToString(", ")}",
+                            "Suggested from pasted SMS: ${suggestedForcePatterns.joinToString(", ")}",
                             fontSize = 10.sp,
                             color = Color(0xFF00E5FF)
                         )
@@ -4194,14 +4181,74 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Selected keys and added custom patterns are only used for this pasted message. They do not change automatic inbox scanning rules globally.",
-                        fontSize = 10.sp,
-                        color = Color.White.copy(alpha = 0.45f)
-                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Scan Inbox with custom rules (global)
+                    Button(
+                        onClick = {
+                            if (hasReadSmsPermission) {
+                                viewModel.scanInboxWithCustomRules(
+                                    context,
+                                    selectedForcePatterns.toList(),
+                                    customPatterns
+                                )
+                            } else {
+                                requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
+                            }
+                        },
+                        enabled = !isSmsParsing,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF), contentColor = Color.White),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            if (isSmsParsing) "Scanning…"
+                            else if (!hasReadSmsPermission) "Enable SMS Permission to Scan"
+                            else "Scan Inbox with These Rules",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.07f))
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        "PASTE MISSED SMS",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        letterSpacing = 1.sp,
+                        color = Color.White.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = manualSmsSender,
+                        onValueChange = { manualSmsSender = it },
+                        label = { Text("Sender ID") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = manualSmsBody,
+                        onValueChange = { manualSmsBody = it },
+                        label = { Text("Real SMS Body") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(110.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
                     Button(
                         onClick = { viewModel.analyzePastedSms(manualSmsBody, manualSmsSender, selectedForcePatterns.toList(), customPatterns) },
                         enabled = manualSmsBody.isNotBlank() && !isSmsParsing,
@@ -4212,7 +4259,84 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             .height(48.dp)
                             .testTag("analyze_pasted_sms_button")
                     ) {
-                        Text(if (isSmsParsing) "Analyzing Message..." else "Analyze & Import Pasted SMS", fontWeight = FontWeight.Bold)
+                        Text(if (isSmsParsing) "Analyzing…" else "Analyze & Import Pasted SMS", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // Parser exclusion rules reference card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1320)),
+                border = BorderStroke(1.dp, Color(0xFFF43F5E).copy(alpha = 0.25f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "PARSER EXCLUSION & INCLUSION RULES",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        letterSpacing = 1.sp,
+                        color = Color(0xFFF43F5E).copy(alpha = 0.8f)
+                    )
+                    Text(
+                        "These are the hard-coded rules the parser uses. Messages matching ANY exclusion word are rejected. Messages missing ALL inclusion words are also rejected.",
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.5f)
+                    )
+
+                    // EXCLUSION keywords (SmsFilterUtility hard-rejects)
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("AUTO-REJECT if body contains:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF43F5E))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("due", "emi", "loan", "otp", "mandate", "load", "eligibility", "apply", "approved").forEach { kw ->
+                                Surface(color = Color(0xFFF43F5E).copy(alpha = 0.12f), shape = RoundedCornerShape(6.dp)) {
+                                    Text(kw, fontSize = 10.sp, color = Color(0xFFF43F5E), fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    // OTP / promo exclusions from SmsParser
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("ALSO REJECTED (OTP / Promo / Reminder):", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF9800))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("one time password", "verification code", "do not share", "is due", "payment due", "reminder:",
+                                "pay before", "outstanding", "will be debited", "scheduled transfer", "pre-approved",
+                                "apply now", "earn cashback", "requesting money", "total amt due", "minimum amt due",
+                                "amount due", "stmt due").forEach { kw ->
+                                Surface(color = Color(0xFFFF9800).copy(alpha = 0.1f), shape = RoundedCornerShape(6.dp)) {
+                                    Text(kw, fontSize = 9.sp, color = Color(0xFFFF9800), fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    // REQUIRED inclusion keywords
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("REQUIRED — must contain at least one:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("debited", "credited", "spent", "received", "deducted", "sent", "paid", "withdrawn",
+                                "transfer", "payment", "charge", "txn", "salary", "refund", "autopay").forEach { kw ->
+                                Surface(color = Color(0xFF10B981).copy(alpha = 0.1f), shape = RoundedCornerShape(6.dp)) {
+                                    Text(kw, fontSize = 10.sp, color = Color(0xFF10B981), fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    // Structural requirement
+                    Surface(color = Color.White.copy(alpha = 0.04f), shape = RoundedCornerShape(10.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.CreditCard, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(16.dp))
+                            Text("Must contain a 3–4 digit account/card reference (e.g. a/c xx1234, card ending 4321, acc 567)",
+                                fontSize = 10.sp, color = Color.White.copy(alpha = 0.6f))
+                        }
                     }
                 }
             }

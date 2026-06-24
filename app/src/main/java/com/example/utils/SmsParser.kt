@@ -217,7 +217,7 @@ object SmsParser {
                 title = "CC Payment ACK",
                 amount = amount,
                 category = ExpenseCategory.DEBT,
-                type = "INCOME",
+                type = "DUPLICATE",
                 isGeminiParsed = false,
                 accountRef = last4Digits,
                 sender = accountRef,

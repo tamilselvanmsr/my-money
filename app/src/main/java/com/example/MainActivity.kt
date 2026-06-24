@@ -1577,8 +1577,8 @@ private fun AnalyticsOverviewSection(
                         }
                         val legendContent: @Composable () -> Unit = {
                             Column(
-                                modifier = Modifier.widthIn(max = 130.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                modifier = Modifier.widthIn(max = 110.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
                                 categoryTotals.forEachIndexed { idx, stats ->
                                     Row(
@@ -1697,9 +1697,9 @@ private fun AnalyticsOverviewSection(
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = "${String.format(Locale.getDefault(), "%.1f", stats.percentage * 100)}%",
-                            fontSize = 12.sp,
+                            fontSize = 16.sp,
                             color = stats.category.color,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.ExtraBold,
                             modifier = Modifier.widthIn(min = 44.dp),
                             textAlign = TextAlign.End
                         )
@@ -2006,14 +2006,8 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
     val activeAccount = accountStats.getOrNull(activeAccountIndex)
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Surface(
-            color = Color(0xFF131A26),
-            shape = RoundedCornerShape(24.dp),
-            border = BorderStroke(1.dp, Color(0xFF1E293B)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("ACCOUNT ACTIVITY CHART", fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp, color = Color.White.copy(alpha = 0.5f))
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("ACCOUNT ACTIVITY CHART", fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp, color = Color.White.copy(alpha = 0.5f))
 
                 if (accountStats.isEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
@@ -2021,50 +2015,38 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                     }
                 } else {
                     activeAccount?.let { stats ->
-                        Surface(
-                            color = stats.color.copy(alpha = 0.12f),
-                            shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.dp, stats.color.copy(alpha = 0.35f))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            Surface(
+                                color = Color(0xFF10B981).copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Text(stats.accountName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Surface(
-                                        color = Color(0xFF10B981).copy(alpha = 0.12f),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                                            Text("In", color = Color.White.copy(alpha = 0.55f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                                            Text(compactCurrency(stats.income), color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                    Surface(
-                                        color = Color(0xFFF43F5E).copy(alpha = 0.12f),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                                            Text("Out", color = Color.White.copy(alpha = 0.55f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                                            Text(compactCurrency(stats.expense), color = Color(0xFFF43F5E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                    Surface(
-                                        color = (if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043)).copy(alpha = 0.12f),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                                            Text("Net", color = Color.White.copy(alpha = 0.55f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                                            Text(compactCurrency(stats.net), color = if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Text("INCOME", color = Color.White.copy(alpha = 0.55f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(compactCurrency(stats.income), color = Color(0xFF10B981), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                                }
+                            }
+                            Surface(
+                                color = Color(0xFFF43F5E).copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Text("EXPENSE", color = Color.White.copy(alpha = 0.55f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(compactCurrency(stats.expense), color = Color(0xFFF43F5E), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                                }
+                            }
+                            Surface(
+                                color = (if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043)).copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Text("NET", color = Color.White.copy(alpha = 0.55f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(compactCurrency(stats.net), color = if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                             }
                         }
@@ -2167,7 +2149,7 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                     ) {
                         accountStats.forEachIndexed { index, stats ->
                             Text(
-                                text = stats.accountName.take(8),
+                                text = stats.accountName.split(" ").first().take(5),
                                 color = if (index == activeAccountIndex) stats.color else Color.White.copy(alpha = 0.45f),
                                 fontSize = 10.sp,
                                 fontWeight = if (index == activeAccountIndex) FontWeight.Bold else FontWeight.Medium,
@@ -2179,7 +2161,6 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                         }
                     }
                 }
-            }
         }
 
         if (accountStats.isNotEmpty()) {
@@ -2198,23 +2179,24 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                     border = BorderStroke(1.dp, stats.color.copy(alpha = 0.45f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(stats.accountName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("In", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp)
-                                Text(compactCurrency(stats.income), color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(stats.accountName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("IN", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                                Text(compactCurrency(stats.income), color = Color(0xFF10B981), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
                             }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Out", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp)
-                                Text(compactCurrency(stats.expense), color = Color(0xFFF43F5E), fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("OUT", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                                Text(compactCurrency(stats.expense), color = Color(0xFFF43F5E), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
                             }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Net", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp)
-                                Text(compactCurrency(stats.net), color = if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043), fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("NET", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                                Text(compactCurrency(stats.net), color = if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
                             }
                         }
                     }
@@ -2771,7 +2753,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         }
                     ) {
                         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(verticalAlignment = Alignment.Top) {
                                 Surface(shape = CircleShape, color = cat.color.copy(alpha = 0.15f), modifier = Modifier.size(52.dp)) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(imageVector = cat.icon, contentDescription = cat.name, tint = cat.color, modifier = Modifier.size(26.dp))
@@ -2779,11 +2761,30 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                         Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White,
                                             modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
                                         Text("${compactCurrency(catSpend)} / ${compactCurrency(limit)}", fontSize = 13.sp, color = Color.White.copy(alpha = 0.65f), fontWeight = FontWeight.SemiBold)
+                                        Box {
+                                            IconButton(onClick = { showCategoryMenuFor = cat.name }, modifier = Modifier.size(28.dp)) {
+                                                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+                                            }
+                                            DropdownMenu(
+                                                expanded = showCategoryMenuFor == cat.name,
+                                                onDismissRequest = { showCategoryMenuFor = null },
+                                                containerColor = Color(0xFF1E293B)
+                                            ) {
+                                                DropdownMenuItem(
+                                                    text = { Text(if (activeCategoryTypeTab == "INCOME") "Edit Expected Amount" else "Edit Budget", color = Color.White, fontSize = 13.sp) },
+                                                    onClick = { showBudgetAmountDialog = cat; showCategoryMenuFor = null }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("Remove Budget", color = Color(0xFFF43F5E), fontSize = 13.sp) },
+                                                    onClick = { viewModel.deleteBudget(budgetObj.id); showCategoryMenuFor = null }
+                                                )
+                                            }
+                                        }
                                     }
                                     Text(
                                         text = "Remaining: ${compactCurrency(remaining)}",
@@ -2803,25 +2804,6 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                             text = "${String.format(Locale.getDefault(), "%.1f", percent)}%",
                                             fontSize = 13.sp, fontWeight = FontWeight.Bold, color = progressColor,
                                             modifier = Modifier.widthIn(min = 44.dp), textAlign = TextAlign.End
-                                        )
-                                    }
-                                }
-                                Box {
-                                    IconButton(onClick = { showCategoryMenuFor = cat.name }, modifier = Modifier.size(32.dp)) {
-                                        Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
-                                    }
-                                    DropdownMenu(
-                                        expanded = showCategoryMenuFor == cat.name,
-                                        onDismissRequest = { showCategoryMenuFor = null },
-                                        containerColor = Color(0xFF1E293B)
-                                    ) {
-                                        DropdownMenuItem(
-                                            text = { Text(if (activeCategoryTypeTab == "INCOME") "Edit Expected Amount" else "Edit Budget", color = Color.White, fontSize = 13.sp) },
-                                            onClick = { showBudgetAmountDialog = cat; showCategoryMenuFor = null }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Remove Budget", color = Color(0xFFF43F5E), fontSize = 13.sp) },
-                                            onClick = { viewModel.deleteBudget(budgetObj.id); showCategoryMenuFor = null }
                                         )
                                     }
                                 }
@@ -4524,7 +4506,7 @@ fun EditTransactionDialog(
                     Text("TRANSACTION TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("EXPENSE", "INCOME", "TRANSFER", "DUPLICATE").forEach { t ->
+                        listOf("EXPENSE", "INCOME", "DUPLICATE").forEach { t ->
                             val sel = editType == t
                             Box(
                                 modifier = Modifier

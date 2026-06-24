@@ -31,22 +31,27 @@ enum class ExpenseCategory(
     INSURANCE("Insurance", Icons.Default.Security, Color(0xFFEC407A)),
     SOCIAL("Social", Icons.Default.Group, Color(0xFF00BCD4)),
     TAX("Tax", Icons.Default.Percent, Color(0xFF795548)),
-    TRANSPORTATION("Transportation", Icons.Default.AirportShuttle, Color(0xFF03A9F4)),
     SPORT("Sport", Icons.Default.SportsSoccer, Color(0xFF8BC34A)),
     GYM("Gym", Icons.Default.FitnessCenter, Color(0xFF455A64)),
     RECHARGE("Recharge", Icons.Default.Smartphone, Color(0xFF009688)),
     
     // Additional requested standard categories (Expense)
     DEBT("Debt / Loan", Icons.Default.CreditCard, Color(0xFF795548)),
-    FUEL("Fuel & Petrol", Icons.Default.LocalGasStation, Color(0xFFFF9800)),
+    FUEL("Fuel", Icons.Default.LocalGasStation, Color(0xFFFF9800)),
     CLOTHES("Clothes", Icons.Default.Checkroom, Color(0xFFEC407A)),
     SHOES("Shoes & Footwear", Icons.Default.ShoppingBag, Color(0xFF9C27B0)),
-    POCKET_MONEY("Pocket Money (Spent)", Icons.Default.Payments, Color(0xFFFF5722)),
+    POCKET_MONEY("Pocket Money", Icons.Default.Payments, Color(0xFFFF5722)),
     FRUITS("Fruits & Veggies", Icons.Default.Eco, Color(0xFF4CAF50)),
     TRAVEL("Travel & Commute", Icons.Default.Flight, Color(0xFF03A9F4)),
     BIKE("Bike & Maintenance", Icons.Default.TwoWheeler, Color(0xFF00BCD4)),
-    PROTEIN_POWDERS("Protein Powders & Gym", Icons.Default.FitnessCenter, Color(0xFF455A64)),
     GIFTING_FRIENDS("Gifting Friends", Icons.Default.CardGiftcard, Color(0xFFE91E63)),
+    INVESTMENT("Investment", Icons.Default.TrendingUp, Color(0xFF4CAF50)),
+    MUTUAL_FUND("Mutual Fund", Icons.Default.AccountBalance, Color(0xFF00897B)),
+    ETF("ETF", Icons.Default.BarChart, Color(0xFF1976D2)),
+    RENT("Rent", Icons.Default.Home, Color(0xFF7E57C2)),
+    COOKING("Cooking", Icons.Default.Kitchen, Color(0xFFFF7043)),
+    OUTSIDE_FOOD("Outside Food", Icons.Default.Fastfood, Color(0xFFFFB300)),
+    GROCERIES("Groceries", Icons.Default.ShoppingCart, Color(0xFF43A047)),
 
     // Newly requested Income categories
     CASHBACK("Cashback", Icons.Default.Redeem, Color(0xFF14B8A6), "INCOME"),
@@ -137,6 +142,13 @@ object CategoryResolver {
             "creditcard" -> Icons.Default.CreditCard
             "qrcode" -> Icons.Default.QrCode
             "upi" -> Icons.Default.QrCode
+            "investment" -> Icons.Default.TrendingUp
+            "mutual_fund" -> Icons.Default.AccountBalance
+            "etf" -> Icons.Default.BarChart
+            "rent" -> Icons.Default.Home
+            "cooking" -> Icons.Default.Kitchen
+            "outside_food" -> Icons.Default.Fastfood
+            "groceries" -> Icons.Default.ShoppingCart
             else -> Icons.Default.Category
         }
     }

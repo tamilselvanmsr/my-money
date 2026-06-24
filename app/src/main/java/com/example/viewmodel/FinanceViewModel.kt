@@ -570,6 +570,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun updateTransaction(tx: TransactionEntry) {
         viewModelScope.launch {
             repository.updateTransaction(tx)
+            // Auto-categorize all transactions with the same payee title
+            if (tx.category.isNotBlank() && tx.title.isNotBlank()) {
+                repository.recategorizeByTitle(tx.title, tx.category, tx.id)
+            }
             maybeNotifyBudgetAlert(tx, allTransactions.value.map { if (it.id == tx.id) tx else it })
             _toastMessage.emit("Updated transaction details")
         }
@@ -803,6 +807,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 smsBody = cleanBody,
                 parserBody = assistedBody,
                 sender = cleanSender,
+                bypassExclusionFilter = customPatternList.isNotEmpty(),
                 progressMessage = if (customPatternList.isEmpty()) {
                     "Analyzing pasted SMS with selected parser keys..."
                 } else {
@@ -820,7 +825,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         smsBody: String,
         parserBody: String,
         sender: String,
-        progressMessage: String
+        progressMessage: String,
+        bypassExclusionFilter: Boolean = false
     ) {
         _isSmsParsing.value = true
         val apiKey = BuildConfig.GEMINI_API_KEY
@@ -831,7 +837,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         } else {
             _toastMessage.emit(progressMessage)
             withContext(Dispatchers.Default) {
-                SmsParser.parseOffline(parserBody, sender, System.currentTimeMillis())
+                SmsParser.parseOffline(parserBody, sender, System.currentTimeMillis(), bypassExclusionFilter)
             }
         }
 
@@ -875,10 +881,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 return
             }
 
+            val learnedCategory = if (parsed.title.isNotBlank()) repository.getLearnedCategoryForTitle(parsed.title) else null
             val tx = TransactionEntry(
                 title = parsed.title,
                 amount = parsed.amount,
-                category = parsed.category.name,
+                category = learnedCategory ?: parsed.category.name,
                 type = parsed.type,
                 smsSender = sender,
                 smsBody = smsBody,

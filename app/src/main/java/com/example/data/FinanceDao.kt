@@ -40,6 +40,12 @@ interface FinanceDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBudget(budget: BudgetEntry)
 
+    @Query("UPDATE transactions SET category = :newCategory WHERE TRIM(LOWER(title)) = TRIM(LOWER(:title)) AND id != :excludeId")
+    suspend fun recategorizeByTitle(title: String, newCategory: String, excludeId: Int)
+
+    @Query("SELECT category FROM transactions WHERE TRIM(LOWER(title)) = TRIM(LOWER(:title)) ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLearnedCategoryForTitle(title: String): String?
+
     @Query("DELETE FROM budgets WHERE id = :id")
     suspend fun deleteBudgetById(id: Int)
 

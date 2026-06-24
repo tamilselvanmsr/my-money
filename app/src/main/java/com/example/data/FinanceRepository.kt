@@ -62,6 +62,14 @@ class FinanceRepository(private val financeDao: FinanceDao) {
         financeDao.updateBudgetCategory(oldCategory, newCategory)
     }
 
+    suspend fun recategorizeByTitle(title: String, newCategory: String, excludeId: Int) {
+        financeDao.recategorizeByTitle(title, newCategory, excludeId)
+    }
+
+    suspend fun getLearnedCategoryForTitle(title: String): String? {
+        return financeDao.getLearnedCategoryForTitle(title)
+    }
+
     suspend fun deleteCustomCategory(id: Int) {
         financeDao.deleteCustomCategoryById(id)
     }

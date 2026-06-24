@@ -30,14 +30,14 @@ object SmsParser {
     private const val TAG = "SmsParser"
 
     // Strict offline parser based on high-precision regex signatures
-    fun parseOffline(body: String, senderId: String?, smsTimestamp: Long? = null): SmsParsingResult? {
+    fun parseOffline(body: String, senderId: String?, smsTimestamp: Long? = null, bypassExclusionFilter: Boolean = false): SmsParsingResult? {
         val cleanBody = body.replace("\\s+".toRegex(), " ").trim()
         val lowerBody = cleanBody.lowercase()
 
         Log.d(TAG, "Parsing text: '$cleanBody' from sender: '$senderId'")
 
-        // 0. Use the dedicated strict regex filtering utility
-        if (!SmsFilterUtility.isValidTransactionSms(body)) {
+        // 0. Use the dedicated strict regex filtering utility (bypassed for manual paste with custom patterns)
+        if (!bypassExclusionFilter && !SmsFilterUtility.isValidTransactionSms(body)) {
             Log.d(TAG, "Excluded: Failed validation check in SmsFilterUtility.")
             return null
         }
@@ -105,7 +105,7 @@ object SmsParser {
             && !lowerBody.contains("payment received")
         )
 
-        if (isNonTransactionalDoc) {
+        if (isNonTransactionalDoc && !bypassExclusionFilter) {
             Log.d(TAG, "Excluded: Message identified as promo, reminder, due notice or pending payment request.")
             return null
         }
@@ -343,7 +343,7 @@ object SmsParser {
                         lowerTitleText.contains("education") || lowerTitleText.contains("book") || lowerTitleText.contains("course") -> ExpenseCategory.EDUCATION
 
                         lowerTitleText.contains("protein") || lowerTitleText.contains("powder") || lowerTitleText.contains("supplement") ||
-                        lowerTitleText.contains("whey") || lowerTitleText.contains("nutrition") -> ExpenseCategory.PROTEIN_POWDERS
+                        lowerTitleText.contains("whey") || lowerTitleText.contains("nutrition") -> ExpenseCategory.GYM
 
                         lowerTitleText.contains("gym") || lowerTitleText.contains("fitness") || lowerTitleText.contains("workout") -> ExpenseCategory.GYM
 

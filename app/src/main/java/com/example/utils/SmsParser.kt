@@ -314,8 +314,10 @@ object SmsParser {
                 type == "INCOME" -> {
                     val lowerTitleText = titleText.lowercase()
                     when {
+                        lowerTitleText.contains("cashback") || lowerBody.contains("cashback") -> ExpenseCategory.CASHBACK
+                        lowerTitleText.contains("upi") || lowerBody.contains("upi") -> ExpenseCategory.UPI
                         lowerTitleText.contains("pocket money") || lowerTitleText.contains("allowance") -> ExpenseCategory.POCKET_MONEY_INC
-                        else -> ExpenseCategory.INCOME
+                        else -> ExpenseCategory.SALARY
                     }
                 }
                 else -> {
@@ -417,7 +419,7 @@ object SmsParser {
             {
                "title": "Clean concise Payee / Merchant / Payer Name (Capitalized, max 30 chars, e.g., 'Starbucks', 'Uber', 'Amazon', 'Salary Checking'). For UPI ids, extract name like 'Jeeva (UPI)' instead of 'jeeva@paytm'.",
                "amount": 12.34, // Positive Double of transaction amount only
-               "category": "One of: FOOD, SHOPPING, TRANSPORT, BILLS, ENTERTAINMENT, HEALTHCARE, EDUCATION, INCOME, OTHERS",
+               "category": "One of: FOOD, SHOPPING, TRANSPORT, BILLS, ENTERTAINMENT, HEALTHCARE, EDUCATION, SALARY, CASHBACK, UPI, REFUNDS, RENTAL, SALE, REWARDS, COUPONS, GRANTS, COINS, POCKET_MONEY_INC, OTHERS",
                "type": "EXPENSE" or "INCOME",
                "accountRef": "Last 4 digits only of card/wallet identifier e.g. '1234' or '8765'. Set null if not found.",
                "sender": "Source account code, card label, or merchant sending funds",

@@ -23,7 +23,6 @@ enum class ExpenseCategory(
     ENTERTAINMENT("Entertainment", Icons.Default.LocalPlay, Color(0xFFFF5722)),
     HEALTHCARE("Healthcare", Icons.Default.MedicalServices, Color(0xFF4CAF50)),
     EDUCATION("Education", Icons.Default.School, Color(0xFF009688)),
-    INCOME("Salary & Income", Icons.Default.AttachMoney, Color(0xFF2E7D32), "INCOME"),
     OTHERS("Others / Misc", Icons.Default.Category, Color(0xFF607D8B)),
 
     // Newly requested Expense categories
@@ -50,7 +49,7 @@ enum class ExpenseCategory(
     GIFTING_FRIENDS("Gifting Friends", Icons.Default.CardGiftcard, Color(0xFFE91E63)),
 
     // Newly requested Income categories
-    AWARDS("Awards", Icons.Default.EmojiEvents, Color(0xFFFFD700), "INCOME"),
+    CASHBACK("Cashback", Icons.Default.Redeem, Color(0xFF14B8A6), "INCOME"),
     COUPONS("Coupons", Icons.Default.CardGiftcard, Color(0xFFFF4081), "INCOME"),
     GRANTS("Grants", Icons.Default.Handshake, Color(0xFF00E676), "INCOME"),
     REFUNDS("Refunds", Icons.Default.Cached, Color(0xFF00B0FF), "INCOME"),
@@ -59,10 +58,14 @@ enum class ExpenseCategory(
     SALE("Sale", Icons.Default.Storefront, Color(0xFFFF9100), "INCOME"),
     REWARDS("Rewards", Icons.Default.MilitaryTech, Color(0xFF76FF03), "INCOME"),
     COINS("Coins", Icons.Default.Savings, Color(0xFFFBC02D), "INCOME"),
+    UPI("UPI", Icons.Default.QrCode, Color(0xFF0EA5E9), "INCOME"),
     POCKET_MONEY_INC("Pocket Money (Received)", Icons.Default.Savings, Color(0xFF2E7D32), "INCOME");
 
     companion object {
         fun fromString(name: String): ExpenseCategory {
+            if (name.equals("INCOME", ignoreCase = true)) {
+                return SALARY
+            }
             return entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: OTHERS
         }
     }
@@ -79,6 +82,17 @@ data class DisplayCategory(
 )
 
 object CategoryResolver {
+    private fun legacyIncomeCategory(): DisplayCategory {
+        return DisplayCategory(
+            name = ExpenseCategory.SALARY.name,
+            displayName = ExpenseCategory.SALARY.displayName,
+            icon = ExpenseCategory.SALARY.icon,
+            color = ExpenseCategory.SALARY.color,
+            isCustom = false,
+            type = ExpenseCategory.SALARY.type
+        )
+    }
+
     fun getIconFromIconName(name: String): ImageVector {
         val cleanName = name.split(":").firstOrNull() ?: name
         return when (cleanName.lowercase()) {
@@ -103,7 +117,7 @@ object CategoryResolver {
             "social" -> Icons.Default.Group
             "tax" -> Icons.Default.Percent
             "transportation" -> Icons.Default.AirportShuttle
-            "awards" -> Icons.Default.EmojiEvents
+            "cashback" -> Icons.Default.Redeem
             "coupons" -> Icons.Default.CardGiftcard
             "grants" -> Icons.Default.Handshake
             "refunds" -> Icons.Default.Cached
@@ -128,6 +142,10 @@ object CategoryResolver {
     }
 
     fun resolve(name: String, customList: List<CustomCategory>): DisplayCategory {
+        if (name.equals("INCOME", ignoreCase = true)) {
+            return legacyIncomeCategory()
+        }
+
         val custom = customList.firstOrNull { it.name.equals(name, ignoreCase = true) && !it.iconName.startsWith("hidden:") && it.iconName != "hidden" }
         if (custom != null) {
             val parts = custom.iconName.split(":")

@@ -13,7 +13,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
 import com.example.data.*
-import com.example.utils.CsvExporter
+import com.example.utils.ExcelExporter
 import com.example.utils.PdfExporter
 import com.example.utils.SecurityUtils
 import com.example.utils.SmsParser
@@ -110,7 +110,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         _selectedMonthYear.value = current
         createBudgetAlertChannel()
         checkAndLogRecurringTransactions()
-        seedAccountsIfEmpty()
     }
 
     private fun createBudgetAlertChannel() {
@@ -295,23 +294,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val hideCat = CustomCategory(name = name, iconName = "hidden:$type", colorHex = "#000000")
             repository.insertCustomCategory(hideCat)
             _toastMessage.emit("Category '$name' removed.")
-        }
-    }
-
-    fun seedAccountsIfEmpty() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val accounts = repository.allAccounts.first()
-                if (accounts.isEmpty()) {
-                    repository.insertAccount(Account(name = "Cash Wallet", balance = 0.0, type = "CASH"))
-                    repository.insertAccount(Account(name = "Bank Account", balance = 0.0, type = "BANK"))
-                    repository.insertAccount(Account(name = "Credit Card", balance = 0.0, type = "CREDIT_CARD"))
-                    repository.insertAccount(Account(name = "Savings Goal", balance = 0.0, type = "SAVINGS"))
-                    Log.d(TAG, "Completed seeding default list of wallets.")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Exception seeding default accounts: ${e.message}", e)
-            }
         }
     }
 
@@ -654,12 +636,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // Export to CSV
-    fun getCsvData(): String {
-        return CsvExporter.exportToCsvString(allTransactions.value)
+    fun getExcelData(): ByteArray {
+        return ExcelExporter.exportToExcelBytes(allTransactions.value, allCustomCategories.value)
     }
 
     fun getPdfData(): ByteArray {
-        return PdfExporter.exportToPdfBytes(allTransactions.value)
+        return PdfExporter.exportToPdfBytes(allTransactions.value, allCustomCategories.value)
     }
 
     // Cloud Synchronization Simulation (Simulates encrypted backup to cloud storage)

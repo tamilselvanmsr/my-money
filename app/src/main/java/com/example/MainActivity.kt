@@ -361,6 +361,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
     val showTotal by viewModel.showTotal.collectAsStateWithLifecycle()
     val consolidateAccounts by viewModel.consolidateAccounts.collectAsStateWithLifecycle()
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
+    val decFormat = DecimalFormat("₹#,##0.00")
     
     var selectedWallet by remember { mutableStateOf("All") }
     var selectedTxForEdit by remember { mutableStateOf<TransactionEntry?>(null) }
@@ -410,8 +411,6 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
     val totalExpense = monthTransactions.filter { it.type == "EXPENSE" }.sumOf { it.amount }
     val netBalance = totalIncome - totalExpense
     val totalWealth = walletsBalances.values.sum()
-
-    val decFormat = DecimalFormat("₹#,##0.00")
 
     LazyColumn(
         modifier = Modifier
@@ -1216,16 +1215,15 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                             )
                         }
                     } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(210.dp)
-                                    .padding(12.dp)
-                            ) {
+                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                            val isCompact = maxWidth < 420.dp
+                            val chartSize = if (isCompact) 170.dp else 180.dp
+                            val chartContent: @Composable () -> Unit = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(chartSize)
+                                        .padding(8.dp)
+                                ) {
                                 Canvas(
                                     modifier = Modifier
                                         .fillMaxSize()
@@ -1312,7 +1310,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = decFormat.format(highlightItem?.total ?: totalExpenseSum),
+                                        text = DecimalFormat("₹#,##0.00").format(highlightItem?.total ?: totalExpenseSum),
                                         fontSize = 18.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         color = highlightItem?.category?.color ?: Color(0xFF00E5FF)
@@ -1327,35 +1325,62 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                         )
                                     }
                                 }
+                                }
                             }
-
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                categoryTotals.forEachIndexed { idx, stats ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .clickable {
-                                                activeSectorIndex = if (activeSectorIndex == idx) -1 else idx
-                                            }
-                                            .background(if (activeSectorIndex == idx) Color.White.copy(alpha = 0.06f) else Color.Transparent)
-                                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Box(
+                            val legendContent: @Composable () -> Unit = {
+                                Column(
+                                    modifier = if (isCompact) Modifier.fillMaxWidth() else Modifier.widthIn(max = 150.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    categoryTotals.forEachIndexed { idx, stats ->
+                                        Row(
                                             modifier = Modifier
-                                                .size(10.dp)
-                                                .background(stats.category.color, CircleShape)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(stats.category.displayName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                            Text(decFormat.format(stats.total), color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp)
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .clickable {
+                                                    activeSectorIndex = if (activeSectorIndex == idx) -1 else idx
+                                                }
+                                                .background(if (activeSectorIndex == idx) Color.White.copy(alpha = 0.06f) else Color.Transparent)
+                                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(10.dp)
+                                                    .background(stats.category.color, CircleShape)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                stats.category.displayName,
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
                                         }
                                     }
+                                }
+                            }
+
+                            if (isCompact) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    chartContent()
+                                    legendContent()
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) { chartContent() }
+                                    legendContent()
                                 }
                             }
                         }
@@ -1527,7 +1552,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
     }
 
     val standardCategoriesList = CategoryResolver.getAll(customCats).filter {
-        it.type == activeCategoryTypeTab && !it.name.equals("INCOME", ignoreCase = true)
+        it.type == activeCategoryTypeTab
     }
     val decFormat = DecimalFormat("₹#,##0.00")
 
@@ -2255,16 +2280,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
     
     val decFormat = DecimalFormat("₹#,##0.00")
 
-    val activeAccounts = if (accounts.isEmpty()) {
-        listOf(
-            Account(id = "1", name = "Cash Wallet", balance = 5000.0, type = "CASH"),
-            Account(id = "2", name = "Bank Account", balance = 25000.0, type = "BANK"),
-            Account(id = "3", name = "Credit Card", balance = -2300.0, type = "CREDIT_CARD"),
-            Account(id = "4", name = "Savings Goal", balance = 15000.0, type = "SAVINGS")
-        )
-    } else {
-        accounts
-    }
+    val activeAccounts = accounts
 
     val totalAllAccounts = activeAccounts.sumOf { walletsBalances[it.name] ?: 0.0 }
     val totalIncomeSoFar = txs.filter { it.type == "INCOME" }.sumOf { it.amount }
@@ -2335,11 +2351,16 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .height(52.dp),
+                enabled = activeAccounts.size >= 2
             ) {
                 Icon(Icons.Default.SwapHoriz, contentDescription = "Transfer icon")
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Transfer Funds Between Wallets", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(
+                    if (activeAccounts.size >= 2) "Transfer Funds Between Wallets" else "Add at least 2 wallets to transfer funds",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
             }
         }
 
@@ -2368,70 +2389,108 @@ fun AccountScreen(viewModel: FinanceViewModel) {
             }
         }
 
-        items(activeAccounts.size) { index ->
-            val acc = activeAccounts[index]
-            val bal = walletsBalances[acc.name] ?: 0.0
-            val color = when(acc.type) {
-                "CASH" -> Color(0xFF10B981)
-                "BANK" -> Color(0xFF00E5FF)
-                "CREDIT_CARD" -> Color(0xFFF43F5E)
-                "SAVINGS" -> Color(0xFFE91E63)
-                else -> Color(0xFF94A3B8)
-            }
-            
-            Surface(
-                color = Color(0xFF131A26),
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, Color(0xFF1E293B)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { selectedAccountForEdit = acc }
-            ) {
-                Row(
-                    modifier = Modifier.padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically
+        if (activeAccounts.isEmpty()) {
+            item {
+                Surface(
+                    color = Color(0xFF131A26),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        imageVector = when(acc.type) {
-                            "CASH" -> Icons.Default.Money
-                            "BANK" -> Icons.Default.AccountBalance
-                            "CREDIT_CARD" -> Icons.Default.CreditCard
-                            "SAVINGS" -> Icons.Default.Savings
-                            else -> Icons.Default.AllInclusive
-                        },
-                        contentDescription = acc.type,
-                        tint = color,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            acc.name,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Color.White
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AccountBalanceWallet,
+                            contentDescription = "No wallets",
+                            tint = Color.White.copy(alpha = 0.25f),
+                            modifier = Modifier.size(40.dp)
                         )
                         Text(
-                            text = when(acc.type) {
-                                "CASH" -> "On-Hand Liquidity"
-                                "BANK" -> "Savings & Online Deposit"
-                                "CREDIT_CARD" -> "Line of Credit Liability"
-                                "SAVINGS" -> "Target Reserves Accumulator"
-                                else -> "Custom Register"
-                            },
-                            fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.4f)
+                            text = "No wallets added yet",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                        Text(
+                            text = "Add a wallet to track real balances. No default balances are created automatically.",
+                            color = Color.White.copy(alpha = 0.55f),
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
                         )
                     }
+                }
+            }
+        } else {
+            items(activeAccounts.size) { index ->
+                val acc = activeAccounts[index]
+                val bal = walletsBalances[acc.name] ?: 0.0
+                val color = when(acc.type) {
+                    "CASH" -> Color(0xFF10B981)
+                    "BANK" -> Color(0xFF00E5FF)
+                    "CREDIT_CARD" -> Color(0xFFF43F5E)
+                    "SAVINGS" -> Color(0xFFE91E63)
+                    else -> Color(0xFF94A3B8)
+                }
 
-                    Text(
-                        decFormat.format(bal),
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 16.sp,
-                        color = if (bal >= 0) Color(0xFF10B981) else Color(0xFFF43F5E)
-                    )
+                Surface(
+                    color = Color(0xFF131A26),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { selectedAccountForEdit = acc }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(18.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = when(acc.type) {
+                                "CASH" -> Icons.Default.Money
+                                "BANK" -> Icons.Default.AccountBalance
+                                "CREDIT_CARD" -> Icons.Default.CreditCard
+                                "SAVINGS" -> Icons.Default.Savings
+                                else -> Icons.Default.AllInclusive
+                            },
+                            contentDescription = acc.type,
+                            tint = color,
+                            modifier = Modifier.size(24.dp)
+                        )
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                acc.name,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = Color.White
+                            )
+                            Text(
+                                text = when(acc.type) {
+                                    "CASH" -> "On-Hand Liquidity"
+                                    "BANK" -> "Savings & Online Deposit"
+                                    "CREDIT_CARD" -> "Line of Credit Liability"
+                                    "SAVINGS" -> "Target Reserves Accumulator"
+                                    else -> "Custom Register"
+                                },
+                                fontSize = 11.sp,
+                                color = Color.White.copy(alpha = 0.4f)
+                            )
+                        }
+
+                        Text(
+                            decFormat.format(bal),
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp,
+                            color = if (bal >= 0) Color(0xFF10B981) else Color(0xFFF43F5E)
+                        )
+                    }
                 }
             }
         }
@@ -2999,7 +3058,7 @@ fun AddTransactionDialog(
                             .background(if (!isExp) Color(0xFF10B981) else Color.Transparent)
                             .clickable {
                                 transactionType = "INCOME"
-                                categorySelection = "INCOME"
+                                categorySelection = "SALARY"
                             }
                             .padding(8.dp),
                         contentAlignment = Alignment.Center
@@ -3055,9 +3114,9 @@ fun AddTransactionDialog(
                 Text("Select Category", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val filteredCats = if (transactionType == "EXPENSE") {
-                        allCategories.filter { it.type == "EXPENSE" && !it.name.equals("INCOME", ignoreCase = true) }
+                        allCategories.filter { it.type == "EXPENSE" }
                     } else {
-                        allCategories.filter { it.type == "INCOME" || it.name.equals("INCOME", ignoreCase = true) }
+                        allCategories.filter { it.type == "INCOME" }
                     }
                     items(filteredCats) { cat ->
                         val active = categorySelection == cat.name
@@ -3126,7 +3185,9 @@ fun EditTransactionDialog(
 ) {
     var title by remember { mutableStateOf(tx.title) }
     var amountStr by remember { mutableStateOf(tx.amount.toInt().toString()) }
-    var categorySelection by remember { mutableStateOf(tx.category) }
+    var categorySelection by remember {
+        mutableStateOf(if (tx.category.equals("INCOME", ignoreCase = true)) "SALARY" else tx.category)
+    }
     var accountSelection by remember { mutableStateOf(tx.getAccountName()) }
     var notesStr by remember { mutableStateOf(tx.note?.substringBefore(" [Acc:")?.trim() ?: "") }
     var selectedTimestamp by remember { mutableStateOf(tx.timestamp) }
@@ -3195,9 +3256,9 @@ fun EditTransactionDialog(
                 Text("Change Category", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val filteredCats = if (tx.type == "EXPENSE") {
-                        allCategories.filter { it.type == "EXPENSE" && !it.name.equals("INCOME", ignoreCase = true) }
+                        allCategories.filter { it.type == "EXPENSE" }
                     } else {
-                        allCategories.filter { it.type == "INCOME" || it.name.equals("INCOME", ignoreCase = true) }
+                        allCategories.filter { it.type == "INCOME" }
                     }
                     items(filteredCats) { cat ->
                         val active = categorySelection == cat.name
@@ -3337,12 +3398,12 @@ fun ExportCsvDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val csvExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+    val excelExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.ms-excel")) { uri ->
         if (uri != null) {
             context.contentResolver.openOutputStream(uri)?.use { output ->
-                output.write(viewModel.getCsvData().toByteArray(Charsets.UTF_8))
+                output.write(viewModel.getExcelData())
             }
-            Toast.makeText(context, "CSV exported successfully!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Excel exported successfully!", Toast.LENGTH_SHORT).show()
             onDismiss()
         }
     }
@@ -3355,15 +3416,13 @@ fun ExportCsvDialog(
             onDismiss()
         }
     }
-    val csvData = viewModel.getCsvData()
-
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Export Financial Records", fontWeight = FontWeight.Bold, color = Color.White) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "Export categorized transaction history and monthly summaries as CSV or PDF for external analysis.",
+                    "Export styled month-wise financial reports as Excel or PDF for external analysis.",
                     fontSize = 12.sp,
                     color = Color.White.copy(alpha = 0.7f)
                 )
@@ -3372,7 +3431,7 @@ fun ExportCsvDialog(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        text = "Includes transaction history, account mapping, monthly totals, and per-category monthly summaries.",
+                        text = "Includes month-wise transactions, category color breakdown, carry over balance, monthly total, and grand total.",
                         fontSize = 10.sp,
                         color = Color(0xFF00E5FF),
                         modifier = Modifier.padding(12.dp)
@@ -3384,12 +3443,12 @@ fun ExportCsvDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
-                        val fileName = "mymoney-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.csv"
-                        csvExporter.launch(fileName)
+                        val fileName = "mymoney-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.xls"
+                        excelExporter.launch(fileName)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
                 ) {
-                    Text("Export CSV", fontWeight = FontWeight.Bold)
+                    Text("Export Excel", fontWeight = FontWeight.Bold)
                 }
                 Button(
                     onClick = {
@@ -3403,20 +3462,7 @@ fun ExportCsvDialog(
             }
         },
         dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(
-                    onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = android.content.ClipData.newPlainText("MyMoney Backup CSV", csvData)
-                        clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "Copied CSV to Clipboard successfully!", Toast.LENGTH_SHORT).show()
-                        onDismiss()
-                    }
-                ) {
-                    Text("Copy CSV", color = Color(0xFF00E5FF))
-                }
-                TextButton(onClick = onDismiss) { Text("Dismiss", color = Color.White) }
-            }
+            TextButton(onClick = onDismiss) { Text("Dismiss", color = Color.White) }
         },
         containerColor = Color(0xFF131A26)
     )

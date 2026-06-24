@@ -15,8 +15,8 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="SECUREFINANCE"
-            android:textColor="#D0BCFF"
+            android:text="MYMONEY"
+            android:textColor="#00E5FF"
             android:textSize="10sp"
             android:textStyle="bold" />
 
@@ -24,18 +24,9 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Net Savings Balance"
+            android:text="This Month Snapshot"
             android:textColor="#E6E1E5"
             android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/widget_net_balance"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="₹0.00"
-            android:textColor="#FFFFFF"
-            android:textSize="22sp"
-            android:textStyle="bold" />
 
         <View
             android:layout_width="match_parent"
@@ -44,21 +35,68 @@
             android:layout_marginBottom="8dp"
             android:background="#49454F" />
 
-        <TextView
-            android:id="@+id/widget_monthly_expense"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Monthly Spend: ₹0.00"
-            android:textColor="#D0BCFF"
-            android:textSize="11sp"
-            android:textStyle="bold" />
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Income"
+                android:textColor="#A7F3D0"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/widget_monthly_income"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="₹0.00"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Expense"
+                android:textColor="#FBCFE8"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/widget_monthly_expense"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="₹0.00"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Total"
+                android:textColor="#BFDBFE"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/widget_monthly_total"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="₹0.00"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:gravity="center"
-            android:text="Tap to open App"
+            android:text="Tap to open app"
             android:textColor="#938F99"
             android:textSize="9sp" />
 

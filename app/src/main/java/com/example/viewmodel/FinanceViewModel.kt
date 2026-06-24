@@ -1,14 +1,23 @@
 package com.example.viewmodel
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Application
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
 import com.example.data.*
 import com.example.utils.CsvExporter
+import com.example.utils.PdfExporter
 import com.example.utils.SecurityUtils
 import com.example.utils.SmsParser
+import com.example.utils.isDuplicateImportedTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -20,6 +29,7 @@ import java.util.*
 
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
     private val TAG = "FinanceViewModel"
+    private val budgetAlertChannelId = "budget_alerts"
     private val db = FinanceDatabase.getDatabase(application)
     private val repository = FinanceRepository(db.financeDao())
     private val createdAccountsCache = mutableMapOf<String, String>()
@@ -40,6 +50,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun setAnchorDate(time: Long) {
         _anchorDate.value = time
+        _selectedMonthYear.value = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date(time))
     }
 
     // Configurable options backed by persistent SharedPreferences
@@ -97,8 +108,69 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         // Initialize with current month e.g., "2026-06"
         val current = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
         _selectedMonthYear.value = current
+        createBudgetAlertChannel()
         checkAndLogRecurringTransactions()
         seedAccountsIfEmpty()
+    }
+
+    private fun createBudgetAlertChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getApplication<Application>().getSystemService(NotificationManager::class.java)
+            val channel = NotificationChannel(
+                budgetAlertChannelId,
+                "Budget Alerts",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Alerts when monthly category budgets near or exceed limits"
+            }
+            manager.createNotificationChannel(channel)
+        }
+    }
+
+    private suspend fun maybeNotifyBudgetAlert(transaction: TransactionEntry, projectedTransactions: List<TransactionEntry>) {
+        if (transaction.type != "EXPENSE") return
+
+        val monthYear = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date(transaction.timestamp))
+        val monthBudgets = repository.getBudgetsForMonth(monthYear).first()
+        val budget = monthBudgets.firstOrNull { it.category.equals(transaction.category, ignoreCase = true) } ?: return
+        if (budget.amountLimit <= 0.0) return
+
+        val spent = projectedTransactions.filter {
+            it.type == "EXPENSE" &&
+                it.category.equals(transaction.category, ignoreCase = true) &&
+                SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date(it.timestamp)) == monthYear
+        }.sumOf { it.amount }
+
+        val ratio = spent / budget.amountLimit
+        val displayCategoryName = CategoryResolver.resolve(transaction.category, allCustomCategories.value).displayName
+        val thresholds = listOf(0.75 to "75%", 0.90 to "90%", 1.0 to "100%")
+
+        thresholds.forEach { (threshold, label) ->
+            val prefKey = "budget_alert_${monthYear}_${budget.category.uppercase(Locale.getDefault())}_$label"
+            if (ratio >= threshold && !prefs.getBoolean(prefKey, false)) {
+                prefs.edit().putBoolean(prefKey, true).apply()
+                postBudgetAlert(displayCategoryName, spent, budget.amountLimit, label)
+            }
+        }
+    }
+
+    private fun postBudgetAlert(categoryName: String, spent: Double, limit: Double, thresholdLabel: String) {
+        val application = getApplication<Application>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(application, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        val notification = NotificationCompat.Builder(application, budgetAlertChannelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("Budget alert: $categoryName")
+            .setContentText("$categoryName reached $thresholdLabel of budget. Spent ₹${"%.2f".format(Locale.getDefault(), spent)} of ₹${"%.2f".format(Locale.getDefault(), limit)}.")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+
+        NotificationManagerCompat.from(application).notify(categoryName.hashCode() + thresholdLabel.hashCode(), notification)
     }
 
     private fun getNextOccurenceDate(time: Long, frequency: String): Long {
@@ -194,8 +266,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             if (newName.isBlank()) return@launch
             val trimmedNew = newName.trim()
             val iconNameWithType = "$iconName:$type"
+            val standardDisplayName = ExpenseCategory.fromString(oldName).displayName
+            val isRename = !oldName.equals(trimmedNew, ignoreCase = true) && !standardDisplayName.equals(trimmedNew, ignoreCase = true)
             
-            if (!oldName.equals(trimmedNew, ignoreCase = true)) {
+            if (isRename) {
                 // 1. Hide the old standard category
                 val hideCat = CustomCategory(name = oldName, iconName = "hidden:$type", colorHex = "#000000")
                 repository.insertCustomCategory(hideCat)
@@ -211,7 +285,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 // Just overriding the icon/color for the standard category name
                 val overrideCat = CustomCategory(name = oldName, iconName = iconNameWithType, colorHex = colorHex)
                 repository.insertCustomCategory(overrideCat)
-                _toastMessage.emit("Category '$oldName' icon/color updated.")
+                _toastMessage.emit("Category '$standardDisplayName' icon/color updated.")
             }
         }
     }
@@ -519,6 +593,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 timestamp = timestamp
             )
             repository.insertTransaction(tx)
+            maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
             _toastMessage.emit("Added: $title ($type)")
         }
     }
@@ -526,6 +601,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun updateTransaction(tx: TransactionEntry) {
         viewModelScope.launch {
             repository.updateTransaction(tx)
+            maybeNotifyBudgetAlert(tx, allTransactions.value.map { if (it.id == tx.id) tx else it })
             _toastMessage.emit("Updated transaction details")
         }
     }
@@ -534,6 +610,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.deleteTransaction(txId)
             _toastMessage.emit("Deleted transaction")
+        }
+    }
+
+    fun deleteTransactionsInRange(startTime: Long, endTime: Long, label: String) {
+        viewModelScope.launch {
+            repository.deleteTransactionsInRange(startTime, endTime)
+            _toastMessage.emit("Deleted all transactions for $label")
         }
     }
 
@@ -546,9 +629,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // Budget Operations
-    fun saveBudget(categoryName: String, categoryDisplayName: String, amount: Double) {
+    fun saveBudget(categoryName: String, categoryDisplayName: String, amount: Double, previousCategoryName: String? = null) {
         viewModelScope.launch {
+            val existingBudget = monthlyBudgets.value.firstOrNull {
+                it.category.equals(categoryName, ignoreCase = true) ||
+                    (!previousCategoryName.isNullOrBlank() && it.category.equals(previousCategoryName, ignoreCase = true))
+            }
             val budget = BudgetEntry(
+                id = existingBudget?.id ?: 0,
                 category = categoryName,
                 amountLimit = amount,
                 monthYear = _selectedMonthYear.value
@@ -568,6 +656,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     // Export to CSV
     fun getCsvData(): String {
         return CsvExporter.exportToCsvString(allTransactions.value)
+    }
+
+    fun getPdfData(): ByteArray {
+        return PdfExporter.exportToPdfBytes(allTransactions.value)
     }
 
     // Cloud Synchronization Simulation (Simulates encrypted backup to cloud storage)
@@ -608,6 +700,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
                 val threeMonthsAgo = System.currentTimeMillis() - 90L * 24 * 60 * 60 * 1000
                 var matchedCount = 0
+                val projectedTransactions = allTransactions.value.toMutableList()
                 if (cursor != null) {
                     val bodyIndex = cursor.getColumnIndex("body")
                     val addressIndex = cursor.getColumnIndex("address")
@@ -626,25 +719,33 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         if (parsed != null) {
                             val targetTime = parsed.parsedTimestamp ?: smsDate
 
-                            // Check for potential duplicate transactions with same amount, type, and temporal proximity
+                            val walletName = ensureAccountExists(parsed.accountRef, sender, body)
                             val potentialDuplicates = repository.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
                             val incomingRef = com.example.utils.SmsParser.getReferenceNumber(body)
-                            
-                            val duplicate = allTransactions.value.any { it.smsBody == body } || potentialDuplicates.any { existing ->
-                                if (existing.smsBody == body) {
-                                    true
-                                } else {
-                                    val existingRef = com.example.utils.SmsParser.getReferenceNumber(existing.smsBody)
-                                    if (incomingRef != null && existingRef != null) {
-                                        incomingRef == existingRef
-                                    } else {
-                                        // No reference numbers to differentiate, so treat as duplicate
-                                        true
-                                    }
-                                }
+                            val duplicate = allTransactions.value.any { existing ->
+                                isDuplicateImportedTransaction(
+                                    existing = existing,
+                                    incomingSmsBody = body,
+                                    incomingTitle = parsed.title,
+                                    incomingAmount = parsed.amount,
+                                    incomingType = parsed.type,
+                                    incomingTimestamp = targetTime,
+                                    incomingReference = incomingRef,
+                                    incomingAccountName = walletName
+                                )
+                            } || potentialDuplicates.any { existing ->
+                                isDuplicateImportedTransaction(
+                                    existing = existing,
+                                    incomingSmsBody = body,
+                                    incomingTitle = parsed.title,
+                                    incomingAmount = parsed.amount,
+                                    incomingType = parsed.type,
+                                    incomingTimestamp = targetTime,
+                                    incomingReference = incomingRef,
+                                    incomingAccountName = walletName
+                                )
                             }
                             if (!duplicate) {
-                                val walletName = ensureAccountExists(parsed.accountRef, sender, body)
                                 val tx = TransactionEntry(
                                     title = parsed.title,
                                     amount = parsed.amount,
@@ -656,6 +757,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     note = "$body [Acc: $walletName]"
                                 )
                                 repository.insertTransaction(tx)
+                                projectedTransactions.add(tx)
+                                maybeNotifyBudgetAlert(tx, projectedTransactions)
                                 matchedCount++
                             }
                         }
@@ -700,29 +803,37 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             if (parsed != null) {
                 val targetTime = parsed.parsedTimestamp ?: System.currentTimeMillis()
 
-                // Prevent double processing of simulated triggers
+                val walletName = ensureAccountExists(parsed.accountRef, sender, smsBody)
                 val potentialDuplicates = repository.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
                 val incomingRef = com.example.utils.SmsParser.getReferenceNumber(smsBody)
-                
-                val duplicate = allTransactions.value.any { it.smsBody == smsBody } || potentialDuplicates.any { existing ->
-                    if (existing.smsBody == smsBody) {
-                        true
-                    } else {
-                        val existingRef = com.example.utils.SmsParser.getReferenceNumber(existing.smsBody)
-                        if (incomingRef != null && existingRef != null) {
-                            incomingRef == existingRef
-                        } else {
-                            // No reference numbers to differentiate, so treat as duplicate
-                            true
-                        }
-                    }
+                val duplicate = allTransactions.value.any { existing ->
+                    isDuplicateImportedTransaction(
+                        existing = existing,
+                        incomingSmsBody = smsBody,
+                        incomingTitle = parsed.title,
+                        incomingAmount = parsed.amount,
+                        incomingType = parsed.type,
+                        incomingTimestamp = targetTime,
+                        incomingReference = incomingRef,
+                        incomingAccountName = walletName
+                    )
+                } || potentialDuplicates.any { existing ->
+                    isDuplicateImportedTransaction(
+                        existing = existing,
+                        incomingSmsBody = smsBody,
+                        incomingTitle = parsed.title,
+                        incomingAmount = parsed.amount,
+                        incomingType = parsed.type,
+                        incomingTimestamp = targetTime,
+                        incomingReference = incomingRef,
+                        incomingAccountName = walletName
+                    )
                 }
                 if (duplicate) {
                     _toastMessage.emit("Detected potential duplicate transaction of ₹${parsed.amount} at ${parsed.title}. Skipped.")
                     return@launch
                 }
 
-                val walletName = ensureAccountExists(parsed.accountRef, sender, smsBody)
                 val tx = TransactionEntry(
                     title = parsed.title,
                     amount = parsed.amount,
@@ -734,6 +845,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     note = "$smsBody [Acc: $walletName]"
                 )
                 repository.insertTransaction(tx)
+                maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
                 _toastMessage.emit("Auto-Tracked Expense: ₹${parsed.amount} at ${parsed.title}")
             } else {
                 _toastMessage.emit("SMS analyzed, but no valid transaction data was detected.")

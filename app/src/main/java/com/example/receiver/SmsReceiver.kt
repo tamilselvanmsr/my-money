@@ -7,10 +7,11 @@ import android.os.Build
 import android.telephony.SmsMessage
 import android.util.Log
 import android.widget.Toast
+import com.example.data.Account
 import com.example.data.FinanceDatabase
 import com.example.data.TransactionEntry
-import com.example.data.Account
 import com.example.utils.SmsParser
+import com.example.utils.isDuplicateImportedTransaction
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,26 +48,35 @@ class SmsReceiver : BroadcastReceiver() {
 
                         val targetTime = parsed.parsedTimestamp ?: sms.timestampMillis
 
-                        // Double check to prevent duplicates (both identical body and identical temporal properties)
-                        val existsByBody = dao.countTransactionsWithSmsBody(body)
+                        val walletName = ensureAccountExists(dao, parsed.accountRef, sender, body)
                         val potentialDuplicates = dao.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
                         val incomingRef = com.example.utils.SmsParser.getReferenceNumber(body)
-                        
-                        val isDuplicate = existsByBody > 0 || potentialDuplicates.any { existing ->
-                            if (existing.smsBody == body) {
-                                true
-                            } else {
-                                val existingRef = com.example.utils.SmsParser.getReferenceNumber(existing.smsBody)
-                                if (incomingRef != null && existingRef != null) {
-                                    incomingRef == existingRef
-                                } else {
-                                    // No reference numbers to differentiate, so treat as duplicate
-                                    true
-                                }
-                            }
+
+                        val allTransactions = dao.getAllTransactions().first()
+                        val isDuplicate = allTransactions.any { existing ->
+                            isDuplicateImportedTransaction(
+                                existing = existing,
+                                incomingSmsBody = body,
+                                incomingTitle = parsed.title,
+                                incomingAmount = parsed.amount,
+                                incomingType = parsed.type,
+                                incomingTimestamp = targetTime,
+                                incomingReference = incomingRef,
+                                incomingAccountName = walletName
+                            )
+                        } || potentialDuplicates.any { existing ->
+                            isDuplicateImportedTransaction(
+                                existing = existing,
+                                incomingSmsBody = body,
+                                incomingTitle = parsed.title,
+                                incomingAmount = parsed.amount,
+                                incomingType = parsed.type,
+                                incomingTimestamp = targetTime,
+                                incomingReference = incomingRef,
+                                incomingAccountName = walletName
+                            )
                         }
                         if (!isDuplicate) {
-                            val walletName = ensureAccountExists(dao, parsed.accountRef, sender, body)
                             val transaction = TransactionEntry(
                                 title = parsed.title,
                                 amount = parsed.amount,
@@ -195,7 +205,7 @@ class SmsReceiver : BroadcastReceiver() {
             }
         }
 
-        val startBal = if (isCreditCard) 0.0 else 10000.0
+        val startBal = 0.0
         val newAcObj = Account(name = nameLabel, balance = startBal, type = acType, lastFour = actualLast4)
         dao.insertAccount(newAcObj)
         return nameLabel

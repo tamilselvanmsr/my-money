@@ -1,6 +1,8 @@
 package com.example
 
 import android.Manifest
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
@@ -178,6 +180,17 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     
     val toastMessage = viewModel.toastMessage
     val scope = rememberCoroutineScope()
+    val requestNotificationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { }
+
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestNotificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     // Collect Toast notifications
     LaunchedEffect(key1 = true) {
@@ -320,8 +333,8 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
         AddTransactionDialog(
             viewModel = viewModel,
             onDismiss = { showAddDialog = false },
-            onConfirm = { title, amount, categoryName, type, note ->
-                viewModel.addTransaction(title, amount, categoryName, type, note)
+            onConfirm = { title, amount, categoryName, type, note, timestamp ->
+                viewModel.addTransaction(title, amount, categoryName, type, note, timestamp)
                 showAddDialog = false
             }
         )
@@ -351,6 +364,8 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
     
     var selectedWallet by remember { mutableStateOf("All") }
     var selectedTxForEdit by remember { mutableStateOf<TransactionEntry?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
+    var showDeletePeriodDialog by remember { mutableStateOf(false) }
     
     val (periodStart, periodEnd) = getPeriodRange(activeMode, anchorTime)
     
@@ -368,6 +383,26 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
     // Filter Transactions by selected period AND selected wallet
     val monthTransactions = periodTransactions.filter { tx ->
         selectedWallet == "All" || tx.getAccountName(consolidateAccounts) == selectedWallet
+    }
+    val searchableTransactions = if (searchQuery.isBlank()) {
+        monthTransactions
+    } else {
+        txs.filter { tx ->
+            selectedWallet == "All" || tx.getAccountName(consolidateAccounts) == selectedWallet
+        }
+    }
+    val visibleTransactions = searchableTransactions.filter { tx ->
+        if (searchQuery.isBlank()) {
+            true
+        } else {
+            val query = searchQuery.trim()
+            val noteText = tx.note?.substringBefore(" [Acc:")?.trim().orEmpty()
+            val displayCategory = CategoryResolver.resolve(tx.category, customCats).displayName
+            tx.title.contains(query, ignoreCase = true) ||
+                tx.category.contains(query, ignoreCase = true) ||
+                displayCategory.contains(query, ignoreCase = true) ||
+                noteText.contains(query, ignoreCase = true)
+        }
     }
     
     // Monthly aggregates (specific to selected wallet)
@@ -769,8 +804,48 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
             }
         }
 
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.weight(1f),
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White.copy(alpha = 0.6f))
+                    },
+                    label = { Text("Search records") },
+                    placeholder = { Text("Merchant, category, or notes") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF00E5FF),
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                        focusedLabelColor = Color(0xFF00E5FF),
+                        unfocusedLabelColor = Color.White.copy(alpha = 0.5f)
+                    )
+                )
+
+                if (activeMode == DisplayMode.MONTHLY) {
+                    FilledTonalIconButton(
+                        onClick = { showDeletePeriodDialog = true },
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = Color(0xFFF43F5E).copy(alpha = 0.18f),
+                            contentColor = Color(0xFFF43F5E)
+                        )
+                    ) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = "Delete month")
+                    }
+                }
+            }
+        }
+
         // Chronological transaction lists grouped by Dates
-        if (monthTransactions.isEmpty()) {
+        if (visibleTransactions.isEmpty()) {
             item {
                 Surface(
                     color = Color(0xFF131A26),
@@ -792,7 +867,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            "No transactions recorded for this period.",
+                            if (searchQuery.isBlank()) "No transactions recorded for this period." else "No transactions match your search.",
                             color = Color.White.copy(alpha = 0.5f),
                             fontSize = 13.sp,
                             textAlign = TextAlign.Center
@@ -809,7 +884,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
             }
         } else {
             // Group transactions by date
-            val grouped = monthTransactions.sortedByDescending { it.timestamp }.groupBy {
+            val grouped = visibleTransactions.sortedByDescending { it.timestamp }.groupBy {
                 val cal = Calendar.getInstance().apply { timeInMillis = it.timestamp }
                 val today = Calendar.getInstance()
                 val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
@@ -951,6 +1026,36 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
         }
     }
 
+    if (showDeletePeriodDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeletePeriodDialog = false },
+            title = { Text("Delete Month Transactions", color = Color.White) },
+            text = {
+                Text(
+                    "Delete every transaction in ${formatPeriodLabel(activeMode, anchorTime)}? This cannot be undone.",
+                    color = Color.White.copy(alpha = 0.75f)
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteTransactionsInRange(periodStart, periodEnd, formatPeriodLabel(activeMode, anchorTime))
+                        showDeletePeriodDialog = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFF43F5E))
+                ) {
+                    Text("Delete", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeletePeriodDialog = false }) {
+                    Text("Cancel", color = Color.White)
+                }
+            },
+            containerColor = Color(0xFF131A26)
+        )
+    }
+
     // Modal dialog for editing/deleting any selected transaction
     selectedTxForEdit?.let { editTx ->
         var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -1002,23 +1107,10 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
     
     var timeFilter by remember { mutableStateOf("MONTHLY") } // WEEKLY, MONTHLY, 3M, 6M, 1Y
-    
-    // Period filter calculations
-    val sdfMonth = SimpleDateFormat("yyyy-MM", Locale.getDefault())
-    val currentMonthDate = try { sdfMonth.parse(rawMonthYear) ?: Date() } catch (e: Exception) { Date() }
+    val (analysisStart, analysisEnd) = getAnalyticsRange(rawMonthYear, timeFilter)
 
     val filteredTransactions = txs.filter { tx ->
-        val cal = Calendar.getInstance()
-        val txTime = tx.timestamp
-        val filterLimit = when (timeFilter) {
-            "WEEKLY" -> 7L * 24 * 3600 * 1000
-            "MONTHLY" -> 30L * 24 * 3600 * 1000
-            "3M" -> 90L * 24 * 3600 * 1000
-            "6M" -> 180L * 24 * 3600 * 1000
-            "1Y" -> 365L * 24 * 3600 * 1000
-            else -> 30L * 24 * 3600 * 1000
-        }
-        System.currentTimeMillis() - txTime <= filterLimit
+        tx.timestamp in analysisStart..analysisEnd
     }
 
     val expenses = filteredTransactions.filter { it.type == "EXPENSE" }
@@ -1124,114 +1216,146 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                             )
                         }
                     } else {
-                        // Drawing logic
-                        Box(
-                            modifier = Modifier
-                                .size(210.dp)
-                                .padding(12.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Canvas(
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .pointerInput(categoryTotals) {
-                                        detectTapGestures { offset ->
-                                            val centerX = size.width / 2f
-                                            val centerY = size.height / 2f
-                                            val dx = offset.x - centerX
-                                            val dy = offset.y - centerY
-                                            val dist = kotlin.math.sqrt(dx * dx + dy * dy)
-                                            
-                                            val sizeMin = minOf(size.width, size.height)
-                                            val strokeWidthValue = sizeMin * 0.16f
-                                            val radius = (sizeMin - strokeWidthValue) / 2f
-                                            
-                                            // Detect touches close to the donut ring
-                                            if (dist >= radius - strokeWidthValue * 1.5f && dist <= radius + strokeWidthValue * 1.5f) {
-                                                var angle = Math.toDegrees(Math.atan2(dy.toDouble(), dx.toDouble())).toFloat()
-                                                if (angle < 0) {
-                                                    angle += 360f
-                                                }
-                                                // Adjust starting angle so top (North, -90 degrees) is 0
-                                                var chartAngle = angle + 90f
-                                                if (chartAngle >= 360f) {
-                                                    chartAngle -= 360f
-                                                }
-                                                
-                                                var currentAngle = 0f
-                                                var foundIdx = -1
-                                                for (i in categoryTotals.indices) {
-                                                    val sweep = (categoryTotals[i].percentage * 360f).toFloat()
-                                                    if (chartAngle >= currentAngle && chartAngle < currentAngle + sweep) {
-                                                        foundIdx = i
-                                                        break
+                                    .size(210.dp)
+                                    .padding(12.dp)
+                            ) {
+                                Canvas(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .pointerInput(categoryTotals) {
+                                            detectTapGestures { offset ->
+                                                val centerX = size.width / 2f
+                                                val centerY = size.height / 2f
+                                                val dx = offset.x - centerX
+                                                val dy = offset.y - centerY
+                                                val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+
+                                                val sizeMin = minOf(size.width, size.height)
+                                                val strokeWidthValue = sizeMin * 0.16f
+                                                val radius = (sizeMin - strokeWidthValue) / 2f
+
+                                                if (dist >= radius - strokeWidthValue * 1.5f && dist <= radius + strokeWidthValue * 1.5f) {
+                                                    var angle = Math.toDegrees(Math.atan2(dy.toDouble(), dx.toDouble())).toFloat()
+                                                    if (angle < 0) {
+                                                        angle += 360f
                                                     }
-                                                    currentAngle += sweep
-                                                }
-                                                if (foundIdx != -1) {
-                                                    activeSectorIndex = if (activeSectorIndex == foundIdx) -1 else foundIdx
+                                                    var chartAngle = angle + 90f
+                                                    if (chartAngle >= 360f) {
+                                                        chartAngle -= 360f
+                                                    }
+
+                                                    var currentAngle = 0f
+                                                    var foundIdx = -1
+                                                    for (i in categoryTotals.indices) {
+                                                        val sweep = (categoryTotals[i].percentage * 360f).toFloat()
+                                                        if (chartAngle >= currentAngle && chartAngle < currentAngle + sweep) {
+                                                            foundIdx = i
+                                                            break
+                                                        }
+                                                        currentAngle += sweep
+                                                    }
+                                                    if (foundIdx != -1) {
+                                                        activeSectorIndex = if (activeSectorIndex == foundIdx) -1 else foundIdx
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
-                            ) {
-                                val sizeMin = size.minDimension
-                                val strokeWidthValue = sizeMin * 0.16f
-                                val arcSize = Size(sizeMin - strokeWidthValue, sizeMin - strokeWidthValue)
-                                val topLeftOffset = Offset(strokeWidthValue / 2f, strokeWidthValue / 2f)
+                                ) {
+                                    val sizeMin = size.minDimension
+                                    val strokeWidthValue = sizeMin * 0.16f
+                                    val arcSize = Size(sizeMin - strokeWidthValue, sizeMin - strokeWidthValue)
+                                    val topLeftOffset = Offset(strokeWidthValue / 2f, strokeWidthValue / 2f)
 
-                                var currentAngle = -90f
-                                categoryTotals.forEachIndexed { idx, col ->
-                                    val sweep = (col.percentage * 360f).toFloat()
-                                    val isHighlighted = activeSectorIndex == idx
-                                    
-                                    drawArc(
-                                        color = col.category.color,
-                                        startAngle = currentAngle,
-                                        sweepAngle = sweep,
-                                        useCenter = false,
-                                        style = Stroke(
-                                            width = if (isHighlighted) strokeWidthValue * 1.35f else strokeWidthValue,
-                                            cap = StrokeCap.Round
-                                        ),
-                                        size = arcSize,
-                                        topLeft = topLeftOffset,
-                                        alpha = if (activeSectorIndex == -1 || isHighlighted) 1f else 0.4f
+                                    var currentAngle = -90f
+                                    categoryTotals.forEachIndexed { idx, col ->
+                                        val sweep = (col.percentage * 360f).toFloat()
+                                        val isHighlighted = activeSectorIndex == idx
+
+                                        drawArc(
+                                            color = col.category.color,
+                                            startAngle = currentAngle,
+                                            sweepAngle = sweep,
+                                            useCenter = false,
+                                            style = Stroke(
+                                                width = if (isHighlighted) strokeWidthValue * 1.35f else strokeWidthValue,
+                                                cap = StrokeCap.Round
+                                            ),
+                                            size = arcSize,
+                                            topLeft = topLeftOffset,
+                                            alpha = if (activeSectorIndex == -1 || isHighlighted) 1f else 0.4f
+                                        )
+                                        currentAngle += sweep
+                                    }
+                                }
+
+                                Column(
+                                    modifier = Modifier.align(Alignment.Center),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    val highlightItem = categoryTotals.getOrNull(activeSectorIndex)
+                                    Text(
+                                        text = highlightItem?.category?.displayName ?: "Total Spent",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White.copy(alpha = 0.6f),
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.width(130.dp)
                                     )
-                                    currentAngle += sweep
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = decFormat.format(highlightItem?.total ?: totalExpenseSum),
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = highlightItem?.category?.color ?: Color(0xFF00E5FF)
+                                    )
+                                    if (highlightItem != null) {
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "${String.format(Locale.getDefault(), "%.1f", highlightItem.percentage * 100)}%",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
                                 }
                             }
 
-                            // Dynamic center label showing current sector values
                             Column(
-                                modifier = Modifier.align(Alignment.Center),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                val highlightItem = categoryTotals.getOrNull(activeSectorIndex)
-                                Text(
-                                    text = highlightItem?.category?.displayName ?: "Total Spent",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White.copy(alpha = 0.6f),
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.width(130.dp)
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = decFormat.format(highlightItem?.total ?: totalExpenseSum),
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = highlightItem?.category?.color ?: Color(0xFF00E5FF)
-                                )
-                                if (highlightItem != null) {
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "${String.format(Locale.getDefault(), "%.1f", highlightItem.percentage * 100)}%",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
+                                categoryTotals.forEachIndexed { idx, stats ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable {
+                                                activeSectorIndex = if (activeSectorIndex == idx) -1 else idx
+                                            }
+                                            .background(if (activeSectorIndex == idx) Color.White.copy(alpha = 0.06f) else Color.Transparent)
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .background(stats.category.color, CircleShape)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(stats.category.displayName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text(decFormat.format(stats.total), color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1543,20 +1667,22 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             }
                             
                             if (globalBudgetLimit > 0) {
-                                val percent = (globalBudgetSpend / globalBudgetLimit * 100).coerceAtMost(100.0)
+                                val percent = globalBudgetSpend / globalBudgetLimit * 100
+                                val progressColor = budgetProgressColor(percent)
                                 Text(
                                     text = "${String.format(Locale.getDefault(), "%.1f", percent)}%",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 20.sp,
-                                    color = Color(0xFF00E5FF)
+                                    color = progressColor
                                 )
                             }
                         }
                         
                         if (globalBudgetLimit > 0) {
                             Spacer(modifier = Modifier.height(14.dp))
+                            val actualPercent = globalBudgetSpend / globalBudgetLimit * 100
                             val progressFraction = (globalBudgetSpend / globalBudgetLimit).toFloat().coerceIn(0f, 1f)
-                            val barColor = if (progressFraction > 0.9f) Color(0xFFF43F5E) else Color(0xFF00E5FF)
+                            val barColor = budgetProgressColor(actualPercent)
                             
                             LinearProgressIndicator(
                                 progress = progressFraction,
@@ -1653,7 +1779,8 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             if (budgetObj != null) {
                                 val limit = budgetObj.amountLimit
                                 val ratio = if (limit > 0) (catExpense / limit) else 0.0
-                                val warning = ratio > 0.9
+                                val percent = ratio * 100
+                                val progressColor = budgetProgressColor(percent)
                                 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1662,20 +1789,20 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                     Text(
                                         text = "Spent: ${decFormat.format(catExpense)} of ${decFormat.format(limit)}",
                                         fontSize = 11.sp,
-                                        color = if (warning) Color(0xFFF43F5E) else Color.White.copy(alpha = 0.5f)
+                                        color = if (percent > 100) Color(0xFFF43F5E) else Color.White.copy(alpha = 0.5f)
                                     )
                                     Text(
-                                        text = "${String.format(Locale.getDefault(), "%.0f", ratio * 100)}%",
+                                        text = "${String.format(Locale.getDefault(), "%.0f", percent)}%",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (warning) Color(0xFFF43F5E) else Color(0xFF10B981)
+                                        color = progressColor
                                     )
                                 }
                                 
                                 Spacer(modifier = Modifier.height(6.dp))
                                 LinearProgressIndicator(
                                     progress = ratio.toFloat().coerceIn(0f, 1f),
-                                    color = if (warning) Color(0xFFF43F5E) else cat.color,
+                                    color = progressColor,
                                     trackColor = Color.White.copy(alpha = 0.05f),
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1873,6 +2000,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         onClick = {
                             val limitAmt = budgetValStr.toDoubleOrNull() ?: 0.0
                             val cleanName = editCatName.trim()
+                            val effectiveBudgetCategory = resolveBudgetCategoryName(cat, cleanName)
                             
                             if (cat.isCustom) {
                                 viewModel.updateCustomCategory(
@@ -1885,7 +2013,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                 )
                                 if (cat.type == "EXPENSE") {
                                     if (limitAmt > 0) {
-                                        viewModel.saveBudget(cleanName, cleanName, limitAmt)
+                                        viewModel.saveBudget(effectiveBudgetCategory, cleanName, limitAmt, cat.name)
                                     } else if (checkCurrent != null) {
                                         viewModel.deleteBudget(checkCurrent.id)
                                     }
@@ -1900,7 +2028,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                 )
                                 if (cat.type == "EXPENSE") {
                                     if (limitAmt > 0) {
-                                        viewModel.saveBudget(cleanName, cleanName, limitAmt)
+                                        viewModel.saveBudget(effectiveBudgetCategory, cleanName, limitAmt, cat.name)
                                     } else if (checkCurrent != null) {
                                         viewModel.deleteBudget(checkCurrent.id)
                                     }
@@ -2815,7 +2943,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
 fun AddTransactionDialog(
     viewModel: FinanceViewModel,
     onDismiss: () -> Unit,
-    onConfirm: (String, Double, String, String, String?) -> Unit
+    onConfirm: (String, Double, String, String, String?, Long) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
     var amountStr by remember { mutableStateOf("") }
@@ -2823,6 +2951,7 @@ fun AddTransactionDialog(
     var categorySelection by remember { mutableStateOf("FOOD") }
     var accountSelection by remember { mutableStateOf("Cash Wallet") }
     var notesStr by remember { mutableStateOf("") }
+    var selectedTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
 
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
     val allCategories = CategoryResolver.getAll(customCats)
@@ -2900,6 +3029,11 @@ fun AddTransactionDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                TransactionDateTimePicker(
+                    selectedTimestamp = selectedTimestamp,
+                    onTimestampChange = { selectedTimestamp = it }
+                )
+
                 // Selectable wallets drop-in
                 Text("Select Wallet", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2965,7 +3099,8 @@ fun AddTransactionDialog(
                             dAmt,
                             categorySelection,
                             transactionType,
-                            makeNoteWithAccount(notesStr, accountSelection)
+                            makeNoteWithAccount(notesStr, accountSelection),
+                            selectedTimestamp
                         )
                     }
                 },
@@ -2994,6 +3129,7 @@ fun EditTransactionDialog(
     var categorySelection by remember { mutableStateOf(tx.category) }
     var accountSelection by remember { mutableStateOf(tx.getAccountName()) }
     var notesStr by remember { mutableStateOf(tx.note?.substringBefore(" [Acc:")?.trim() ?: "") }
+    var selectedTimestamp by remember { mutableStateOf(tx.timestamp) }
 
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
     val allCategories = CategoryResolver.getAll(customCats)
@@ -3031,6 +3167,11 @@ fun EditTransactionDialog(
                         focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
                     ),
                     modifier = Modifier.fillMaxWidth()
+                )
+
+                TransactionDateTimePicker(
+                    selectedTimestamp = selectedTimestamp,
+                    onTimestampChange = { selectedTimestamp = it }
                 )
 
                 // Select wallet
@@ -3105,6 +3246,7 @@ fun EditTransactionDialog(
                                     title = title,
                                     amount = dAmt,
                                     category = categorySelection,
+                                    timestamp = selectedTimestamp,
                                     note = makeNoteWithAccount(notesStr, accountSelection)
                                 )
                             )
@@ -3124,11 +3266,95 @@ fun EditTransactionDialog(
 }
 
 @Composable
+fun TransactionDateTimePicker(
+    selectedTimestamp: Long,
+    onTimestampChange: (Long) -> Unit
+) {
+    val context = LocalContext.current
+    val dateLabel = remember(selectedTimestamp) {
+        SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(selectedTimestamp))
+    }
+    val timeLabel = remember(selectedTimestamp) {
+        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(selectedTimestamp))
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Transaction Date & Time", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = {
+                    val calendar = Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
+                    DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            val updated = Calendar.getInstance().apply {
+                                timeInMillis = selectedTimestamp
+                                set(Calendar.YEAR, year)
+                                set(Calendar.MONTH, month)
+                                set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                            }
+                            onTimestampChange(updated.timeInMillis)
+                        },
+                        calendar.get(Calendar.YEAR),
+                        calendar.get(Calendar.MONTH),
+                        calendar.get(Calendar.DAY_OF_MONTH)
+                    ).show()
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(dateLabel)
+            }
+
+            OutlinedButton(
+                onClick = {
+                    val calendar = Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
+                    TimePickerDialog(
+                        context,
+                        { _, hourOfDay, minute ->
+                            val updated = Calendar.getInstance().apply {
+                                timeInMillis = selectedTimestamp
+                                set(Calendar.HOUR_OF_DAY, hourOfDay)
+                                set(Calendar.MINUTE, minute)
+                            }
+                            onTimestampChange(updated.timeInMillis)
+                        },
+                        calendar.get(Calendar.HOUR_OF_DAY),
+                        calendar.get(Calendar.MINUTE),
+                        true
+                    ).show()
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(timeLabel)
+            }
+        }
+    }
+}
+
+@Composable
 fun ExportCsvDialog(
     viewModel: FinanceViewModel,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val csvExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) {
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                output.write(viewModel.getCsvData().toByteArray(Charsets.UTF_8))
+            }
+            Toast.makeText(context, "CSV exported successfully!", Toast.LENGTH_SHORT).show()
+            onDismiss()
+        }
+    }
+    val pdfExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        if (uri != null) {
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                output.write(viewModel.getPdfData())
+            }
+            Toast.makeText(context, "PDF exported successfully!", Toast.LENGTH_SHORT).show()
+            onDismiss()
+        }
+    }
     val csvData = viewModel.getCsvData()
 
     AlertDialog(
@@ -3137,7 +3363,7 @@ fun ExportCsvDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "You can copy your full monthly logs matching Microsoft Excel CSV formats securely to clipboard.",
+                    "Export categorized transaction history and monthly summaries as CSV or PDF for external analysis.",
                     fontSize = 12.sp,
                     color = Color.White.copy(alpha = 0.7f)
                 )
@@ -3146,7 +3372,7 @@ fun ExportCsvDialog(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        text = "Columns included: Title, Amount, Category, Type, Date, Account Wallet, SMS metadata.",
+                        text = "Includes transaction history, account mapping, monthly totals, and per-category monthly summaries.",
                         fontSize = 10.sp,
                         color = Color(0xFF00E5FF),
                         modifier = Modifier.padding(12.dp)
@@ -3155,21 +3381,42 @@ fun ExportCsvDialog(
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = android.content.ClipData.newPlainText("MyMoney Backup CSV", csvData)
-                    clipboard.setPrimaryClip(clip)
-                    Toast.makeText(context, "Copied CSV to Clipboard successfully!", Toast.LENGTH_SHORT).show()
-                    onDismiss()
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
-            ) {
-                Text("Copy Plain CSV", fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        val fileName = "mymoney-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.csv"
+                        csvExporter.launch(fileName)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
+                ) {
+                    Text("Export CSV", fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = {
+                        val fileName = "mymoney-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.pdf"
+                        pdfExporter.launch(fileName)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981), contentColor = Color.White)
+                ) {
+                    Text("Export PDF", fontWeight = FontWeight.Bold)
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Dismiss", color = Color.White) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("MyMoney Backup CSV", csvData)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "Copied CSV to Clipboard successfully!", Toast.LENGTH_SHORT).show()
+                        onDismiss()
+                    }
+                ) {
+                    Text("Copy CSV", color = Color(0xFF00E5FF))
+                }
+                TextButton(onClick = onDismiss) { Text("Dismiss", color = Color.White) }
+            }
         },
         containerColor = Color(0xFF131A26)
     )
@@ -3276,6 +3523,61 @@ fun getPeriodRange(mode: DisplayMode, anchorTime: Long): Pair<Long, Long> {
             Pair(start, end)
         }
     }
+}
+
+fun getAnalyticsRange(monthYear: String, filter: String): Pair<Long, Long> {
+    val baseCalendar = Calendar.getInstance().apply {
+        try {
+            time = SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(monthYear) ?: Date()
+        } catch (_: Exception) {
+            time = Date()
+        }
+        set(Calendar.DAY_OF_MONTH, 1)
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+
+    val start = (baseCalendar.clone() as Calendar).apply {
+        when (filter) {
+            "WEEKLY" -> add(Calendar.DAY_OF_MONTH, -6)
+            "3M" -> add(Calendar.MONTH, -2)
+            "6M" -> add(Calendar.MONTH, -5)
+            "1Y" -> add(Calendar.MONTH, -11)
+        }
+        if (filter == "3M" || filter == "6M" || filter == "1Y") {
+            set(Calendar.DAY_OF_MONTH, 1)
+        }
+    }.timeInMillis
+
+    val end = (baseCalendar.clone() as Calendar).apply {
+        set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
+        set(Calendar.HOUR_OF_DAY, 23)
+        set(Calendar.MINUTE, 59)
+        set(Calendar.SECOND, 59)
+        set(Calendar.MILLISECOND, 999)
+    }.timeInMillis
+
+    return start to end
+}
+
+fun budgetProgressColor(percent: Double): Color {
+    return when {
+        percent > 100.0 -> Color(0xFFF43F5E)
+        percent > 90.0 -> Color(0xFFFB923C)
+        percent >= 60.0 -> Color(0xFFFACC15)
+        percent >= 30.0 -> Color(0xFF4ADE80)
+        else -> Color(0xFF10B981)
+    }
+}
+
+fun resolveBudgetCategoryName(category: DisplayCategory, editedName: String): String {
+    val trimmedName = editedName.trim()
+    if (category.isCustom) {
+        return trimmedName
+    }
+    return if (trimmedName.equals(category.displayName, ignoreCase = true)) category.name else trimmedName
 }
 
 fun shiftPeriod(viewModel: FinanceViewModel, mode: DisplayMode, anchorTime: Long, amount: Int) {

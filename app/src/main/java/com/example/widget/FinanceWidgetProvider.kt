@@ -32,31 +32,31 @@ class FinanceWidgetProvider : AppWidgetProvider() {
                     val db = FinanceDatabase.getDatabase(context)
                     val txs = db.financeDao().getAllTransactions().first()
 
-                    var totalIncome = 0.0
-                    var totalExpense = 0.0
+                    var monthlyIncome = 0.0
                     var monthlyExpense = 0.0
 
                     val sdf = SimpleDateFormat("yyyy-MM", Locale.getDefault())
 
                     for (tx in txs) {
-                        if (tx.type == "INCOME") {
-                            totalIncome += tx.amount
-                        } else {
-                            totalExpense += tx.amount
-                            val txMonthYear = sdf.format(Date(tx.timestamp))
-                            if (txMonthYear == currentMonthYear) {
+                        val txMonthYear = sdf.format(Date(tx.timestamp))
+                        if (txMonthYear == currentMonthYear) {
+                            if (tx.type == "INCOME") {
+                                monthlyIncome += tx.amount
+                            } else {
                                 monthlyExpense += tx.amount
                             }
                         }
                     }
 
-                    val netBalance = totalIncome - totalExpense
+                    val monthlyTotal = monthlyIncome - monthlyExpense
 
-                    views.setTextViewText(R.id.widget_net_balance, decFormat.format(netBalance))
-                    views.setTextViewText(R.id.widget_monthly_expense, "Spent this month: ₹${decFormat.format(monthlyExpense)}")
+                    views.setTextViewText(R.id.widget_monthly_income, decFormat.format(monthlyIncome))
+                    views.setTextViewText(R.id.widget_monthly_expense, decFormat.format(monthlyExpense))
+                    views.setTextViewText(R.id.widget_monthly_total, decFormat.format(monthlyTotal))
                 } catch (e: Exception) {
-                    views.setTextViewText(R.id.widget_net_balance, "Rupee Ledger")
-                    views.setTextViewText(R.id.widget_monthly_expense, "Tap to synchronize")
+                    views.setTextViewText(R.id.widget_monthly_income, "₹0.00")
+                    views.setTextViewText(R.id.widget_monthly_expense, "₹0.00")
+                    views.setTextViewText(R.id.widget_monthly_total, "₹0.00")
                 }
 
                 // Attach click intents securely

@@ -127,7 +127,7 @@ object SmsParser {
                                       lowerBody.contains("recharge successful") || 
                                       lowerBody.contains("salary") || 
                                       lowerBody.contains("added to your wallet") || 
-                                      lowerBody.contains("txn of") ||
+                                      lowerBody.contains("txn") ||
                                       lowerBody.contains("payment") ||
                                       lowerBody.contains("sent") ||
                                       lowerBody.contains("refund") ||

@@ -755,42 +755,47 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         smsBody: String,
         sender: String,
         forcedKeys: List<String>,
-        regexHint: String = ""
+        customPatterns: List<String> = emptyList()
     ) {
         viewModelScope.launch {
             val cleanBody = smsBody.trim()
             val cleanSender = sender.trim().ifBlank { "Manual-Paste" }
             val selectedKeys = forcedKeys.map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
-            val cleanHint = regexHint.trim()
+            val customPatternList = customPatterns.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+            val extractedSenderKey = cleanSender
+                .split(Regex("[^A-Za-z]+"))
+                .firstOrNull { it.length >= 4 }
+                ?.take(4)
+                ?.lowercase()
 
             if (cleanBody.isBlank()) {
                 _toastMessage.emit("Paste an SMS body before analyzing.")
                 return@launch
             }
-            if (selectedKeys.isEmpty()) {
-                _toastMessage.emit("Pick at least one parser key before analyzing the pasted SMS.")
-                return@launch
-            }
 
             val assistedBody = buildString {
                 append(cleanBody)
-                append(' ')
-                append(selectedKeys.joinToString(" "))
-                if (cleanHint.isNotBlank()) {
-                    val regexMatched = runCatching { Regex(cleanHint, RegexOption.IGNORE_CASE).containsMatchIn(cleanBody) }
-                        .getOrDefault(false)
-                    if (!regexMatched) {
-                        _toastMessage.emit("Regex hint did not match the pasted message. Continuing with hint keywords only.")
+                val helperTerms = buildList {
+                    addAll(selectedKeys)
+                    if (!extractedSenderKey.isNullOrBlank()) add(extractedSenderKey)
+                    customPatternList.forEach { pattern ->
+                        val regexMatched = runCatching { Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(cleanBody) }
+                            .getOrDefault(false)
+                        if (!regexMatched) {
+                            addAll(
+                                pattern.split(Regex("[^A-Za-z0-9@._-]+"))
+                                    .map { it.trim() }
+                                    .filter { it.length > 1 }
+                            )
+                        } else {
+                            add(pattern)
+                        }
                     }
-                    val helperTerms = cleanHint
-                        .split(Regex("[^A-Za-z0-9@._-]+"))
-                        .map { it.trim() }
-                        .filter { it.length > 1 }
-                        .distinct()
-                    if (helperTerms.isNotEmpty()) {
-                        append(' ')
-                        append(helperTerms.joinToString(" "))
-                    }
+                }.distinct()
+
+                if (helperTerms.isNotEmpty()) {
+                    append(' ')
+                    append(helperTerms.joinToString(" "))
                 }
             }
 
@@ -798,7 +803,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 smsBody = cleanBody,
                 parserBody = assistedBody,
                 sender = cleanSender,
-                progressMessage = if (cleanHint.isBlank()) {
+                progressMessage = if (customPatternList.isEmpty()) {
                     "Analyzing pasted SMS with selected parser keys..."
                 } else {
                     "Analyzing pasted SMS with selected keys and custom pattern..."
@@ -808,7 +813,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun simulateSmsReceived(smsBody: String, sender: String) {
-        analyzePastedSms(smsBody, sender, forcedKeys = listOf("txn"))
+        analyzePastedSms(smsBody, sender, forcedKeys = listOf("txn"), customPatterns = emptyList())
     }
 
     private suspend fun processManualSmsImport(

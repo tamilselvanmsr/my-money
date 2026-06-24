@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -46,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -178,6 +180,9 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     // Bottom Sheet & Dialog control states
     var showAddDialog by remember { mutableStateOf(false) }
     var showCsvDialog by remember { mutableStateOf(false) }
+    var showAppMenu by remember { mutableStateOf(false) }
+    var showBackupDialog by remember { mutableStateOf(false) }
+    var showRestoreDialog by remember { mutableStateOf(false) }
     
     val toastMessage = viewModel.toastMessage
     val scope = rememberCoroutineScope()
@@ -209,11 +214,11 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             .fillMaxSize()
             .testTag("main_scaffold"),
         topBar = {
-            CenterAlignedTopAppBar(
+            TopAppBar(
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                        horizontalArrangement = Arrangement.Start
                     ) {
                         Surface(
                             color = Color(0xFF00E5FF).copy(alpha = 0.15f),
@@ -240,18 +245,76 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = { showCsvDialog = true },
-                        modifier = Modifier.testTag("export_csv_top_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = "Share CSV",
-                            tint = Color(0xFF00E5FF)
-                        )
+                    Box {
+                        IconButton(
+                            onClick = { showAppMenu = true },
+                            modifier = Modifier.testTag("app_overflow_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Menu,
+                                contentDescription = "App menu",
+                                tint = Color(0xFF00E5FF)
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showAppMenu,
+                            onDismissRequest = { showAppMenu = false },
+                            modifier = Modifier
+                                .background(Color(0xFF131A26))
+                                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(12.dp))
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("MyMoney v${BuildConfig.VERSION_NAME}", color = Color.White, fontWeight = FontWeight.Bold)
+                                        Text("App version", color = Color.White.copy(alpha = 0.45f), fontSize = 11.sp)
+                                    }
+                                },
+                                onClick = {},
+                                enabled = false
+                            )
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                            DropdownMenuItem(
+                                text = {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Share, contentDescription = "Export", tint = Color(0xFF00E5FF))
+                                        Text("Export", color = Color.White)
+                                    }
+                                },
+                                onClick = {
+                                    showAppMenu = false
+                                    showCsvDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Backup, contentDescription = "Backup", tint = Color(0xFF10B981))
+                                        Text("Backup", color = Color.White)
+                                    }
+                                },
+                                onClick = {
+                                    showAppMenu = false
+                                    showBackupDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Restore, contentDescription = "Restore", tint = Color(0xFFFFC107))
+                                        Text("Restore", color = Color.White)
+                                    }
+                                },
+                                onClick = {
+                                    showAppMenu = false
+                                    showRestoreDialog = true
+                                }
+                            )
+                        }
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = darkBg
                 )
             )
@@ -348,6 +411,20 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             onDismiss = { showCsvDialog = false }
         )
     }
+
+    if (showBackupDialog) {
+        BackupDialog(
+            viewModel = viewModel,
+            onDismiss = { showBackupDialog = false }
+        )
+    }
+
+    if (showRestoreDialog) {
+        RestoreBackupDialog(
+            viewModel = viewModel,
+            onDismiss = { showRestoreDialog = false }
+        )
+    }
 }
 
 // 1. RECORDS / DASHBOARD SCREEN
@@ -424,122 +501,90 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
         // Active Month/Period Navigation Selector Header
         item {
             var showFilterMenu by remember { mutableStateOf(false) }
-            
-            Box(
+
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
-                contentAlignment = Alignment.Center
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Centered period selection navigation
                 Surface(
                     color = Color(0xFF131A26),
                     shape = RoundedCornerShape(24.dp),
                     border = BorderStroke(1.dp, Color(0xFF1D293B)),
-                    modifier = Modifier.align(Alignment.Center)
+                    modifier = Modifier.weight(1f)
                 ) {
                     Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        IconButton(
-                            onClick = {
-                                shiftPeriod(viewModel, activeMode, anchorTime, -1)
-                            },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ChevronLeft,
-                                contentDescription = "Previous Period",
-                                tint = Color(0xFF00E5FF),
-                                modifier = Modifier.size(20.dp)
-                            )
+                        IconButton(onClick = { shiftPeriod(viewModel, activeMode, anchorTime, -1) }, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Period", tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
                         }
-                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = formatPeriodLabel(activeMode, anchorTime),
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             color = Color.White,
-                            modifier = Modifier.widthIn(min = 120.dp),
-                            textAlign = TextAlign.Center
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        IconButton(
-                            onClick = {
-                                shiftPeriod(viewModel, activeMode, anchorTime, 1)
-                            },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = "Next Period",
-                                tint = Color(0xFF00E5FF),
-                                modifier = Modifier.size(20.dp)
-                            )
+                        IconButton(onClick = { shiftPeriod(viewModel, activeMode, anchorTime, 1) }, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.ChevronRight, contentDescription = "Next Period", tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
                         }
                     }
                 }
-                
-                // Right-aligned quick actions and filter menu
-                Box(
-                    modifier = Modifier.align(Alignment.CenterEnd)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalIconButton(
+                        onClick = {
+                            isSearchExpanded = !isSearchExpanded
+                            if (!isSearchExpanded) searchQuery = ""
+                        },
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = if (isSearchExpanded || searchQuery.isNotBlank()) Color(0xFF00E5FF).copy(alpha = 0.18f) else Color.White.copy(alpha = 0.08f),
+                            contentColor = if (isSearchExpanded || searchQuery.isNotBlank()) Color(0xFF00E5FF) else Color.White
+                        ),
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = "Toggle search")
+                    }
+
+                    if (activeMode == DisplayMode.MONTHLY) {
                         FilledTonalIconButton(
-                            onClick = {
-                                isSearchExpanded = !isSearchExpanded
-                                if (!isSearchExpanded) {
-                                    searchQuery = ""
-                                }
-                            },
+                            onClick = { showDeletePeriodDialog = true },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (isSearchExpanded || searchQuery.isNotBlank()) Color(0xFF00E5FF).copy(alpha = 0.18f) else Color.White.copy(alpha = 0.08f),
-                                contentColor = if (isSearchExpanded || searchQuery.isNotBlank()) Color(0xFF00E5FF) else Color.White
+                                containerColor = Color(0xFFF43F5E).copy(alpha = 0.18f),
+                                contentColor = Color(0xFFF43F5E)
                             ),
                             modifier = Modifier.size(36.dp)
                         ) {
-                            Icon(Icons.Default.Search, contentDescription = "Toggle search")
-                        }
-
-                        if (activeMode == DisplayMode.MONTHLY) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            FilledTonalIconButton(
-                                onClick = { showDeletePeriodDialog = true },
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = Color(0xFFF43F5E).copy(alpha = 0.18f),
-                                    contentColor = Color(0xFFF43F5E)
-                                ),
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(Icons.Default.DeleteSweep, contentDescription = "Delete month")
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = { showFilterMenu = !showFilterMenu },
-                            modifier = Modifier
-                                .size(40.dp)
-                                .testTag("three_bar_filter_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Menu,
-                                contentDescription = "Options and Filtering",
-                                tint = Color(0xFF00E5FF),
-                                modifier = Modifier.size(24.dp)
-                            )
+                            Icon(Icons.Default.DeleteSweep, contentDescription = "Delete month")
                         }
                     }
-                    
-                    DropdownMenu(
-                        expanded = showFilterMenu,
-                        onDismissRequest = { showFilterMenu = false },
-                        modifier = Modifier
-                            .background(Color(0xFF0F172A))
-                            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
-                            .width(260.dp)
-                    ) {
+
+                    Box {
+                        IconButton(
+                            onClick = { showFilterMenu = !showFilterMenu },
+                            modifier = Modifier.size(40.dp).testTag("three_bar_filter_button")
+                        ) {
+                            Icon(Icons.Default.Menu, contentDescription = "Options and Filtering", tint = Color(0xFF00E5FF), modifier = Modifier.size(24.dp))
+                        }
+
+                        DropdownMenu(
+                            expanded = showFilterMenu,
+                            onDismissRequest = { showFilterMenu = false },
+                            modifier = Modifier
+                                .background(Color(0xFF0F172A))
+                                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
+                                .width(260.dp)
+                        ) {
                         DropdownMenuItem(
                             text = {
                                 Text("DISPLAY MODE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
@@ -642,6 +687,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     }
                 }
             }
+        }
         }
 
         // Net Balance Glow Card
@@ -999,7 +1045,6 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    // Custom active payment wallet badge
                                     Surface(
                                         color = Color.White.copy(alpha = 0.06f),
                                         shape = RoundedCornerShape(4.dp)
@@ -1009,19 +1054,6 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = Color(0xFF00E5FF),
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Surface(
-                                        color = resolvedCat.color.copy(alpha = 0.12f),
-                                        shape = RoundedCornerShape(4.dp)
-                                    ) {
-                                        Text(
-                                            text = resolvedCat.displayName,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = resolvedCat.color,
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                         )
                                     }
@@ -1153,9 +1185,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
             percentage = if (totalOverviewSum > 0.0) sumObj / totalOverviewSum else 0.0
         )
     }.sortedByDescending { it.total }
-    val flowTransactions = if (selectedMode == AnalyticsMode.INCOME_FLOW) incomes else expenses
-    val flowPoints = remember(flowTransactions, analysisStart, analysisEnd) {
-        buildDailyFlowPoints(flowTransactions, analysisStart, analysisEnd)
+    val flowPoints = remember(filteredTransactions, analysisStart, analysisEnd) {
+        buildDailyFlowPoints(filteredTransactions, analysisStart, analysisEnd)
     }
     val accountStats = remember(filteredTransactions) {
         buildAccountAnalytics(filteredTransactions)
@@ -1302,6 +1333,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                     AnalyticsFlowSection(
                         title = "Expense Flow",
                         points = flowPoints,
+                        showIncome = false,
                         accent = Color(0xFFF43F5E),
                         emptyMessage = "No expense flow available for this period."
                     )
@@ -1313,6 +1345,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                     AnalyticsFlowSection(
                         title = "Income Flow",
                         points = flowPoints,
+                        showIncome = true,
                         accent = Color(0xFF10B981),
                         emptyMessage = "No income flow available for this period."
                     )
@@ -1343,9 +1376,13 @@ private enum class AnalyticsMode(val label: String) {
 }
 
 private data class AnalyticsFlowPoint(
+    val dateMillis: Long,
     val shortLabel: String,
     val fullLabel: String,
-    val total: Double
+    val dayOfWeekLabel: String,
+    val dayOfMonthLabel: String,
+    val income: Double,
+    val expense: Double
 )
 
 private data class AccountAnalyticsSummary(
@@ -1497,33 +1534,32 @@ private fun AnalyticsOverviewSection(
                         }
                         val legendContent: @Composable () -> Unit = {
                             Column(
-                                modifier = if (isCompact) Modifier.fillMaxWidth() else Modifier.widthIn(max = 150.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                modifier = Modifier.widthIn(max = 130.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
                                 categoryTotals.forEachIndexed { idx, stats ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
+                                            .clip(RoundedCornerShape(6.dp))
                                             .clickable {
                                                 activeSectorIndex = if (activeSectorIndex == idx) -1 else idx
                                             }
                                             .background(if (activeSectorIndex == idx) Color.White.copy(alpha = 0.06f) else Color.Transparent)
-                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                            .padding(horizontal = 4.dp, vertical = 3.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Box(
                                             modifier = Modifier
-                                                .size(10.dp)
-                                                .background(stats.category.color, CircleShape)
+                                                .size(8.dp)
+                                                .background(stats.category.color)
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
                                         Text(
                                             stats.category.displayName,
-                                            color = Color.White,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 2,
+                                            color = Color.White.copy(alpha = 0.85f),
+                                            fontSize = 10.sp,
+                                            maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f)
                                         )
@@ -1532,26 +1568,15 @@ private fun AnalyticsOverviewSection(
                             }
                         }
 
-                        if (isCompact) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                                 chartContent()
-                                legendContent()
                             }
-                        } else {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                                    chartContent()
-                                }
-                                legendContent()
-                            }
+                            legendContent()
                         }
                     }
                 }
@@ -1628,13 +1653,34 @@ private fun AnalyticsOverviewSection(
 private fun AnalyticsFlowSection(
     title: String,
     points: List<AnalyticsFlowPoint>,
+    showIncome: Boolean,
     accent: Color,
     emptyMessage: String
 ) {
-    val nonZeroPoints = remember(points) { points.filter { it.total > 0.0 } }
     val decFormat = remember { DecimalFormat("₹#,##0.00") }
-    val total = points.sumOf { it.total }
+    val pointValues = remember(points, showIncome) {
+        points.map { if (showIncome) it.income else it.expense }
+    }
+    val nonZeroPoints = remember(pointValues) { pointValues.filter { it > 0.0 } }
+    val total = pointValues.sum()
     val average = if (nonZeroPoints.isNotEmpty()) total / nonZeroPoints.size else 0.0
+    val maxValue = (pointValues.maxOrNull() ?: 0.0).coerceAtLeast(1.0)
+    val yAxisValues = remember(maxValue) {
+        listOf(maxValue, maxValue * 0.66, maxValue * 0.33, 0.0)
+    }
+    val xAxisIndices = remember(points) {
+        when {
+            points.isEmpty() -> emptyList()
+            points.size <= 5 -> points.indices.toList()
+            else -> listOf(0, points.lastIndex / 4, points.lastIndex / 2, (points.lastIndex * 3) / 4, points.lastIndex).distinct()
+        }
+    }
+    var activePointIndex by remember(points, showIncome) {
+        mutableStateOf(pointValues.indexOfLast { it > 0.0 }.takeIf { it >= 0 } ?: 0)
+    }
+    val activePoint = points.getOrNull(activePointIndex)
+    val activeValue = pointValues.getOrElse(activePointIndex) { 0.0 }
+    val calendarCells = remember(points) { buildAnalyticsCalendarCells(points) }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Surface(
@@ -1664,51 +1710,135 @@ private fun AnalyticsFlowSection(
                         Text(emptyMessage, color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
                     }
                 } else {
-                    Canvas(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(220.dp)
-                    ) {
-                        val leftPad = 28.dp.toPx()
-                        val rightPad = 12.dp.toPx()
-                        val topPad = 16.dp.toPx()
-                        val bottomPad = 24.dp.toPx()
-                        val chartWidth = size.width - leftPad - rightPad
-                        val chartHeight = size.height - topPad - bottomPad
-                        val maxValue = (nonZeroPoints.maxOfOrNull { it.total } ?: 0.0).coerceAtLeast(1.0)
-
-                        repeat(4) { index ->
-                            val y = topPad + chartHeight * index / 3f
-                            drawLine(
-                                color = Color.White.copy(alpha = 0.08f),
-                                start = Offset(leftPad, y),
-                                end = Offset(size.width - rightPad, y),
-                                strokeWidth = 1.dp.toPx()
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = activePoint?.fullLabel ?: title,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
                             )
-                        }
-
-                        var previousOffset: Offset? = null
-                        nonZeroPoints.forEachIndexed { index, point ->
-                            val x = if (nonZeroPoints.size == 1) {
-                                leftPad + chartWidth / 2f
-                            } else {
-                                leftPad + (chartWidth * index / (nonZeroPoints.size - 1).toFloat())
-                            }
-                            val y = topPad + chartHeight - ((point.total / maxValue) * chartHeight).toFloat()
-                            val currentOffset = Offset(x, y)
-
-                            previousOffset?.let {
-                                drawLine(
+                            Surface(
+                                color = accent.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, accent.copy(alpha = 0.4f))
+                            ) {
+                                Text(
+                                    text = decFormat.format(activeValue),
                                     color = accent,
-                                    start = it,
-                                    end = currentOffset,
-                                    strokeWidth = 3.dp.toPx(),
-                                    cap = StrokeCap.Round
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
+                        }
 
-                            drawCircle(color = accent, radius = 4.dp.toPx(), center = currentOffset)
-                            previousOffset = currentOffset
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxHeight(),
+                                verticalArrangement = Arrangement.SpaceBetween,
+                                horizontalAlignment = Alignment.End
+                            ) {
+                                yAxisValues.forEach { value ->
+                                    Text(
+                                        text = compactCurrency(value),
+                                        color = Color.White.copy(alpha = 0.45f),
+                                        fontSize = 10.sp,
+                                        textAlign = TextAlign.End
+                                    )
+                                }
+                            }
+
+                            Canvas(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .pointerInput(points, pointValues) {
+                                        detectTapGestures { offset ->
+                                            if (points.isNotEmpty()) {
+                                                val index = if (points.size == 1) {
+                                                    0
+                                                } else {
+                                                    ((offset.x / size.width) * (points.size - 1)).toInt().coerceIn(0, points.lastIndex)
+                                                }
+                                                activePointIndex = index
+                                            }
+                                        }
+                                    }
+                            ) {
+                                val topPad = 12.dp.toPx()
+                                val bottomPad = 16.dp.toPx()
+                                val chartHeight = size.height - topPad - bottomPad
+                                val chartWidth = size.width
+
+                                yAxisValues.forEachIndexed { index, _ ->
+                                    val y = topPad + chartHeight * index / (yAxisValues.lastIndex.coerceAtLeast(1)).toFloat()
+                                    drawLine(
+                                        color = Color.White.copy(alpha = 0.08f),
+                                        start = Offset(0f, y),
+                                        end = Offset(chartWidth, y),
+                                        strokeWidth = 1.dp.toPx()
+                                    )
+                                }
+
+                                var previousOffset: Offset? = null
+                                pointValues.forEachIndexed { index, value ->
+                                    val x = if (pointValues.size == 1) chartWidth / 2f else chartWidth * index / (pointValues.size - 1).toFloat()
+                                    val y = topPad + chartHeight - ((value / maxValue) * chartHeight).toFloat()
+                                    val currentOffset = Offset(x, y)
+
+                                    previousOffset?.let {
+                                        drawLine(
+                                            color = accent,
+                                            start = it,
+                                            end = currentOffset,
+                                            strokeWidth = 3.dp.toPx(),
+                                            cap = StrokeCap.Round
+                                        )
+                                    }
+
+                                    if (index == activePointIndex) {
+                                        drawLine(
+                                            color = accent.copy(alpha = 0.22f),
+                                            start = Offset(x, topPad),
+                                            end = Offset(x, topPad + chartHeight),
+                                            strokeWidth = 2.dp.toPx()
+                                        )
+                                    }
+
+                                    drawCircle(
+                                        color = accent,
+                                        radius = if (index == activePointIndex) 6.dp.toPx() else 4.dp.toPx(),
+                                        center = currentOffset
+                                    )
+                                    previousOffset = currentOffset
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 56.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            xAxisIndices.forEach { index ->
+                                Text(
+                                    text = points[index].dayOfMonthLabel,
+                                    color = if (index == activePointIndex) accent else Color.White.copy(alpha = 0.45f),
+                                    fontSize = 10.sp,
+                                    fontWeight = if (index == activePointIndex) FontWeight.Bold else FontWeight.Medium
+                                )
+                            }
                         }
                     }
                 }
@@ -1723,25 +1853,67 @@ private fun AnalyticsFlowSection(
             color = Color.White.copy(alpha = 0.6f)
         )
 
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            items(points) { point ->
-                Surface(
-                    color = if (point.total > 0.0) accent.copy(alpha = 0.12f) else Color(0xFF131A26),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, if (point.total > 0.0) accent.copy(alpha = 0.45f) else Color(0xFF1E293B))
+        Surface(
+            color = Color(0xFF0F172A),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, Color(0xFF1E293B)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White.copy(alpha = 0.03f))
+                        .padding(vertical = 6.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.width(112.dp).padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(point.shortLabel, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
-                        Text(point.fullLabel, color = Color.White.copy(alpha = 0.45f), fontSize = 10.sp)
+                    listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat").forEach { day ->
                         Text(
-                            decFormat.format(point.total),
+                            text = day,
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center,
                             fontWeight = FontWeight.Bold,
-                            color = if (point.total > 0.0) accent else Color.White.copy(alpha = 0.45f),
-                            fontSize = 12.sp
+                            fontSize = 10.sp,
+                            color = Color.White.copy(alpha = 0.5f)
                         )
+                    }
+                }
+                HorizontalDivider(color = Color.White.copy(alpha = 0.07f))
+                calendarCells.chunked(7).forEachIndexed { weekIdx, week ->
+                    if (weekIdx > 0) HorizontalDivider(color = Color.White.copy(alpha = 0.04f))
+                    Row(modifier = Modifier.fillMaxWidth().height(38.dp)) {
+                        week.forEachIndexed { dayIdx, point ->
+                            if (dayIdx > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxHeight()
+                                        .width(1.dp)
+                                        .background(Color.White.copy(alpha = 0.04f))
+                                )
+                            }
+                            val value = point?.let { if (showIncome) it.income else it.expense } ?: 0.0
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .background(
+                                        if (point != null && value > 0.0) accent.copy(alpha = 0.09f) else Color.Transparent
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (point != null) {
+                                    Text(
+                                        text = if (value > 0.0) compactCurrency(value) else "\u00b7",
+                                        fontSize = 8.sp,
+                                        fontWeight = if (value > 0.0) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (value > 0.0) accent else Color.White.copy(alpha = 0.18f),
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(horizontal = 1.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1753,6 +1925,11 @@ private fun AnalyticsFlowSection(
 private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>) {
     val decFormat = remember { DecimalFormat("₹#,##0.00") }
     val maxActivity = accountStats.maxOfOrNull { maxOf(it.income, it.expense) }?.coerceAtLeast(1.0) ?: 1.0
+    val yAxisValues = remember(maxActivity) {
+        listOf(maxActivity, maxActivity * 0.66, maxActivity * 0.33, 0.0)
+    }
+    var activeAccountIndex by remember(accountStats) { mutableStateOf(if (accountStats.isEmpty()) 0 else 0) }
+    val activeAccount = accountStats.getOrNull(activeAccountIndex)
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Surface(
@@ -1769,32 +1946,135 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                         Text("No account activity available for this period.", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
                     }
                 } else {
-                    accountStats.forEach { stats ->
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(stats.accountName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Text(decFormat.format(stats.net), color = if (stats.net >= 0) Color(0xFF10B981) else Color(0xFFF43F5E), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    activeAccount?.let { stats ->
+                        Surface(
+                            color = stats.color.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, stats.color.copy(alpha = 0.35f))
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(stats.accountName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text(decFormat.format(stats.net), color = if (stats.net >= 0) Color(0xFF10B981) else Color(0xFFF43F5E), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("In ${compactCurrency(stats.income)}", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("Out ${compactCurrency(stats.expense)}", color = Color(0xFFF43F5E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("In", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                LinearProgressIndicator(
-                                    progress = (stats.income / maxActivity).toFloat(),
-                                    color = Color(0xFF10B981),
-                                    trackColor = Color.White.copy(alpha = 0.06f),
-                                    modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp))
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(240.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxHeight(),
+                            verticalArrangement = Arrangement.SpaceBetween,
+                            horizontalAlignment = Alignment.End
+                        ) {
+                            yAxisValues.forEach { value ->
+                                Text(
+                                    text = compactCurrency(value),
+                                    color = Color.White.copy(alpha = 0.45f),
+                                    fontSize = 10.sp,
+                                    textAlign = TextAlign.End
                                 )
-                                Text(decFormat.format(stats.income), color = Color.White, fontSize = 10.sp)
                             }
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Out", color = Color(0xFFF43F5E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                LinearProgressIndicator(
-                                    progress = (stats.expense / maxActivity).toFloat(),
-                                    color = Color(0xFFF43F5E),
-                                    trackColor = Color.White.copy(alpha = 0.06f),
-                                    modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp))
+                        }
+
+                        Canvas(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .pointerInput(accountStats) {
+                                    detectTapGestures { offset ->
+                                        if (accountStats.isNotEmpty()) {
+                                            val slotWidth = size.width / accountStats.size
+                                            activeAccountIndex = (offset.x / slotWidth).toInt().coerceIn(0, accountStats.lastIndex)
+                                        }
+                                    }
+                                }
+                        ) {
+                            val topPad = 12.dp.toPx()
+                            val bottomPad = 18.dp.toPx()
+                            val chartHeight = size.height - topPad - bottomPad
+                            val slotWidth = size.width / accountStats.size
+
+                            yAxisValues.forEachIndexed { index, _ ->
+                                val y = topPad + chartHeight * index / (yAxisValues.lastIndex.coerceAtLeast(1)).toFloat()
+                                drawLine(
+                                    color = Color.White.copy(alpha = 0.08f),
+                                    start = Offset(0f, y),
+                                    end = Offset(size.width, y),
+                                    strokeWidth = 1.dp.toPx()
                                 )
-                                Text(decFormat.format(stats.expense), color = Color.White, fontSize = 10.sp)
                             }
+
+                            accountStats.forEachIndexed { index, stats ->
+                                val centerX = slotWidth * index + slotWidth / 2f
+                                val barWidth = slotWidth * 0.28f
+                                val gap = slotWidth * 0.05f
+                                val incomeCenterX = centerX - barWidth / 2f - gap / 2f
+                                val expenseCenterX = centerX + barWidth / 2f + gap / 2f
+                                val incomeY = topPad + chartHeight - ((stats.income / maxActivity) * chartHeight).toFloat()
+                                val expenseY = topPad + chartHeight - ((stats.expense / maxActivity) * chartHeight).toFloat()
+                                val barBottom = topPad + chartHeight
+                                val barAlpha = if (index == activeAccountIndex) 1f else 0.65f
+
+                                if (index == activeAccountIndex) {
+                                    drawRoundRect(
+                                        color = Color.White.copy(alpha = 0.04f),
+                                        topLeft = Offset(slotWidth * index + 4.dp.toPx(), topPad),
+                                        size = Size(slotWidth - 8.dp.toPx(), chartHeight),
+                                        cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
+                                    )
+                                }
+
+                                if (stats.income > 0.0) {
+                                    drawRoundRect(
+                                        color = Color(0xFF10B981),
+                                        topLeft = Offset(incomeCenterX - barWidth / 2f, incomeY),
+                                        size = Size(barWidth, (barBottom - incomeY).coerceAtLeast(4.dp.toPx())),
+                                        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
+                                        alpha = barAlpha
+                                    )
+                                }
+                                if (stats.expense > 0.0) {
+                                    drawRoundRect(
+                                        color = Color(0xFFF43F5E),
+                                        topLeft = Offset(expenseCenterX - barWidth / 2f, expenseY),
+                                        size = Size(barWidth, (barBottom - expenseY).coerceAtLeast(4.dp.toPx())),
+                                        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
+                                        alpha = barAlpha
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        accountStats.forEachIndexed { index, stats ->
+                            Text(
+                                text = stats.accountName.take(8),
+                                color = if (index == activeAccountIndex) stats.color else Color.White.copy(alpha = 0.45f),
+                                fontSize = 10.sp,
+                                fontWeight = if (index == activeAccountIndex) FontWeight.Bold else FontWeight.Medium,
+                                modifier = Modifier.weight(1f),
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }
@@ -1817,12 +2097,18 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                     border = BorderStroke(1.dp, stats.color.copy(alpha = 0.45f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(stats.accountName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                            AccountStatChip(label = "Income", amount = stats.income, tone = Color(0xFF10B981), modifier = Modifier.weight(1f))
-                            AccountStatChip(label = "Expense", amount = stats.expense, tone = Color(0xFFF43F5E), modifier = Modifier.weight(1f))
-                            AccountStatChip(label = "Net", amount = stats.net, tone = if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043), modifier = Modifier.weight(1f))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(stats.accountName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(compactCurrency(stats.income), color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text(compactCurrency(stats.expense), color = Color(0xFFF43F5E), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text(compactCurrency(stats.net), color = if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
                 }
@@ -1859,13 +2145,13 @@ private fun buildDailyFlowPoints(
 ): List<AnalyticsFlowPoint> {
     val totalsByDay = transactions.groupBy {
         SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(it.timestamp))
-    }.mapValues { (_, dayTransactions) ->
-        dayTransactions.sumOf { it.amount }
     }
 
     val keyFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     val shortFormat = SimpleDateFormat("dd MMM", Locale.getDefault())
     val fullFormat = SimpleDateFormat("EEE, dd MMM", Locale.getDefault())
+    val weekdayFormat = SimpleDateFormat("EEE", Locale.getDefault())
+    val dayNumberFormat = SimpleDateFormat("d", Locale.getDefault())
     val calendar = Calendar.getInstance().apply {
         timeInMillis = start
         set(Calendar.HOUR_OF_DAY, 0)
@@ -1885,14 +2171,42 @@ private fun buildDailyFlowPoints(
     while (!calendar.after(lastDay)) {
         val time = calendar.timeInMillis
         val key = keyFormat.format(Date(time))
+        val dayTransactions = totalsByDay[key].orEmpty()
         points += AnalyticsFlowPoint(
+            dateMillis = time,
             shortLabel = shortFormat.format(Date(time)),
             fullLabel = fullFormat.format(Date(time)),
-            total = totalsByDay[key] ?: 0.0
+            dayOfWeekLabel = weekdayFormat.format(Date(time)),
+            dayOfMonthLabel = dayNumberFormat.format(Date(time)),
+            income = dayTransactions.filter { it.type == "INCOME" }.sumOf { it.amount },
+            expense = dayTransactions.filter { it.type == "EXPENSE" }.sumOf { it.amount }
         )
         calendar.add(Calendar.DAY_OF_MONTH, 1)
     }
     return points
+}
+
+private fun compactCurrency(amount: Double): String {
+    val absAmount = if (amount < 0) -amount else amount
+    return when {
+        absAmount >= 10000000 -> "₹${String.format(Locale.getDefault(), "%.1f", amount / 10000000)}Cr"
+        absAmount >= 100000 -> "₹${String.format(Locale.getDefault(), "%.1f", amount / 100000)}L"
+        absAmount >= 1000 -> "₹${String.format(Locale.getDefault(), "%.1f", amount / 1000)}K"
+        else -> "₹${String.format(Locale.getDefault(), "%.0f", amount)}"
+    }
+}
+
+private fun buildAnalyticsCalendarCells(points: List<AnalyticsFlowPoint>): List<AnalyticsFlowPoint?> {
+    if (points.isEmpty()) return emptyList()
+
+    val firstDay = Calendar.getInstance().apply { timeInMillis = points.first().dateMillis }
+    val leadingBlanks = (firstDay.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY).coerceAtLeast(0)
+    val cells = MutableList<AnalyticsFlowPoint?>(leadingBlanks) { null }
+    cells.addAll(points)
+    while (cells.size % 7 != 0) {
+        cells.add(null)
+    }
+    return cells
 }
 
 private fun buildAccountAnalytics(transactions: List<TransactionEntry>): List<AccountAnalyticsSummary> {
@@ -3319,13 +3633,14 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
     val context = LocalContext.current
     var manualSmsSender by remember { mutableStateOf("HDFC-BANK") }
     var manualSmsBody by remember { mutableStateOf("") }
-    var manualRegexHint by remember { mutableStateOf("") }
+    var customPatternInput by remember { mutableStateOf("") }
     val forcePatternOptions = listOf("txn", "debited", "credited", "spent", "paid", "received", "upi", "card", "account", "salary")
     val suggestedForcePatterns = remember(manualSmsBody) {
         val lowerBody = manualSmsBody.lowercase()
         forcePatternOptions.filter { lowerBody.contains(it) }
     }
-    var selectedForcePatterns by remember { mutableStateOf(emptySet<String>()) }
+    var selectedForcePatterns by remember { mutableStateOf(forcePatternOptions.toSet()) }
+    var customPatterns by remember { mutableStateOf(emptyList<String>()) }
     val isSmsParsing by viewModel.isSmsParsing.collectAsStateWithLifecycle()
     var hasReadSmsPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED)
@@ -3448,7 +3763,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        "Paste a real bank SMS here, then explicitly choose one or more keys to force the parser path for this single message.",
+                        "Paste a real bank SMS here. Core parser keys are selected by default, and you can keep adding more repeated words or patterns below.",
                         fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.6f)
                     )
@@ -3482,7 +3797,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
-                        "Pick required parser keys",
+                        "Parser keys",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White.copy(alpha = 0.55f)
@@ -3535,32 +3850,70 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    OutlinedTextField(
-                        value = manualRegexHint,
-                        onValueChange = { manualRegexHint = it },
-                        label = { Text("Optional Custom Pattern") },
-                        placeholder = { Text("Example: txn|debited|upi") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = customPatternInput,
+                            onValueChange = { customPatternInput = it },
+                            label = { Text("Add Custom Pattern") },
+                            placeholder = { Text("credited Rs.|Card 4656") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                val pattern = customPatternInput.trim()
+                                if (pattern.isNotBlank() && pattern !in customPatterns) {
+                                    customPatterns = customPatterns + pattern
+                                }
+                                customPatternInput = ""
+                            },
+                            border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.45f))
+                        ) {
+                            Text("Add", color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    if (customPatterns.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            customPatterns.forEach { pattern ->
+                                InputChip(
+                                    selected = true,
+                                    onClick = { customPatterns = customPatterns.filterNot { it == pattern } },
+                                    label = { Text(pattern) },
+                                    trailingIcon = {
+                                        Icon(Icons.Default.Close, contentDescription = "Remove pattern", modifier = Modifier.size(16.dp))
+                                    },
+                                    colors = InputChipDefaults.inputChipColors(
+                                        selectedContainerColor = Color(0xFF10B981).copy(alpha = 0.15f),
+                                        selectedLabelColor = Color(0xFF10B981),
+                                        selectedTrailingIconColor = Color(0xFF10B981)
+                                    )
+                                )
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        if (selectedForcePatterns.isEmpty()) {
-                            "Choose at least one key before analyzing this pasted SMS."
-                        } else {
-                            "Selected keys and custom pattern are only used for this pasted message. They do not change automatic inbox scanning rules globally."
-                        },
+                        "Selected keys and added custom patterns are only used for this pasted message. They do not change automatic inbox scanning rules globally.",
                         fontSize = 10.sp,
-                        color = if (selectedForcePatterns.isEmpty()) Color(0xFFF43F5E) else Color.White.copy(alpha = 0.45f)
+                        color = Color.White.copy(alpha = 0.45f)
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
-                        onClick = { viewModel.analyzePastedSms(manualSmsBody, manualSmsSender, selectedForcePatterns.toList(), manualRegexHint) },
-                        enabled = manualSmsBody.isNotBlank() && selectedForcePatterns.isNotEmpty() && !isSmsParsing,
+                        onClick = { viewModel.analyzePastedSms(manualSmsBody, manualSmsSender, selectedForcePatterns.toList(), customPatterns) },
+                        enabled = manualSmsBody.isNotBlank() && !isSmsParsing,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981), contentColor = Color(0xFF0B0F19)),
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
@@ -3592,6 +3945,8 @@ fun AddTransactionDialog(
     var selectedTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
     var showWalletPicker by remember { mutableStateOf(false) }
     var showCategoryPicker by remember { mutableStateOf(false) }
+    var showQuickAddAccount by remember { mutableStateOf(false) }
+    var showQuickAddCategory by remember { mutableStateOf(false) }
 
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
     val allCategories = CategoryResolver.getAll(customCats)
@@ -3745,7 +4100,12 @@ fun AddTransactionDialog(
                 accountSelection = it
                 showWalletPicker = false
             },
-            onDismiss = { showWalletPicker = false }
+            onDismiss = { showWalletPicker = false },
+            addActionLabel = "+ Add New Account",
+            onAddAction = {
+                showWalletPicker = false
+                showQuickAddAccount = true
+            }
         )
     }
 
@@ -3757,7 +4117,40 @@ fun AddTransactionDialog(
                 categorySelection = it
                 showCategoryPicker = false
             },
-            onDismiss = { showCategoryPicker = false }
+            onDismiss = { showCategoryPicker = false },
+            addActionLabel = "+ Add New Category",
+            onAddAction = {
+                showCategoryPicker = false
+                showQuickAddCategory = true
+            }
+        )
+    }
+
+    if (showQuickAddAccount) {
+        QuickAddAccountDialog(
+            onDismiss = { showQuickAddAccount = false },
+            onAdd = { name, balance, type, lastFour, openingBalanceTimestamp ->
+                val cleanName = name.trim()
+                viewModel.addAccount(cleanName, balance, type, lastFour, openingBalanceTimestamp)
+                accountSelection = cleanName
+                showQuickAddAccount = false
+            }
+        )
+    }
+
+    if (showQuickAddCategory) {
+        QuickAddCategoryDialog(
+            defaultType = transactionType,
+            onDismiss = { showQuickAddCategory = false },
+            onAdd = { name, type, iconName, colorHex, initialBudget ->
+                val cleanName = name.trim()
+                viewModel.addCustomCategory(cleanName, iconName, colorHex, type)
+                if (type == "EXPENSE" && initialBudget > 0.0) {
+                    viewModel.saveBudget(cleanName, cleanName, initialBudget)
+                }
+                categorySelection = cleanName
+                showQuickAddCategory = false
+            }
         )
     }
 }
@@ -3833,26 +4226,21 @@ fun EditTransactionDialog(
                     onTimestampChange = { selectedTimestamp = it }
                 )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        PickerButton(
-                            label = "Account",
-                            title = accountSelection,
-                            icon = walletIconFor(accountSelection, accounts.find { it.name == accountSelection }?.type),
-                            tint = Color(0xFF00E5FF),
-                            onClick = { showWalletPicker = true }
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f)) {
-                        PickerButton(
-                            label = "Category",
-                            title = selectedCategory?.displayName ?: "Choose category",
-                            icon = selectedCategory?.icon ?: Icons.Default.Category,
-                            tint = selectedCategory?.color ?: Color(0xFF00E5FF),
-                            onClick = { showCategoryPicker = true }
-                        )
-                    }
-                }
+                PickerButton(
+                    label = "Account",
+                    title = accountSelection,
+                    icon = walletIconFor(accountSelection, accounts.find { it.name == accountSelection }?.type),
+                    tint = Color(0xFF00E5FF),
+                    onClick = { showWalletPicker = true }
+                )
+
+                PickerButton(
+                    label = "Category",
+                    title = selectedCategory?.displayName ?: "Choose category",
+                    icon = selectedCategory?.icon ?: Icons.Default.Category,
+                    tint = selectedCategory?.color ?: Color(0xFF00E5FF),
+                    onClick = { showCategoryPicker = true }
+                )
 
                 OutlinedTextField(
                     value = notesStr,
@@ -3938,9 +4326,10 @@ fun EditTransactionDialog(
     if (showQuickAddAccount) {
         QuickAddAccountDialog(
             onDismiss = { showQuickAddAccount = false },
-            onAdd = { name, balance, type, lastFour ->
-                viewModel.addAccount(name, balance, type, lastFour)
-                accountSelection = name.trim()
+            onAdd = { name, balance, type, lastFour, openingBalanceTimestamp ->
+                val cleanName = name.trim()
+                viewModel.addAccount(cleanName, balance, type, lastFour, openingBalanceTimestamp)
+                accountSelection = cleanName
                 showQuickAddAccount = false
             }
         )
@@ -3950,11 +4339,13 @@ fun EditTransactionDialog(
         QuickAddCategoryDialog(
             defaultType = tx.type,
             onDismiss = { showQuickAddCategory = false },
-            onAdd = { name, type ->
-                val iconName = if (type == "INCOME") "salary" else "others"
-                val colorHex = if (type == "INCOME") "#2E7D32" else "#607D8B"
-                viewModel.addCustomCategory(name, iconName, colorHex, type)
-                categorySelection = name.trim()
+            onAdd = { name, type, iconName, colorHex, initialBudget ->
+                val cleanName = name.trim()
+                viewModel.addCustomCategory(cleanName, iconName, colorHex, type)
+                if (type == "EXPENSE" && initialBudget > 0.0) {
+                    viewModel.saveBudget(cleanName, cleanName, initialBudget)
+                }
+                categorySelection = cleanName
                 showQuickAddCategory = false
             }
         )
@@ -4196,12 +4587,13 @@ private fun walletIconFor(name: String, type: String?): androidx.compose.ui.grap
 @Composable
 private fun QuickAddAccountDialog(
     onDismiss: () -> Unit,
-    onAdd: (String, Double, String, String?) -> Unit
+    onAdd: (String, Double, String, String?, Long) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("BANK") }
     var lastFour by remember { mutableStateOf("") }
+    var openingBalanceTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
     val types = listOf("CASH", "BANK", "CREDIT_CARD", "SAVINGS")
 
     AlertDialog(
@@ -4209,28 +4601,75 @@ private fun QuickAddAccountDialog(
         title = { Text("Add New Account", color = Color.White, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Account Name") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Opening Balance (₹)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = lastFour, onValueChange = { lastFour = it }, label = { Text("Last 4 digits") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(types) { option ->
-                        val active = option == type
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (active) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent)
-                                .border(1.dp, if (active) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                .clickable { type = option }
-                                .padding(horizontal = 10.dp, vertical = 8.dp)
-                        ) {
-                            Text(option.replace("_", " "), color = if (active) Color(0xFF00E5FF) else Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Account Name (e.g. SBI Bank)") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF00E5FF),
+                        focusedLabelColor = Color(0xFF00E5FF)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it },
+                    label = { Text("Initial Ledger Balance (₹)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF00E5FF),
+                        focusedLabelColor = Color(0xFF00E5FF)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TransactionDateTimePicker(
+                    selectedTimestamp = openingBalanceTimestamp,
+                    onTimestampChange = { openingBalanceTimestamp = it },
+                    label = "Opening Balance Date & Time"
+                )
+                OutlinedTextField(
+                    value = lastFour,
+                    onValueChange = { lastFour = it },
+                    label = { Text("Last 4 digits (optional ID)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF00E5FF),
+                        focusedLabelColor = Color(0xFF00E5FF)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Column {
+                    Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        types.forEach { option ->
+                            val active = option == type
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(if (active) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                    .border(1.dp, if (active) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                    .clickable { type = option }
+                                    .padding(6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(option.replace("_", " "), color = if (active) Color(0xFF00E5FF) else Color.White, fontWeight = FontWeight.Bold, fontSize = 9.sp)
+                            }
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { onAdd(name, amount.toDoubleOrNull() ?: 0.0, type, lastFour.ifBlank { null }) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))) {
+            Button(
+                onClick = {
+                    onAdd(name, amount.toDoubleOrNull() ?: 0.0, type, lastFour.ifBlank { null }, openingBalanceTimestamp)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
+            ) {
                 Text("Add Account", fontWeight = FontWeight.Bold)
             }
         },
@@ -4243,16 +4682,30 @@ private fun QuickAddAccountDialog(
 private fun QuickAddCategoryDialog(
     defaultType: String,
     onDismiss: () -> Unit,
-    onAdd: (String, String) -> Unit
+    onAdd: (String, String, String, String, Double) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var type by remember { mutableStateOf(defaultType) }
+    var selectedIconName by remember { mutableStateOf(if (defaultType == "INCOME") "salary" else "others") }
+    var selectedColorHex by remember { mutableStateOf(if (defaultType == "INCOME") "#4CAF50" else "#607D8B") }
+    var selectedColor by remember { mutableStateOf(if (defaultType == "INCOME") Color(0xFF4CAF50) else Color(0xFF607D8B)) }
+    var initialBudgetAmt by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add New Category", color = Color.White, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Category Name") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Category Name") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF00E5FF),
+                        focusedLabelColor = Color(0xFF00E5FF)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     listOf("EXPENSE", "INCOME").forEach { option ->
                         val active = option == type
@@ -4262,7 +4715,14 @@ private fun QuickAddCategoryDialog(
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(if (active) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent)
                                 .border(1.dp, if (active) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                .clickable { type = option }
+                                .clickable {
+                                    type = option
+                                    if (option == "INCOME") {
+                                        selectedIconName = "salary"
+                                        selectedColorHex = "#4CAF50"
+                                        selectedColor = Color(0xFF4CAF50)
+                                    }
+                                }
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -4270,10 +4730,83 @@ private fun QuickAddCategoryDialog(
                         }
                     }
                 }
+
+                if (type == "EXPENSE") {
+                    OutlinedTextField(
+                        value = initialBudgetAmt,
+                        onValueChange = { initialBudgetAmt = it },
+                        label = { Text("Monthly Budget Limit (₹, Optional)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF00E5FF),
+                            focusedLabelColor = Color(0xFF00E5FF)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Text("Select Icon", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    items(suitableIconsList) { (iconName, iconVec) ->
+                        val isSelected = selectedIconName == iconName
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isSelected) selectedColor.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.05f),
+                            border = BorderStroke(2.dp, if (isSelected) selectedColor else Color.Transparent),
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clickable { selectedIconName = iconName }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = iconVec,
+                                    contentDescription = iconName,
+                                    tint = if (isSelected) selectedColor else Color.White.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Text("Select Color", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    items(categoryColorsList) { (hexStr, colorObj) ->
+                        val isSelected = selectedColorHex == hexStr
+                        Surface(
+                            shape = CircleShape,
+                            color = colorObj,
+                            border = BorderStroke(2.dp, if (isSelected) Color.White else Color.Transparent),
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clickable {
+                                    selectedColorHex = hexStr
+                                    selectedColor = colorObj
+                                }
+                        ) {
+                            if (isSelected) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Selected",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
-            Button(onClick = { onAdd(name, type) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))) {
+            Button(
+                onClick = {
+                    onAdd(name, type, selectedIconName, selectedColorHex, initialBudgetAmt.toDoubleOrNull() ?: 0.0)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
+            ) {
                 Text("Add Category", fontWeight = FontWeight.Bold)
             }
         },
@@ -4353,6 +4886,177 @@ fun ExportCsvDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Dismiss", color = Color.White) }
+        },
+        containerColor = Color(0xFF131A26)
+    )
+}
+
+@Composable
+fun BackupDialog(
+    viewModel: FinanceViewModel,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var password by remember { mutableStateOf("") }
+    val backupString by viewModel.backupString.collectAsStateWithLifecycle()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Secure Backup", fontWeight = FontWeight.Bold, color = Color.White) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Creates an AES-encrypted backup of your transactions and budgets. Copy and store the backup string safely.",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.7f)
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Backup Passphrase (min 4 chars)") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF00E5FF),
+                        focusedLabelColor = Color(0xFF00E5FF)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (backupString != null) {
+                    Surface(
+                        color = Color(0xFF10B981).copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.35f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "Backup generated! Copy and store securely:",
+                                fontSize = 11.sp,
+                                color = Color(0xFF10B981),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = backupString!!.take(80) + if (backupString!!.length > 80) "\u2026" else "",
+                                fontSize = 9.sp,
+                                color = Color.White.copy(alpha = 0.55f),
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+                            Button(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clipboard.setPrimaryClip(
+                                        android.content.ClipData.newPlainText("mymoney_backup", backupString)
+                                    )
+                                    Toast.makeText(context, "Backup string copied to clipboard!", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF10B981),
+                                    contentColor = Color.White
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Copy Full Backup String", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { viewModel.createSecureBackup(password) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF00E5FF),
+                    contentColor = Color(0xFF0B0F19)
+                ),
+                enabled = password.length >= 4
+            ) {
+                Text("Generate Backup", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close", color = Color.White) }
+        },
+        containerColor = Color(0xFF131A26)
+    )
+}
+
+@Composable
+fun RestoreBackupDialog(
+    viewModel: FinanceViewModel,
+    onDismiss: () -> Unit
+) {
+    var backupStr by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Restore Backup", fontWeight = FontWeight.Bold, color = Color.White) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Surface(
+                    color = Color(0xFFF43F5E).copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Color(0xFFF43F5E).copy(alpha = 0.3f))
+                ) {
+                    Text(
+                        "\u26a0 Restoring will replace ALL existing transactions and budgets. This cannot be undone.",
+                        fontSize = 11.sp,
+                        color = Color(0xFFF43F5E),
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+                OutlinedTextField(
+                    value = backupStr,
+                    onValueChange = { backupStr = it },
+                    label = { Text("Paste Backup String") },
+                    minLines = 3,
+                    maxLines = 5,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFF43F5E),
+                        focusedLabelColor = Color(0xFFF43F5E)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Backup Passphrase") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFF43F5E),
+                        focusedLabelColor = Color(0xFFF43F5E)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    viewModel.restoreFromSecureBackup(backupStr.trim(), password)
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFF43F5E),
+                    contentColor = Color.White
+                ),
+                enabled = backupStr.isNotBlank() && password.isNotEmpty()
+            ) {
+                Text("Restore Data", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.White) }
         },
         containerColor = Color(0xFF131A26)
     )

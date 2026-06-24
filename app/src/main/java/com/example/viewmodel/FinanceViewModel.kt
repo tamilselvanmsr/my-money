@@ -751,78 +751,140 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val _isSmsParsing = MutableStateFlow(false)
     val isSmsParsing: StateFlow<Boolean> = _isSmsParsing.asStateFlow()
 
-    fun simulateSmsReceived(smsBody: String, sender: String) {
+    fun analyzePastedSms(
+        smsBody: String,
+        sender: String,
+        forcedKeys: List<String>,
+        regexHint: String = ""
+    ) {
         viewModelScope.launch {
-            _isSmsParsing.value = true
-            val apiKey = BuildConfig.GEMINI_API_KEY
-            
-            // Call offline parser first, or call Gemini parser if available
-            val parsed = if (isGeminiAvailable) {
-                _toastMessage.emit("Analyzing SMS with Gemini Hybrid AI...")
-                SmsParser.parseWithGemini(smsBody, sender, apiKey, System.currentTimeMillis())
-            } else {
-                _toastMessage.emit("Analyzing SMS with Offline Regex Pattern Engine...")
-                withContext(Dispatchers.Default) {
-                    SmsParser.parseOffline(smsBody, sender, System.currentTimeMillis())
+            val cleanBody = smsBody.trim()
+            val cleanSender = sender.trim().ifBlank { "Manual-Paste" }
+            val selectedKeys = forcedKeys.map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
+            val cleanHint = regexHint.trim()
+
+            if (cleanBody.isBlank()) {
+                _toastMessage.emit("Paste an SMS body before analyzing.")
+                return@launch
+            }
+            if (selectedKeys.isEmpty()) {
+                _toastMessage.emit("Pick at least one parser key before analyzing the pasted SMS.")
+                return@launch
+            }
+
+            val assistedBody = buildString {
+                append(cleanBody)
+                append(' ')
+                append(selectedKeys.joinToString(" "))
+                if (cleanHint.isNotBlank()) {
+                    val regexMatched = runCatching { Regex(cleanHint, RegexOption.IGNORE_CASE).containsMatchIn(cleanBody) }
+                        .getOrDefault(false)
+                    if (!regexMatched) {
+                        _toastMessage.emit("Regex hint did not match the pasted message. Continuing with hint keywords only.")
+                    }
+                    val helperTerms = cleanHint
+                        .split(Regex("[^A-Za-z0-9@._-]+"))
+                        .map { it.trim() }
+                        .filter { it.length > 1 }
+                        .distinct()
+                    if (helperTerms.isNotEmpty()) {
+                        append(' ')
+                        append(helperTerms.joinToString(" "))
+                    }
                 }
             }
 
-            _isSmsParsing.value = false
-
-            if (parsed != null) {
-                val targetTime = parsed.parsedTimestamp ?: System.currentTimeMillis()
-
-                val walletName = ensureAccountExists(parsed.accountRef, sender, smsBody)
-                if (walletName == null) {
-                    _toastMessage.emit("SMS import skipped because this wallet is blocked from tracking.")
-                    return@launch
+            processManualSmsImport(
+                smsBody = cleanBody,
+                parserBody = assistedBody,
+                sender = cleanSender,
+                progressMessage = if (cleanHint.isBlank()) {
+                    "Analyzing pasted SMS with selected parser keys..."
+                } else {
+                    "Analyzing pasted SMS with selected keys and custom pattern..."
                 }
-                val potentialDuplicates = repository.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
-                val incomingRef = com.example.utils.SmsParser.getReferenceNumber(smsBody)
-                val duplicate = allTransactions.value.any { existing ->
-                    isDuplicateImportedTransaction(
-                        existing = existing,
-                        incomingSmsBody = smsBody,
-                        incomingTitle = parsed.title,
-                        incomingAmount = parsed.amount,
-                        incomingType = parsed.type,
-                        incomingTimestamp = targetTime,
-                        incomingReference = incomingRef,
-                        incomingAccountName = walletName
-                    )
-                } || potentialDuplicates.any { existing ->
-                    isDuplicateImportedTransaction(
-                        existing = existing,
-                        incomingSmsBody = smsBody,
-                        incomingTitle = parsed.title,
-                        incomingAmount = parsed.amount,
-                        incomingType = parsed.type,
-                        incomingTimestamp = targetTime,
-                        incomingReference = incomingRef,
-                        incomingAccountName = walletName
-                    )
-                }
-                if (duplicate) {
-                    _toastMessage.emit("Detected potential duplicate transaction of ₹${parsed.amount} at ${parsed.title}. Skipped.")
-                    return@launch
-                }
+            )
+        }
+    }
 
-                val tx = TransactionEntry(
-                    title = parsed.title,
-                    amount = parsed.amount,
-                    category = parsed.category.name,
-                    type = parsed.type,
-                    smsSender = sender,
-                    smsBody = smsBody,
-                    timestamp = targetTime,
-                    note = "$smsBody [Acc: $walletName]"
+    fun simulateSmsReceived(smsBody: String, sender: String) {
+        analyzePastedSms(smsBody, sender, forcedKeys = listOf("txn"))
+    }
+
+    private suspend fun processManualSmsImport(
+        smsBody: String,
+        parserBody: String,
+        sender: String,
+        progressMessage: String
+    ) {
+        _isSmsParsing.value = true
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        
+        val parsed = if (isGeminiAvailable) {
+            _toastMessage.emit("Analyzing SMS with Gemini Hybrid AI...")
+            SmsParser.parseWithGemini(parserBody, sender, apiKey, System.currentTimeMillis())
+        } else {
+            _toastMessage.emit(progressMessage)
+            withContext(Dispatchers.Default) {
+                SmsParser.parseOffline(parserBody, sender, System.currentTimeMillis())
+            }
+        }
+
+        _isSmsParsing.value = false
+
+        if (parsed != null) {
+            val targetTime = parsed.parsedTimestamp ?: System.currentTimeMillis()
+
+            val walletName = ensureAccountExists(parsed.accountRef, sender, smsBody)
+            if (walletName == null) {
+                _toastMessage.emit("SMS import skipped because this wallet is blocked from tracking.")
+                return
+            }
+            val potentialDuplicates = repository.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
+            val incomingRef = com.example.utils.SmsParser.getReferenceNumber(smsBody)
+            val duplicate = allTransactions.value.any { existing ->
+                isDuplicateImportedTransaction(
+                    existing = existing,
+                    incomingSmsBody = smsBody,
+                    incomingTitle = parsed.title,
+                    incomingAmount = parsed.amount,
+                    incomingType = parsed.type,
+                    incomingTimestamp = targetTime,
+                    incomingReference = incomingRef,
+                    incomingAccountName = walletName
                 )
-                repository.insertTransaction(tx)
-                maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
-                _toastMessage.emit("Auto-Tracked Expense: ₹${parsed.amount} at ${parsed.title}")
-            } else {
-                _toastMessage.emit("SMS analyzed, but no valid transaction data was detected.")
+            } || potentialDuplicates.any { existing ->
+                isDuplicateImportedTransaction(
+                    existing = existing,
+                    incomingSmsBody = smsBody,
+                    incomingTitle = parsed.title,
+                    incomingAmount = parsed.amount,
+                    incomingType = parsed.type,
+                    incomingTimestamp = targetTime,
+                    incomingReference = incomingRef,
+                    incomingAccountName = walletName
+                )
             }
+            if (duplicate) {
+                _toastMessage.emit("Detected potential duplicate transaction of ₹${parsed.amount} at ${parsed.title}. Skipped.")
+                return
+            }
+
+            val tx = TransactionEntry(
+                title = parsed.title,
+                amount = parsed.amount,
+                category = parsed.category.name,
+                type = parsed.type,
+                smsSender = sender,
+                smsBody = smsBody,
+                timestamp = targetTime,
+                note = "$smsBody [Acc: $walletName]"
+            )
+            repository.insertTransaction(tx)
+            maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
+            _toastMessage.emit("Auto-Tracked Expense: ₹${parsed.amount} at ${parsed.title}")
+        } else {
+            _toastMessage.emit("SMS analyzed, but no valid transaction data was detected.")
         }
     }
 

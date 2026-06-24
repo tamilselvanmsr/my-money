@@ -17,6 +17,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -366,6 +367,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
     var selectedWallet by remember { mutableStateOf("All") }
     var selectedTxForEdit by remember { mutableStateOf<TransactionEntry?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+    var isSearchExpanded by remember { mutableStateOf(false) }
     var showDeletePeriodDialog by remember { mutableStateOf(false) }
     
     val (periodStart, periodEnd) = getPeriodRange(activeMode, anchorTime)
@@ -479,22 +481,55 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     }
                 }
                 
-                // Right-aligned 3-bar filter menu button
+                // Right-aligned quick actions and filter menu
                 Box(
                     modifier = Modifier.align(Alignment.CenterEnd)
                 ) {
-                    IconButton(
-                        onClick = { showFilterMenu = !showFilterMenu },
-                        modifier = Modifier
-                            .size(40.dp)
-                            .testTag("three_bar_filter_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Menu,
-                            contentDescription = "Options and Filtering",
-                            tint = Color(0xFF00E5FF),
-                            modifier = Modifier.size(24.dp)
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilledTonalIconButton(
+                            onClick = {
+                                isSearchExpanded = !isSearchExpanded
+                                if (!isSearchExpanded) {
+                                    searchQuery = ""
+                                }
+                            },
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = if (isSearchExpanded || searchQuery.isNotBlank()) Color(0xFF00E5FF).copy(alpha = 0.18f) else Color.White.copy(alpha = 0.08f),
+                                contentColor = if (isSearchExpanded || searchQuery.isNotBlank()) Color(0xFF00E5FF) else Color.White
+                            ),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = "Toggle search")
+                        }
+
+                        if (activeMode == DisplayMode.MONTHLY) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            FilledTonalIconButton(
+                                onClick = { showDeletePeriodDialog = true },
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = Color(0xFFF43F5E).copy(alpha = 0.18f),
+                                    contentColor = Color(0xFFF43F5E)
+                                ),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(Icons.Default.DeleteSweep, contentDescription = "Delete month")
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(
+                            onClick = { showFilterMenu = !showFilterMenu },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .testTag("three_bar_filter_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Menu,
+                                contentDescription = "Options and Filtering",
+                                tint = Color(0xFF00E5FF),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                     
                     DropdownMenu(
@@ -803,18 +838,21 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
             }
         }
 
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        if (isSearchExpanded) {
+            item {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     leadingIcon = {
                         Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White.copy(alpha = 0.6f))
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotBlank()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Color.White.copy(alpha = 0.6f))
+                            }
+                        }
                     },
                     label = { Text("Search records") },
                     placeholder = { Text("Merchant, category, or notes") },
@@ -828,18 +866,6 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         unfocusedLabelColor = Color.White.copy(alpha = 0.5f)
                     )
                 )
-
-                if (activeMode == DisplayMode.MONTHLY) {
-                    FilledTonalIconButton(
-                        onClick = { showDeletePeriodDialog = true },
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = Color(0xFFF43F5E).copy(alpha = 0.18f),
-                            contentColor = Color(0xFFF43F5E)
-                        )
-                    ) {
-                        Icon(Icons.Default.DeleteSweep, contentDescription = "Delete month")
-                    }
-                }
             }
         }
 
@@ -986,18 +1012,18 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                         )
                                     }
-                                    if (!tx.note.isNullOrBlank()) {
-                                        val cleanNote = tx.note.substringBefore(" [Acc:").trim()
-                                        if (cleanNote.isNotEmpty()) {
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                text = cleanNote,
-                                                fontSize = 11.sp,
-                                                color = Color.White.copy(alpha = 0.4f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        color = resolvedCat.color.copy(alpha = 0.12f),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = resolvedCat.displayName,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = resolvedCat.color,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
                                     }
                                 }
                             }
@@ -1104,8 +1130,10 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
     val rawMonthYear by viewModel.selectedMonthYear.collectAsStateWithLifecycle()
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
-    
-    var timeFilter by remember { mutableStateOf("MONTHLY") } // WEEKLY, MONTHLY, 3M, 6M, 1Y
+
+    var timeFilter by remember { mutableStateOf("MONTHLY") }
+    var selectedMode by remember { mutableStateOf(AnalyticsMode.EXPENSE_OVERVIEW) }
+    var showModeMenu by remember { mutableStateOf(false) }
     val (analysisStart, analysisEnd) = getAnalyticsRange(rawMonthYear, timeFilter)
 
     val filteredTransactions = txs.filter { tx ->
@@ -1113,22 +1141,25 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
     }
 
     val expenses = filteredTransactions.filter { it.type == "EXPENSE" }
-    val totalExpenseSum = expenses.sumOf { it.amount }
-
-    // Aggregate values by category
-    val categoryTotals = expenses.groupBy { it.category }.map { (catName, list) ->
+    val incomes = filteredTransactions.filter { it.type == "INCOME" }
+    val overviewTransactions = if (selectedMode == AnalyticsMode.INCOME_OVERVIEW) incomes else expenses
+    val totalOverviewSum = overviewTransactions.sumOf { it.amount }
+    val categoryTotals = overviewTransactions.groupBy { it.category }.map { (catName, list) ->
         val sumObj = list.sumOf { it.amount }
         val resolved = CategoryResolver.resolve(catName, customCats)
         DisplayCategorySpend(
             category = resolved,
             total = sumObj,
-            percentage = if (totalExpenseSum > 0.0) sumObj / totalExpenseSum else 0.0
+            percentage = if (totalOverviewSum > 0.0) sumObj / totalOverviewSum else 0.0
         )
     }.sortedByDescending { it.total }
-
-    // Highlight sector on canvas
-    var activeSectorIndex by remember { mutableStateOf(-1) }
-    val decFormat = DecimalFormat("₹#,##0.00")
+    val flowTransactions = if (selectedMode == AnalyticsMode.INCOME_FLOW) incomes else expenses
+    val flowPoints = remember(flowTransactions, analysisStart, analysisEnd) {
+        buildDailyFlowPoints(flowTransactions, analysisStart, analysisEnd)
+    }
+    val accountStats = remember(filteredTransactions) {
+        buildAccountAnalytics(filteredTransactions)
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -1137,17 +1168,70 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Selection pills filter
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "EXPENSITY ANALYSIS",
+                    text = "ANALYSIS HUB",
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
                     letterSpacing = 1.sp,
                     color = Color.White.copy(alpha = 0.6f)
                 )
-                
+
+                Box {
+                    OutlinedButton(
+                        onClick = { showModeMenu = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(horizontalAlignment = Alignment.Start) {
+                                Text(
+                                    text = "Analysis Mode",
+                                    fontSize = 11.sp,
+                                    color = Color.White.copy(alpha = 0.55f),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = selectedMode.label,
+                                    fontSize = 15.sp,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Icon(Icons.Default.ExpandMore, contentDescription = "Select analysis mode", tint = Color(0xFF00E5FF))
+                        }
+                    }
+
+                    DropdownMenu(
+                        expanded = showModeMenu,
+                        onDismissRequest = { showModeMenu = false },
+                        modifier = Modifier.background(Color(0xFF131A26))
+                    ) {
+                        AnalyticsMode.entries.forEach { mode ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        mode.label,
+                                        color = if (mode == selectedMode) Color(0xFF00E5FF) else Color.White,
+                                        fontWeight = if (mode == selectedMode) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                },
+                                onClick = {
+                                    selectedMode = mode
+                                    showModeMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1169,10 +1253,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                 .weight(1f)
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(if (active) Color(0xFF00E5FF) else Color.Transparent)
-                                .clickable {
-                                    timeFilter = key
-                                    activeSectorIndex = -1
-                                }
+                                .clickable { timeFilter = key }
                                 .padding(vertical = 8.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -1189,73 +1270,161 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
             }
         }
 
-        // Custom drawn Interactive Donut Chart drawing arc sectors
-        item {
-            Surface(
-                color = Color(0xFF131A26),
-                shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.dp, Color(0xFF1E293B)),
-                modifier = Modifier.fillMaxWidth()
+        when (selectedMode) {
+            AnalyticsMode.EXPENSE_OVERVIEW -> {
+                item {
+                    AnalyticsOverviewSection(
+                        categoryTotals = categoryTotals,
+                        totalAmount = totalOverviewSum,
+                        totalLabel = "Total Spent",
+                        breakdownLabel = "CATEGORY WISE BREAKDOWN",
+                        percentSuffix = "of expenses",
+                        emptyMessage = "No expense data available for this period."
+                    )
+                }
+            }
+
+            AnalyticsMode.INCOME_OVERVIEW -> {
+                item {
+                    AnalyticsOverviewSection(
+                        categoryTotals = categoryTotals,
+                        totalAmount = totalOverviewSum,
+                        totalLabel = "Total Received",
+                        breakdownLabel = "INCOME BREAKDOWN",
+                        percentSuffix = "of income",
+                        emptyMessage = "No income data available for this period."
+                    )
+                }
+            }
+
+            AnalyticsMode.EXPENSE_FLOW -> {
+                item {
+                    AnalyticsFlowSection(
+                        title = "Expense Flow",
+                        points = flowPoints,
+                        accent = Color(0xFFF43F5E),
+                        emptyMessage = "No expense flow available for this period."
+                    )
+                }
+            }
+
+            AnalyticsMode.INCOME_FLOW -> {
+                item {
+                    AnalyticsFlowSection(
+                        title = "Income Flow",
+                        points = flowPoints,
+                        accent = Color(0xFF10B981),
+                        emptyMessage = "No income flow available for this period."
+                    )
+                }
+            }
+
+            AnalyticsMode.ACCOUNT_ANALYSIS -> {
+                item {
+                    AnalyticsAccountSection(accountStats = accountStats)
+                }
+            }
+        }
+    }
+}
+
+data class DisplayCategorySpend(
+    val category: DisplayCategory,
+    val total: Double,
+    val percentage: Double
+)
+
+private enum class AnalyticsMode(val label: String) {
+    EXPENSE_OVERVIEW("Expense overview"),
+    INCOME_OVERVIEW("Income overview"),
+    EXPENSE_FLOW("Expense flow"),
+    INCOME_FLOW("Income flow"),
+    ACCOUNT_ANALYSIS("Account analysis")
+}
+
+private data class AnalyticsFlowPoint(
+    val shortLabel: String,
+    val fullLabel: String,
+    val total: Double
+)
+
+private data class AccountAnalyticsSummary(
+    val accountName: String,
+    val income: Double,
+    val expense: Double,
+    val net: Double,
+    val color: Color
+)
+
+@Composable
+private fun AnalyticsOverviewSection(
+    categoryTotals: List<DisplayCategorySpend>,
+    totalAmount: Double,
+    totalLabel: String,
+    breakdownLabel: String,
+    percentSuffix: String,
+    emptyMessage: String
+) {
+    var activeSectorIndex by remember(categoryTotals, totalLabel) { mutableStateOf(-1) }
+    val decFormat = remember { DecimalFormat("₹#,##0.00") }
+
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Surface(
+            color = Color(0xFF131A26),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.dp, Color(0xFF1E293B)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    if (categoryTotals.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(200.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "No enough data to render chart representation.",
-                                color = Color.White.copy(alpha = 0.4f),
-                                fontSize = 12.sp
-                            )
-                        }
-                    } else {
-                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                            val isCompact = maxWidth < 420.dp
-                            val chartSize = if (isCompact) 170.dp else 180.dp
-                            val chartContent: @Composable () -> Unit = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(chartSize)
-                                        .padding(8.dp)
-                                ) {
+                if (categoryTotals.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(emptyMessage, color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
+                    }
+                } else {
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        val isCompact = maxWidth < 420.dp
+                        val chartSize = if (isCompact) 170.dp else 180.dp
+                        val chartContent: @Composable () -> Unit = {
+                            Box(
+                                modifier = Modifier
+                                    .size(chartSize)
+                                    .padding(8.dp)
+                            ) {
                                 Canvas(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .pointerInput(categoryTotals) {
+                                        .pointerInput(categoryTotals, activeSectorIndex) {
                                             detectTapGestures { offset ->
                                                 val centerX = size.width / 2f
                                                 val centerY = size.height / 2f
                                                 val dx = offset.x - centerX
                                                 val dy = offset.y - centerY
-                                                val dist = kotlin.math.sqrt(dx * dx + dy * dy)
-
+                                                val dist = sqrt(dx * dx + dy * dy)
                                                 val sizeMin = minOf(size.width, size.height)
                                                 val strokeWidthValue = sizeMin * 0.16f
                                                 val radius = (sizeMin - strokeWidthValue) / 2f
 
                                                 if (dist >= radius - strokeWidthValue * 1.5f && dist <= radius + strokeWidthValue * 1.5f) {
-                                                    var angle = Math.toDegrees(Math.atan2(dy.toDouble(), dx.toDouble())).toFloat()
-                                                    if (angle < 0) {
-                                                        angle += 360f
-                                                    }
+                                                    var angle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+                                                    if (angle < 0f) angle += 360f
                                                     var chartAngle = angle + 90f
-                                                    if (chartAngle >= 360f) {
-                                                        chartAngle -= 360f
-                                                    }
+                                                    if (chartAngle >= 360f) chartAngle -= 360f
 
                                                     var currentAngle = 0f
                                                     var foundIdx = -1
-                                                    for (i in categoryTotals.indices) {
-                                                        val sweep = (categoryTotals[i].percentage * 360f).toFloat()
+                                                    categoryTotals.forEachIndexed { idx, item ->
+                                                        val sweep = (item.percentage * 360f).toFloat()
                                                         if (chartAngle >= currentAngle && chartAngle < currentAngle + sweep) {
-                                                            foundIdx = i
-                                                            break
+                                                            foundIdx = idx
+                                                            return@forEachIndexed
                                                         }
                                                         currentAngle += sweep
                                                     }
@@ -1272,12 +1441,11 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                     val topLeftOffset = Offset(strokeWidthValue / 2f, strokeWidthValue / 2f)
 
                                     var currentAngle = -90f
-                                    categoryTotals.forEachIndexed { idx, col ->
-                                        val sweep = (col.percentage * 360f).toFloat()
+                                    categoryTotals.forEachIndexed { idx, item ->
+                                        val sweep = (item.percentage * 360f).toFloat()
                                         val isHighlighted = activeSectorIndex == idx
-
                                         drawArc(
-                                            color = col.category.color,
+                                            color = item.category.color,
                                             startAngle = currentAngle,
                                             sweepAngle = sweep,
                                             useCenter = false,
@@ -1299,7 +1467,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                 ) {
                                     val highlightItem = categoryTotals.getOrNull(activeSectorIndex)
                                     Text(
-                                        text = highlightItem?.category?.displayName ?: "Total Spent",
+                                        text = highlightItem?.category?.displayName ?: totalLabel,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White.copy(alpha = 0.6f),
@@ -1310,7 +1478,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = DecimalFormat("₹#,##0.00").format(highlightItem?.total ?: totalExpenseSum),
+                                        text = decFormat.format(highlightItem?.total ?: totalAmount),
                                         fontSize = 18.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         color = highlightItem?.category?.color ?: Color(0xFF00E5FF)
@@ -1325,63 +1493,64 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                         )
                                     }
                                 }
-                                }
                             }
-                            val legendContent: @Composable () -> Unit = {
-                                Column(
-                                    modifier = if (isCompact) Modifier.fillMaxWidth() else Modifier.widthIn(max = 150.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    categoryTotals.forEachIndexed { idx, stats ->
-                                        Row(
+                        }
+                        val legendContent: @Composable () -> Unit = {
+                            Column(
+                                modifier = if (isCompact) Modifier.fillMaxWidth() else Modifier.widthIn(max = 150.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                categoryTotals.forEachIndexed { idx, stats ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable {
+                                                activeSectorIndex = if (activeSectorIndex == idx) -1 else idx
+                                            }
+                                            .background(if (activeSectorIndex == idx) Color.White.copy(alpha = 0.06f) else Color.Transparent)
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
                                             modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .clickable {
-                                                    activeSectorIndex = if (activeSectorIndex == idx) -1 else idx
-                                                }
-                                                .background(if (activeSectorIndex == idx) Color.White.copy(alpha = 0.06f) else Color.Transparent)
-                                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(10.dp)
-                                                    .background(stats.category.color, CircleShape)
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                stats.category.displayName,
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                        }
+                                                .size(10.dp)
+                                                .background(stats.category.color, CircleShape)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            stats.category.displayName,
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
                                     }
                                 }
                             }
+                        }
 
-                            if (isCompact) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
+                        if (isCompact) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                chartContent()
+                                legendContent()
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                                     chartContent()
-                                    legendContent()
                                 }
-                            } else {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) { chartContent() }
-                                    legendContent()
-                                }
+                                legendContent()
                             }
                         }
                     }
@@ -1389,22 +1558,17 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
             }
         }
 
-        // List of categories spending sorted, with linear progress indicator bar matching color
         if (categoryTotals.isNotEmpty()) {
-            item {
-                Text(
-                    text = "CATEGORY WISE BREAKDOWN",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    letterSpacing = 1.sp,
-                    color = Color.White.copy(alpha = 0.6f)
-                )
-            }
+            Text(
+                text = breakdownLabel,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                letterSpacing = 1.sp,
+                color = Color.White.copy(alpha = 0.6f)
+            )
 
-            items(categoryTotals.size) { idx ->
-                val stats = categoryTotals[idx]
+            categoryTotals.forEachIndexed { idx, stats ->
                 val active = activeSectorIndex == idx
-
                 Surface(
                     color = if (active) Color(0xFF1E293B) else Color(0xFF131A26),
                     shape = RoundedCornerShape(16.dp),
@@ -1433,28 +1597,17 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
+                                Text(stats.category.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
                                 Text(
-                                    text = stats.category.displayName,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = "${String.format(Locale.getDefault(), "%.1f", stats.percentage * 100)}% of expenses",
+                                    text = "${String.format(Locale.getDefault(), "%.1f", stats.percentage * 100)}% $percentSuffix",
                                     fontSize = 11.sp,
                                     color = Color.White.copy(alpha = 0.4f)
                                 )
                             }
-                            Text(
-                                text = decFormat.format(stats.total),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = Color.White
-                            )
+                            Text(decFormat.format(stats.total), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
-                        // Sleek Linear Progress indicator bar matching exact height configuration
                         LinearProgressIndicator(
                             progress = stats.percentage.toFloat(),
                             color = stats.category.color,
@@ -1471,11 +1624,305 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
     }
 }
 
-data class DisplayCategorySpend(
-    val category: DisplayCategory,
-    val total: Double,
-    val percentage: Double
-)
+@Composable
+private fun AnalyticsFlowSection(
+    title: String,
+    points: List<AnalyticsFlowPoint>,
+    accent: Color,
+    emptyMessage: String
+) {
+    val nonZeroPoints = remember(points) { points.filter { it.total > 0.0 } }
+    val decFormat = remember { DecimalFormat("₹#,##0.00") }
+    val total = points.sumOf { it.total }
+    val average = if (nonZeroPoints.isNotEmpty()) total / nonZeroPoints.size else 0.0
+
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Surface(
+            color = Color(0xFF131A26),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.dp, Color(0xFF1E293B)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(title.uppercase(Locale.getDefault()), fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp, color = Color.White.copy(alpha = 0.5f))
+                        Text(decFormat.format(total), fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, color = accent)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("Average active day", fontSize = 11.sp, color = Color.White.copy(alpha = 0.45f))
+                        Text(decFormat.format(average), fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+
+                if (nonZeroPoints.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+                        Text(emptyMessage, color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
+                    }
+                } else {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp)
+                    ) {
+                        val leftPad = 28.dp.toPx()
+                        val rightPad = 12.dp.toPx()
+                        val topPad = 16.dp.toPx()
+                        val bottomPad = 24.dp.toPx()
+                        val chartWidth = size.width - leftPad - rightPad
+                        val chartHeight = size.height - topPad - bottomPad
+                        val maxValue = (nonZeroPoints.maxOfOrNull { it.total } ?: 0.0).coerceAtLeast(1.0)
+
+                        repeat(4) { index ->
+                            val y = topPad + chartHeight * index / 3f
+                            drawLine(
+                                color = Color.White.copy(alpha = 0.08f),
+                                start = Offset(leftPad, y),
+                                end = Offset(size.width - rightPad, y),
+                                strokeWidth = 1.dp.toPx()
+                            )
+                        }
+
+                        var previousOffset: Offset? = null
+                        nonZeroPoints.forEachIndexed { index, point ->
+                            val x = if (nonZeroPoints.size == 1) {
+                                leftPad + chartWidth / 2f
+                            } else {
+                                leftPad + (chartWidth * index / (nonZeroPoints.size - 1).toFloat())
+                            }
+                            val y = topPad + chartHeight - ((point.total / maxValue) * chartHeight).toFloat()
+                            val currentOffset = Offset(x, y)
+
+                            previousOffset?.let {
+                                drawLine(
+                                    color = accent,
+                                    start = it,
+                                    end = currentOffset,
+                                    strokeWidth = 3.dp.toPx(),
+                                    cap = StrokeCap.Round
+                                )
+                            }
+
+                            drawCircle(color = accent, radius = 4.dp.toPx(), center = currentOffset)
+                            previousOffset = currentOffset
+                        }
+                    }
+                }
+            }
+        }
+
+        Text(
+            text = "CALENDAR DAY SNAPSHOT",
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+            letterSpacing = 1.sp,
+            color = Color.White.copy(alpha = 0.6f)
+        )
+
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            items(points) { point ->
+                Surface(
+                    color = if (point.total > 0.0) accent.copy(alpha = 0.12f) else Color(0xFF131A26),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, if (point.total > 0.0) accent.copy(alpha = 0.45f) else Color(0xFF1E293B))
+                ) {
+                    Column(
+                        modifier = Modifier.width(112.dp).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(point.shortLabel, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+                        Text(point.fullLabel, color = Color.White.copy(alpha = 0.45f), fontSize = 10.sp)
+                        Text(
+                            decFormat.format(point.total),
+                            fontWeight = FontWeight.Bold,
+                            color = if (point.total > 0.0) accent else Color.White.copy(alpha = 0.45f),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>) {
+    val decFormat = remember { DecimalFormat("₹#,##0.00") }
+    val maxActivity = accountStats.maxOfOrNull { maxOf(it.income, it.expense) }?.coerceAtLeast(1.0) ?: 1.0
+
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Surface(
+            color = Color(0xFF131A26),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.dp, Color(0xFF1E293B)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("ACCOUNT ACTIVITY CHART", fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp, color = Color.White.copy(alpha = 0.5f))
+
+                if (accountStats.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+                        Text("No account activity available for this period.", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
+                    }
+                } else {
+                    accountStats.forEach { stats ->
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(stats.accountName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(decFormat.format(stats.net), color = if (stats.net >= 0) Color(0xFF10B981) else Color(0xFFF43F5E), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("In", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                LinearProgressIndicator(
+                                    progress = (stats.income / maxActivity).toFloat(),
+                                    color = Color(0xFF10B981),
+                                    trackColor = Color.White.copy(alpha = 0.06f),
+                                    modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp))
+                                )
+                                Text(decFormat.format(stats.income), color = Color.White, fontSize = 10.sp)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Out", color = Color(0xFFF43F5E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                LinearProgressIndicator(
+                                    progress = (stats.expense / maxActivity).toFloat(),
+                                    color = Color(0xFFF43F5E),
+                                    trackColor = Color.White.copy(alpha = 0.06f),
+                                    modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp))
+                                )
+                                Text(decFormat.format(stats.expense), color = Color.White, fontSize = 10.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (accountStats.isNotEmpty()) {
+            Text(
+                text = "ACCOUNT BREAKDOWN",
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                letterSpacing = 1.sp,
+                color = Color.White.copy(alpha = 0.6f)
+            )
+
+            accountStats.forEach { stats ->
+                Surface(
+                    color = Color(0xFF131A26),
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, stats.color.copy(alpha = 0.45f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(stats.accountName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                            AccountStatChip(label = "Income", amount = stats.income, tone = Color(0xFF10B981), modifier = Modifier.weight(1f))
+                            AccountStatChip(label = "Expense", amount = stats.expense, tone = Color(0xFFF43F5E), modifier = Modifier.weight(1f))
+                            AccountStatChip(label = "Net", amount = stats.net, tone = if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043), modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountStatChip(
+    label: String,
+    amount: Double,
+    tone: Color,
+    modifier: Modifier = Modifier
+) {
+    val decFormat = remember { DecimalFormat("₹#,##0.00") }
+    Surface(
+        color = tone.copy(alpha = 0.12f),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, tone.copy(alpha = 0.35f)),
+        modifier = modifier
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            Text(decFormat.format(amount), color = tone, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        }
+    }
+}
+
+private fun buildDailyFlowPoints(
+    transactions: List<TransactionEntry>,
+    start: Long,
+    end: Long
+): List<AnalyticsFlowPoint> {
+    val totalsByDay = transactions.groupBy {
+        SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(it.timestamp))
+    }.mapValues { (_, dayTransactions) ->
+        dayTransactions.sumOf { it.amount }
+    }
+
+    val keyFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    val shortFormat = SimpleDateFormat("dd MMM", Locale.getDefault())
+    val fullFormat = SimpleDateFormat("EEE, dd MMM", Locale.getDefault())
+    val calendar = Calendar.getInstance().apply {
+        timeInMillis = start
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    val lastDay = Calendar.getInstance().apply {
+        timeInMillis = end
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+
+    val points = mutableListOf<AnalyticsFlowPoint>()
+    while (!calendar.after(lastDay)) {
+        val time = calendar.timeInMillis
+        val key = keyFormat.format(Date(time))
+        points += AnalyticsFlowPoint(
+            shortLabel = shortFormat.format(Date(time)),
+            fullLabel = fullFormat.format(Date(time)),
+            total = totalsByDay[key] ?: 0.0
+        )
+        calendar.add(Calendar.DAY_OF_MONTH, 1)
+    }
+    return points
+}
+
+private fun buildAccountAnalytics(transactions: List<TransactionEntry>): List<AccountAnalyticsSummary> {
+    val palette = listOf(
+        Color(0xFF00E5FF),
+        Color(0xFF10B981),
+        Color(0xFFFF7043),
+        Color(0xFFFFC107),
+        Color(0xFF7C4DFF),
+        Color(0xFF26C6DA)
+    )
+
+    return transactions.groupBy { it.getAccountName() }
+        .entries
+        .toList()
+        .mapIndexed { index, entry ->
+            val accountName = entry.key
+            val accountTransactions = entry.value
+            val income = accountTransactions.filter { it.type == "INCOME" }.sumOf { it.amount }
+            val expense = accountTransactions.filter { it.type == "EXPENSE" }.sumOf { it.amount }
+            AccountAnalyticsSummary(
+                accountName = accountName,
+                income = income,
+                expense = expense,
+                net = income - expense,
+                color = palette[index % palette.size]
+            )
+        }
+        .sortedByDescending { it.income + it.expense }
+}
 
 val suitableIconsList = listOf(
     "restaurant" to Icons.Default.Restaurant,
@@ -1565,11 +2012,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
     ) {
         // Upper Title HUD
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     text = if (activeCategoryTypeTab == "EXPENSE") "Expense Budgets" else "Income Categories",
                     fontWeight = FontWeight.Bold,
@@ -1578,24 +2021,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                 )
 
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = { showAddCategoryDialog = true },
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(Color(0xFF00E5FF).copy(alpha = 0.15f), CircleShape)
-                            .testTag("add_custom_category_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add Custom Category",
-                            tint = Color(0xFF00E5FF),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1634,6 +2063,21 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         ) {
                             Icon(Icons.Default.ChevronRight, contentDescription = "Next month")
                         }
+                    }
+
+                    Button(
+                        onClick = { showAddCategoryDialog = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF00E5FF).copy(alpha = 0.15f),
+                            contentColor = Color(0xFF00E5FF)
+                        ),
+                        border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f)),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier.testTag("add_custom_category_button")
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Category", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add Category", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
                 }
             }
@@ -1811,17 +2255,14 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                 fontSize = 14.sp,
                                 color = Color.White
                             )
-                            
-                            IconButton(
+                            OutlinedButton(
                                 onClick = { showSetBudgetDialog = cat },
-                                modifier = Modifier.size(24.dp)
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF00E5FF)),
+                                border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = "Edit Category",
-                                    tint = Color(0xFF00E5FF),
-                                    modifier = Modifier.size(16.dp)
-                                )
+                                Text(if (budgetObj == null) "Set Budget" else "Edit Budget", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                             }
                         }
                         
@@ -1861,16 +2302,6 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                         .height(5.dp)
                                         .clip(RoundedCornerShape(3.dp))
                                 )
-                            } else {
-                                OutlinedButton(
-                                    onClick = { showSetBudgetDialog = cat },
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF00E5FF)),
-                                    border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f)),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Text("Set Budget", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                }
                             }
                         } else {
                             Text(
@@ -2882,11 +3313,19 @@ fun AccountScreen(viewModel: FinanceViewModel) {
 }
 
 // 5. AUTO-SCAN SMS UTILITY HUB
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AutoScanHubScreen(viewModel: FinanceViewModel) {
     val context = LocalContext.current
-    var simSmsSender by remember { mutableStateOf("SBI-INB-7281") }
-    var simSmsBody by remember { mutableStateOf("Dear customer, your bank account associated with SBI Card ending in 7281 is debited of INR 9,500.00 at AMZN-ECommerce on 2026-06-22. Ref-ID TXN90281.") }
+    var manualSmsSender by remember { mutableStateOf("HDFC-BANK") }
+    var manualSmsBody by remember { mutableStateOf("") }
+    var manualRegexHint by remember { mutableStateOf("") }
+    val forcePatternOptions = listOf("txn", "debited", "credited", "spent", "paid", "received", "upi", "card", "account", "salary")
+    val suggestedForcePatterns = remember(manualSmsBody) {
+        val lowerBody = manualSmsBody.lowercase()
+        forcePatternOptions.filter { lowerBody.contains(it) }
+    }
+    var selectedForcePatterns by remember { mutableStateOf(emptySet<String>()) }
     val isSmsParsing by viewModel.isSmsParsing.collectAsStateWithLifecycle()
     var hasReadSmsPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED)
@@ -2909,14 +3348,6 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
             Toast.makeText(context, "SMS read permission is required for inbox import.", Toast.LENGTH_SHORT).show()
         }
     }
-
-    val sampleSmsOptions = listOf(
-        "HDFC: Dear customer, account ending in 9872 was debited for Rs 1,450.00 at SWIGGY-DELIVER on 2026-06-22." to "HDFC-BANK",
-        "Citi: Transaction recorded! Account ending 4321 debited INR 12,000.00 at RELIANCE-RETAIL on 2026-06-21." to "Citi-Visa",
-        "Your account ending 6012 is credited of INR 45,000.00 on account of Salary Credit on 2026-06-01." to "SBI-SAL",
-        "Auto Debit: Card ending in 8831 was debited of Rs. 4,200.00 occurred at Shell Petrol on 2026-06-20." to "ICICI-CARD"
-    )
-
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -3000,10 +3431,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                 }
             }
         }
-
-
-
-        // Custom simulation engine terminal
+        // Manual pasted SMS analyzer
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF131A26)),
@@ -3012,17 +3440,24 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
                     Text(
-                        "REAL-TIME SMS SIMULATOR",
+                        "PASTE MISSED SMS",
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         letterSpacing = 1.sp,
                         color = Color.White.copy(alpha = 0.5f)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "Paste a real bank SMS here, then explicitly choose one or more keys to force the parser path for this single message.",
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     OutlinedTextField(
-                        value = simSmsSender,
-                        onValueChange = { simSmsSender = it },
+                        value = manualSmsSender,
+                        onValueChange = { manualSmsSender = it },
                         label = { Text("Sender ID") },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
@@ -3033,53 +3468,107 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     Spacer(modifier = Modifier.height(10.dp))
 
                     OutlinedTextField(
-                        value = simSmsBody,
-                        onValueChange = { simSmsBody = it },
-                        label = { Text("Simulated SMS Body") },
+                        value = manualSmsBody,
+                        onValueChange = { manualSmsBody = it },
+                        label = { Text("Real SMS Body") },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(84.dp)
+                            .height(120.dp)
                     )
 
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text("Select Quick banking Alert Templates", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        sampleSmsOptions.forEach { (textLine, headerVal) ->
-                            Surface(
-                                color = Color.White.copy(alpha = 0.04f),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        simSmsBody = textLine
-                                        simSmsSender = headerVal
+                    Text(
+                        "Pick required parser keys",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White.copy(alpha = 0.55f)
+                    )
+                    if (suggestedForcePatterns.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Suggested from this SMS: ${suggestedForcePatterns.joinToString(", ")}",
+                            fontSize = 10.sp,
+                            color = Color(0xFF00E5FF)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        forcePatternOptions.forEach { pattern ->
+                            FilterChip(
+                                selected = selectedForcePatterns.contains(pattern),
+                                onClick = {
+                                    selectedForcePatterns = if (selectedForcePatterns.contains(pattern)) {
+                                        selectedForcePatterns - pattern
+                                    } else {
+                                        selectedForcePatterns + pattern
                                     }
-                            ) {
-                                Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Receipt, contentDescription = "", tint = Color(0xFF00E5FF), modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(textLine, fontSize = 11.sp, color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                            }
+                                },
+                                label = { Text(pattern) },
+                                leadingIcon = if (selectedForcePatterns.contains(pattern)) {
+                                    { Icon(Icons.Default.Check, contentDescription = pattern, modifier = Modifier.size(16.dp)) }
+                                } else {
+                                    null
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFF00E5FF).copy(alpha = 0.18f),
+                                    selectedLabelColor = Color(0xFF00E5FF),
+                                    selectedLeadingIconColor = Color(0xFF00E5FF),
+                                    containerColor = Color.White.copy(alpha = 0.04f),
+                                    labelColor = Color.White
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = selectedForcePatterns.contains(pattern),
+                                    borderColor = Color.White.copy(alpha = 0.08f),
+                                    selectedBorderColor = Color(0xFF00E5FF).copy(alpha = 0.45f)
+                                )
+                            )
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = manualRegexHint,
+                        onValueChange = { manualRegexHint = it },
+                        label = { Text("Optional Custom Pattern") },
+                        placeholder = { Text("Example: txn|debited|upi") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        if (selectedForcePatterns.isEmpty()) {
+                            "Choose at least one key before analyzing this pasted SMS."
+                        } else {
+                            "Selected keys and custom pattern are only used for this pasted message. They do not change automatic inbox scanning rules globally."
+                        },
+                        fontSize = 10.sp,
+                        color = if (selectedForcePatterns.isEmpty()) Color(0xFFF43F5E) else Color.White.copy(alpha = 0.45f)
+                    )
+
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
-                        onClick = { viewModel.simulateSmsReceived(simSmsBody, simSmsSender) },
+                        onClick = { viewModel.analyzePastedSms(manualSmsBody, manualSmsSender, selectedForcePatterns.toList(), manualRegexHint) },
+                        enabled = manualSmsBody.isNotBlank() && selectedForcePatterns.isNotEmpty() && !isSmsParsing,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981), contentColor = Color(0xFF0B0F19)),
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp)
-                            .testTag("simulate_sms_button")
+                            .testTag("analyze_pasted_sms_button")
                     ) {
-                        Text("Broadcast simulated Banking Alert Alert", fontWeight = FontWeight.Bold)
+                        Text(if (isSmsParsing) "Analyzing Message..." else "Analyze & Import Pasted SMS", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -3289,6 +3778,10 @@ fun EditTransactionDialog(
     var accountSelection by remember { mutableStateOf(tx.getAccountName()) }
     var notesStr by remember { mutableStateOf(tx.note?.substringBefore(" [Acc:")?.trim() ?: "") }
     var selectedTimestamp by remember { mutableStateOf(tx.timestamp) }
+    var showWalletPicker by remember { mutableStateOf(false) }
+    var showCategoryPicker by remember { mutableStateOf(false) }
+    var showQuickAddAccount by remember { mutableStateOf(false) }
+    var showQuickAddCategory by remember { mutableStateOf(false) }
 
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
     val allCategories = CategoryResolver.getAll(customCats)
@@ -3298,6 +3791,13 @@ fun EditTransactionDialog(
     } else {
         accounts.map { it.name }
     }
+    val filteredCats = if (tx.type == "EXPENSE") {
+        allCategories.filter { it.type == "EXPENSE" }
+    } else {
+        allCategories.filter { it.type == "INCOME" }
+    }
+    val selectedCategory = filteredCats.firstOrNull { it.name == categorySelection }
+        ?: allCategories.firstOrNull { it.name == categorySelection }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -3333,46 +3833,24 @@ fun EditTransactionDialog(
                     onTimestampChange = { selectedTimestamp = it }
                 )
 
-                // Select wallet
-                Text("Change Wallet", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(selectablesWallets) { wName ->
-                        val active = accountSelection == wName
-                        Box(
-                            modifier = Modifier
-                                .background(if (active) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-                                .border(1.dp, if (active) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                .clickable { accountSelection = wName }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(wName, fontSize = 10.sp, color = if (active) Color(0xFF00E5FF) else Color.White, fontWeight = FontWeight.SemiBold)
-                        }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        PickerButton(
+                            label = "Account",
+                            title = accountSelection,
+                            icon = walletIconFor(accountSelection, accounts.find { it.name == accountSelection }?.type),
+                            tint = Color(0xFF00E5FF),
+                            onClick = { showWalletPicker = true }
+                        )
                     }
-                }
-
-                // Select category
-                Text("Change Category", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val filteredCats = if (tx.type == "EXPENSE") {
-                        allCategories.filter { it.type == "EXPENSE" }
-                    } else {
-                        allCategories.filter { it.type == "INCOME" }
-                    }
-                    items(filteredCats) { cat ->
-                        val active = categorySelection == cat.name
-                        Box(
-                            modifier = Modifier
-                                .background(if (active) cat.color.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-                                .border(1.dp, if (active) cat.color else Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                .clickable { categorySelection = cat.name }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(cat.icon, contentDescription = "", tint = if (active) cat.color else Color.White, modifier = Modifier.size(12.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(cat.displayName, fontSize = 10.sp, color = if (active) cat.color else Color.White)
-                            }
-                        }
+                    Box(modifier = Modifier.weight(1f)) {
+                        PickerButton(
+                            label = "Category",
+                            title = selectedCategory?.displayName ?: "Choose category",
+                            icon = selectedCategory?.icon ?: Icons.Default.Category,
+                            tint = selectedCategory?.color ?: Color(0xFF00E5FF),
+                            onClick = { showCategoryPicker = true }
+                        )
                     }
                 }
 
@@ -3422,6 +3900,65 @@ fun EditTransactionDialog(
         },
         containerColor = Color(0xFF131A26)
     )
+
+    if (showWalletPicker) {
+        WalletSelectionDialog(
+            walletOptions = selectablesWallets.map { walletName -> walletName to (accounts.find { it.name == walletName }?.type) },
+            selectedWallet = accountSelection,
+            onSelect = {
+                accountSelection = it
+                showWalletPicker = false
+            },
+            onDismiss = { showWalletPicker = false },
+            addActionLabel = "+ Add New Account",
+            onAddAction = {
+                showWalletPicker = false
+                showQuickAddAccount = true
+            }
+        )
+    }
+
+    if (showCategoryPicker) {
+        CategorySelectionDialog(
+            categories = filteredCats,
+            selectedCategoryName = categorySelection,
+            onSelect = {
+                categorySelection = it
+                showCategoryPicker = false
+            },
+            onDismiss = { showCategoryPicker = false },
+            addActionLabel = "+ Add New Category",
+            onAddAction = {
+                showCategoryPicker = false
+                showQuickAddCategory = true
+            }
+        )
+    }
+
+    if (showQuickAddAccount) {
+        QuickAddAccountDialog(
+            onDismiss = { showQuickAddAccount = false },
+            onAdd = { name, balance, type, lastFour ->
+                viewModel.addAccount(name, balance, type, lastFour)
+                accountSelection = name.trim()
+                showQuickAddAccount = false
+            }
+        )
+    }
+
+    if (showQuickAddCategory) {
+        QuickAddCategoryDialog(
+            defaultType = tx.type,
+            onDismiss = { showQuickAddCategory = false },
+            onAdd = { name, type ->
+                val iconName = if (type == "INCOME") "salary" else "others"
+                val colorHex = if (type == "INCOME") "#2E7D32" else "#607D8B"
+                viewModel.addCustomCategory(name, iconName, colorHex, type)
+                categorySelection = name.trim()
+                showQuickAddCategory = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -3527,7 +4064,9 @@ private fun WalletSelectionDialog(
     walletOptions: List<Pair<String, String?>>,
     selectedWallet: String,
     onSelect: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    addActionLabel: String? = null,
+    onAddAction: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -3562,6 +4101,16 @@ private fun WalletSelectionDialog(
                         }
                     }
                 }
+                if (addActionLabel != null && onAddAction != null) {
+                    OutlinedButton(
+                        onClick = onAddAction,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF00E5FF)),
+                        border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f))
+                    ) {
+                        Text(addActionLabel, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         },
         confirmButton = {},
@@ -3577,7 +4126,9 @@ private fun CategorySelectionDialog(
     categories: List<DisplayCategory>,
     selectedCategoryName: String,
     onSelect: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    addActionLabel: String? = null,
+    onAddAction: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -3612,6 +4163,16 @@ private fun CategorySelectionDialog(
                         }
                     }
                 }
+                if (addActionLabel != null && onAddAction != null) {
+                    OutlinedButton(
+                        onClick = onAddAction,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF00E5FF)),
+                        border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f))
+                    ) {
+                        Text(addActionLabel, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         },
         confirmButton = {},
@@ -3630,6 +4191,95 @@ private fun walletIconFor(name: String, type: String?): androidx.compose.ui.grap
         type == "SAVINGS" || name.contains("saving", ignoreCase = true) -> Icons.Default.Savings
         else -> Icons.Default.AccountBalanceWallet
     }
+}
+
+@Composable
+private fun QuickAddAccountDialog(
+    onDismiss: () -> Unit,
+    onAdd: (String, Double, String, String?) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("BANK") }
+    var lastFour by remember { mutableStateOf("") }
+    val types = listOf("CASH", "BANK", "CREDIT_CARD", "SAVINGS")
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add New Account", color = Color.White, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Account Name") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Opening Balance (₹)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = lastFour, onValueChange = { lastFour = it }, label = { Text("Last 4 digits") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(types) { option ->
+                        val active = option == type
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (active) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent)
+                                .border(1.dp, if (active) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .clickable { type = option }
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            Text(option.replace("_", " "), color = if (active) Color(0xFF00E5FF) else Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onAdd(name, amount.toDoubleOrNull() ?: 0.0, type, lastFour.ifBlank { null }) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))) {
+                Text("Add Account", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = Color.White) } },
+        containerColor = Color(0xFF131A26)
+    )
+}
+
+@Composable
+private fun QuickAddCategoryDialog(
+    defaultType: String,
+    onDismiss: () -> Unit,
+    onAdd: (String, String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf(defaultType) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add New Category", color = Color.White, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Category Name") }, modifier = Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    listOf("EXPENSE", "INCOME").forEach { option ->
+                        val active = option == type
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (active) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent)
+                                .border(1.dp, if (active) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .clickable { type = option }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(option, color = if (active) Color(0xFF00E5FF) else Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onAdd(name, type) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))) {
+                Text("Add Category", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = Color.White) } },
+        containerColor = Color(0xFF131A26)
+    )
 }
 
 @Composable

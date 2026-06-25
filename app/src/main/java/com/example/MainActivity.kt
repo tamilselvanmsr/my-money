@@ -74,7 +74,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import androidx.compose.ui.graphics.toArgb
 
-// Enum representing the five core tabs mimicking MyMoney by Ananta Raha
+// Enum representing the five core tabs mimicking MyMoney 
 enum class AppTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     DASHBOARD("Records", Icons.Default.ReceiptLong),
     ANALYTICS("Analysis", Icons.Default.DonutLarge),

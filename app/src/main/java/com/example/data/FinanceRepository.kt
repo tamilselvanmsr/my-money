@@ -54,6 +54,8 @@ class FinanceRepository(private val financeDao: FinanceDao) {
         financeDao.clearAllBudgets()
     }
 
+    suspend fun getAllBudgetsOnce(): List<BudgetEntry> = financeDao.getAllBudgetsOnce()
+
     // Custom Categories
     val allCustomCategories: Flow<List<CustomCategory>> = financeDao.getAllCustomCategories()
 

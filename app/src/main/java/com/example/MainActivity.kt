@@ -60,6 +60,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.*
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.LocalAppColors
+import com.example.ui.theme.darkAppColors
+import com.example.ui.theme.lightAppColors
 import com.example.viewmodel.FinanceViewModel
 import com.example.viewmodel.DisplayMode
 import kotlinx.coroutines.flow.collectLatest
@@ -74,7 +77,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import androidx.compose.ui.graphics.toArgb
 
-// Enum representing the five core tabs mimicking MyMoney 
+// Enum representing the five core tabs mimicking MyMoney
 enum class AppTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     DASHBOARD("Records", Icons.Default.ReceiptLong),
     ANALYTICS("Analysis", Icons.Default.DonutLarge),
@@ -194,8 +197,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
-                MainAppScreen()
+            val vm: FinanceViewModel = viewModel()
+            val isDark by vm.isDarkTheme.collectAsStateWithLifecycle()
+            val appColors = if (isDark) darkAppColors() else lightAppColors()
+            MyApplicationTheme(darkTheme = isDark) {
+                androidx.compose.runtime.CompositionLocalProvider(LocalAppColors provides appColors) {
+                    MainAppScreen(vm)
+                }
             }
         }
     }
@@ -205,6 +213,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     val context = LocalContext.current
+    val c = LocalAppColors.current
+    val isDarkTheme by viewModel.isDarkTheme.collectAsStateWithLifecycle()
     var currentTab by remember { mutableStateOf(AppTab.DASHBOARD) }
     
     // Bottom Sheet & Dialog control states
@@ -235,9 +245,9 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
         }
     }
 
-    // Material 3 Custom dark palette constants
-    val darkBg = Color(0xFF0B0F19)
-    val cardSurface = Color(0xFF131A26)
+    // Theme-aware palette constants (switch with dark/light mode)
+    val darkBg = c.bg
+    val cardSurface = c.surface
 
     Scaffold(
         modifier = Modifier
@@ -251,7 +261,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                         horizontalArrangement = Arrangement.Start
                     ) {
                         Surface(
-                            color = Color(0xFF00E5FF).copy(alpha = 0.15f),
+                            color = c.accentDim,
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.size(32.dp)
                         ) {
@@ -259,7 +269,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                 Icon(
                                     imageVector = Icons.Default.AccountBalanceWallet,
                                     contentDescription = "Wallet Logo",
-                                    tint = Color(0xFF00E5FF),
+                                    tint = c.accent,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -270,7 +280,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             fontWeight = FontWeight.Bold,
                             fontSize = 21.sp,
                             letterSpacing = 0.5.sp,
-                            color = Color.White
+                            color = c.text
                         )
                     }
                 },
@@ -283,21 +293,53 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             Icon(
                                 imageVector = Icons.Default.Menu,
                                 contentDescription = "App menu",
-                                tint = Color(0xFF00E5FF)
+                                tint = c.accent
                             )
                         }
                         DropdownMenu(
                             expanded = showAppMenu,
                             onDismissRequest = { showAppMenu = false },
                             modifier = Modifier
-                                .background(Color(0xFF131A26))
-                                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(12.dp))
+                                .background(c.surface)
+                                .border(1.dp, c.border, RoundedCornerShape(12.dp))
                         ) {
+                            // ── Theme toggle ─────────────────────────────
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                                contentDescription = "Theme toggle",
+                                                tint = c.accent
+                                            )
+                                            Text(if (isDarkTheme) "Light Mode" else "Dark Mode", color = c.text)
+                                        }
+                                        Switch(
+                                            checked = isDarkTheme,
+                                            onCheckedChange = { viewModel.setDarkTheme(it) },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = c.bg,
+                                                checkedTrackColor = c.accent,
+                                                uncheckedThumbColor = c.textTertiary,
+                                                uncheckedTrackColor = c.border
+                                            ),
+                                            modifier = Modifier.scale(0.85f)
+                                        )
+                                    }
+                                },
+                                onClick = { viewModel.setDarkTheme(!isDarkTheme) }
+                            )
+                            HorizontalDivider(color = c.divider)
                             DropdownMenuItem(
                                 text = {
                                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Share, contentDescription = "Export", tint = Color(0xFF00E5FF))
-                                        Text("Export", color = Color.White)
+                                        Icon(Icons.Default.Share, contentDescription = "Export", tint = c.accent)
+                                        Text("Export", color = c.text)
                                     }
                                 },
                                 onClick = { showAppMenu = false; showCsvDialog = true }
@@ -305,8 +347,8 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Backup, contentDescription = "Backup", tint = Color(0xFF10B981))
-                                        Text("Backup", color = Color.White)
+                                        Icon(Icons.Default.Backup, contentDescription = "Backup", tint = c.income)
+                                        Text("Backup", color = c.text)
                                     }
                                 },
                                 onClick = { showAppMenu = false; showBackupDialog = true }
@@ -315,7 +357,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                 text = {
                                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Default.Restore, contentDescription = "Restore", tint = Color(0xFFFFC107))
-                                        Text("Restore", color = Color.White)
+                                        Text("Restore", color = c.text)
                                     }
                                 },
                                 onClick = { showAppMenu = false; showRestoreDialog = true }
@@ -347,11 +389,11 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                         },
                         modifier = Modifier.testTag("nav_tab_${tab.name.lowercase()}"),
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF00E5FF),
-                            selectedTextColor = Color(0xFF00E5FF),
-                            unselectedIconColor = Color.White.copy(alpha = 0.5f),
-                            unselectedTextColor = Color.White.copy(alpha = 0.5f),
-                            indicatorColor = Color(0xFF00E5FF).copy(alpha = 0.15f)
+                            selectedIconColor = c.accent,
+                            selectedTextColor = c.accent,
+                            unselectedIconColor = c.textSecondary,
+                            unselectedTextColor = c.textSecondary,
+                            indicatorColor = c.accentDim
                         )
                     )
                 }
@@ -361,8 +403,8 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             if (currentTab == AppTab.DASHBOARD) {
                 FloatingActionButton(
                     onClick = { showAddDialog = true },
-                    containerColor = Color(0xFF00E5FF),
-                    contentColor = Color(0xFF0B0F19),
+                    containerColor = c.accent,
+                    contentColor = c.bg,
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier
                         .testTag("add_transaction_fab")
@@ -441,6 +483,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
 @Composable
 fun DashboardScreen(viewModel: FinanceViewModel) {
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
+    val c = LocalAppColors.current
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
     val activeMode by viewModel.displayMode.collectAsStateWithLifecycle()
     val anchorTime by viewModel.anchorDate.collectAsStateWithLifecycle()
@@ -533,9 +576,9 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    color = Color(0xFF131A26),
+                    color = c.surface,
                     shape = RoundedCornerShape(24.dp),
-                    border = BorderStroke(1.dp, Color(0xFF1D293B)),
+                    border = BorderStroke(1.dp, c.border),
                     modifier = Modifier.weight(1f)
                 ) {
                     Row(
@@ -546,20 +589,20 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         IconButton(onClick = { shiftPeriod(viewModel, activeMode, anchorTime, -1) }, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Period", tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Period", tint = c.accent, modifier = Modifier.size(20.dp))
                         }
                         Text(
                             text = formatPeriodLabel(activeMode, anchorTime),
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
-                            color = Color.White,
+                            color = c.text,
                             modifier = Modifier.weight(1f),
                             textAlign = TextAlign.Center,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         IconButton(onClick = { shiftPeriod(viewModel, activeMode, anchorTime, 1) }, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.ChevronRight, contentDescription = "Next Period", tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.ChevronRight, contentDescription = "Next Period", tint = c.accent, modifier = Modifier.size(20.dp))
                         }
                     }
                 }
@@ -571,8 +614,8 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             if (!isSearchExpanded) { searchQuery = ""; searchFilter = "All" }
                         },
                         colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = if (isSearchExpanded || searchQuery.isNotBlank()) Color(0xFF00E5FF).copy(alpha = 0.18f) else Color.White.copy(alpha = 0.08f),
-                            contentColor = if (isSearchExpanded || searchQuery.isNotBlank()) Color(0xFF00E5FF) else Color.White
+                            containerColor = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent.copy(alpha = 0.18f) else c.divider,
+                            contentColor = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent else c.text
                         ),
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -582,8 +625,8 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     FilledTonalIconButton(
                         onClick = { showDeleteOptionsSheet = true },
                         colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = Color(0xFFF43F5E).copy(alpha = 0.18f),
-                            contentColor = Color(0xFFF43F5E)
+                            containerColor = c.expense.copy(alpha = 0.18f),
+                            contentColor = c.expense
                         ),
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -595,20 +638,20 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             onClick = { showFilterMenu = !showFilterMenu },
                             modifier = Modifier.size(40.dp).testTag("three_bar_filter_button")
                         ) {
-                            Icon(Icons.Default.Menu, contentDescription = "Options and Filtering", tint = Color(0xFF00E5FF), modifier = Modifier.size(24.dp))
+                            Icon(Icons.Default.Menu, contentDescription = "Options and Filtering", tint = c.accent, modifier = Modifier.size(24.dp))
                         }
 
                         DropdownMenu(
                             expanded = showFilterMenu,
                             onDismissRequest = { showFilterMenu = false },
                             modifier = Modifier
-                                .background(Color(0xFF0F172A))
-                                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
+                                .background(c.surfaceVariant)
+                                .border(1.dp, c.border, RoundedCornerShape(8.dp))
                                 .width(260.dp)
                         ) {
                         DropdownMenuItem(
                             text = {
-                                Text("DISPLAY MODE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+                                Text("DISPLAY MODE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                             },
                             onClick = {},
                             enabled = false
@@ -631,12 +674,12 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Text(label, color = Color.White, fontSize = 13.sp)
+                                        Text(label, color = c.text, fontSize = 13.sp)
                                         if (activeMode == mode) {
                                             Icon(
                                                 imageVector = Icons.Default.Check,
                                                 contentDescription = "Selected",
-                                                tint = Color(0xFF00E5FF),
+                                                tint = c.accent,
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         }
@@ -650,7 +693,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             )
                         }
                         
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
+                        HorizontalDivider(color = c.divider, thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
                         
                         DropdownMenuItem(
                             text = {
@@ -660,15 +703,15 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("Carry over Balances", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
-                                        Text("Include previous initial totals", fontSize = 9.sp, color = Color.White.copy(alpha = 0.5f))
+                                        Text("Carry over Balances", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
+                                        Text("Include previous initial totals", fontSize = 9.sp, color = c.textSecondary)
                                     }
                                     Switch(
                                         checked = carryOverPreviousAmount,
                                         onCheckedChange = { viewModel.setCarryOverPreviousAmount(it) },
                                         colors = SwitchDefaults.colors(
-                                            checkedThumbColor = Color(0xFF0B0F19),
-                                            checkedTrackColor = Color(0xFF00E5FF)
+                                            checkedThumbColor = c.bg,
+                                            checkedTrackColor = c.accent
                                         ),
                                         modifier = Modifier.scale(0.8f).testTag("menu_carry_over_switch")
                                     )
@@ -687,15 +730,15 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("Show Grand Totals", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
-                                        Text("Privacy mask total value", fontSize = 9.sp, color = Color.White.copy(alpha = 0.5f))
+                                        Text("Show Grand Totals", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
+                                        Text("Privacy mask total value", fontSize = 9.sp, color = c.textSecondary)
                                     }
                                     Switch(
                                         checked = showTotal,
                                         onCheckedChange = { viewModel.setShowTotal(it) },
                                         colors = SwitchDefaults.colors(
-                                            checkedThumbColor = Color(0xFF0B0F19),
-                                            checkedTrackColor = Color(0xFF00E5FF)
+                                            checkedThumbColor = c.bg,
+                                            checkedTrackColor = c.accent
                                         ),
                                         modifier = Modifier.scale(0.8f).testTag("menu_show_total_switch")
                                     )
@@ -715,9 +758,9 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
         // Net Balance Glow Card
         item {
             Surface(
-                color = Color(0xFF131A26),
+                color = c.surface,
                 shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.2.dp, Color(0xFF00E5FF).copy(alpha = 0.5f)),
+                border = BorderStroke(1.2.dp, c.accent.copy(alpha = 0.5f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("net_wealth_glowing_card")
@@ -731,7 +774,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         letterSpacing = 1.sp,
-                        color = Color.White.copy(alpha = 0.6f)
+                        color = c.textSecondary
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
@@ -742,7 +785,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         },
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 32.sp,
-                        color = Color(0xFF00E5FF)
+                        color = c.accent
                     )
                     
                     Spacer(modifier = Modifier.height(18.dp))
@@ -750,7 +793,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(1.dp)
-                            .background(Color.White.copy(alpha = 0.08f))
+                            .background(c.divider)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -762,26 +805,26 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
                                 shape = CircleShape,
-                                color = Color(0xFF10B981).copy(alpha = 0.15f),
+                                color = c.income.copy(alpha = 0.15f),
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Default.ArrowUpward,
                                         contentDescription = "Income Flow",
-                                        tint = Color(0xFF10B981),
+                                        tint = c.income,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
-                                Text("Inflow", fontSize = 11.sp, color = Color.White.copy(alpha = 0.5f))
+                                Text("Inflow", fontSize = 11.sp, color = c.textSecondary)
                                 Text(
                                     decFormat.format(totalIncome),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
-                                    color = Color(0xFF10B981)
+                                    color = c.income
                                 )
                             }
                         }
@@ -790,26 +833,26 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
                                 shape = CircleShape,
-                                color = Color(0xFFF43F5E).copy(alpha = 0.15f),
+                                color = c.expense.copy(alpha = 0.15f),
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Default.ArrowDownward,
                                         contentDescription = "Expense Outflow",
-                                        tint = Color(0xFFF43F5E),
+                                        tint = c.expense,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
-                                Text("Outflow", fontSize = 11.sp, color = Color.White.copy(alpha = 0.5f))
+                                Text("Outflow", fontSize = 11.sp, color = c.textSecondary)
                                 Text(
                                     decFormat.format(totalExpense),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
-                                    color = Color(0xFFF43F5E)
+                                    color = c.expense
                                 )
                             }
                         }
@@ -826,7 +869,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
                     letterSpacing = 1.sp,
-                    color = Color.White.copy(alpha = 0.6f)
+                    color = c.textSecondary
                 )
                 
                 LazyRow(
@@ -847,8 +890,8 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             walletsBalances[name] ?: 0.0
                         }
 
-                        val cardBorderColor = if (isSelected) Color(0xFF00E5FF) else Color(0xFF1E293B)
-                        val cardBg = if (isSelected) Color(0xFF1E293B) else Color(0xFF131A26)
+                        val cardBorderColor = if (isSelected) c.accent else c.border
+                        val cardBg = if (isSelected) c.border else c.surface
 
                         Surface(
                             shape = RoundedCornerShape(16.dp),
@@ -878,7 +921,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                         }
                                     },
                                     contentDescription = name,
-                                    tint = if (isSelected) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.5f),
+                                    tint = if (isSelected) c.accent else c.textSecondary,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.height(10.dp))
@@ -886,7 +929,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                     text = name,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White,
+                                    color = c.text,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -895,7 +938,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                     text = decFormat.format(balance),
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = if (balance >= 0) Color(0xFF10B981) else Color(0xFFF43F5E),
+                                    color = if (balance >= 0) c.income else c.expense,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -915,12 +958,12 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         onValueChange = { searchQuery = it },
                         modifier = Modifier.fillMaxWidth(),
                         leadingIcon = {
-                            Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White.copy(alpha = 0.6f))
+                            Icon(Icons.Default.Search, contentDescription = "Search", tint = c.textSecondary)
                         },
                         trailingIcon = {
                             if (searchQuery.isNotBlank()) {
                                 IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Color.White.copy(alpha = 0.6f))
+                                    Icon(Icons.Default.Close, contentDescription = "Clear search", tint = c.textSecondary)
                                 }
                             }
                         },
@@ -936,12 +979,12 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF00E5FF),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            focusedLabelColor = Color(0xFF00E5FF),
-                            unfocusedLabelColor = Color.White.copy(alpha = 0.5f)
+                            focusedTextColor = c.text,
+                            unfocusedTextColor = c.text,
+                            focusedBorderColor = c.accent,
+                            unfocusedBorderColor = c.textTertiary,
+                            focusedLabelColor = c.accent,
+                            unfocusedLabelColor = c.textSecondary
                         )
                     )
                     // Filter chips — narrow the search to a specific field
@@ -956,16 +999,16 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                 label = { Text(f, fontSize = 11.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal) },
                                 leadingIcon = if (sel) {{ Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }} else null,
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Color(0xFF00E5FF).copy(0.15f),
-                                    selectedLabelColor = Color(0xFF00E5FF),
-                                    containerColor = Color.White.copy(0.05f),
-                                    labelColor = Color.White.copy(0.6f)
+                                    selectedContainerColor = c.accent.copy(0.15f),
+                                    selectedLabelColor = c.accent,
+                                    containerColor = c.divider,
+                                    labelColor = c.textSecondary
                                 ),
                                 border = FilterChipDefaults.filterChipBorder(
                                     enabled = true,
                                     selected = sel,
-                                    selectedBorderColor = Color(0xFF00E5FF).copy(0.5f),
-                                    borderColor = Color.White.copy(0.1f)
+                                    selectedBorderColor = c.accent.copy(0.5f),
+                                    borderColor = c.text.copy(0.1f)
                                 )
                             )
                         }
@@ -978,9 +1021,9 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
         if (visibleTransactions.isEmpty()) {
             item {
                 Surface(
-                    color = Color(0xFF131A26),
+                    color = c.surface,
                     shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                    border = BorderStroke(1.dp, c.border),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -992,20 +1035,20 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         Icon(
                             imageVector = Icons.Default.Receipt,
                             contentDescription = "No trans",
-                            tint = Color.White.copy(alpha = 0.2f),
+                            tint = c.textTertiary,
                             modifier = Modifier.size(48.dp)
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             if (searchQuery.isBlank()) "No transactions recorded for this period." else "No transactions match your search.",
-                            color = Color.White.copy(alpha = 0.5f),
+                            color = c.textSecondary,
                             fontSize = 13.sp,
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             "Tap the '+' FAB below to log a cashflow.",
-                            color = Color(0xFF00E5FF),
+                            color = c.accent,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
                         )
@@ -1035,7 +1078,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFF0B0F19))
+                            .background(c.bg)
                             .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
@@ -1045,7 +1088,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = 1.2.sp,
-                            color = Color(0xFF00E5FF)
+                            color = c.accent
                         )
                         
                         val dateNet = txList.filter { it.type != "DUPLICATE" && it.type != "BALANCE_UPDATE" }.sumOf { if (it.type == "INCOME") it.amount else -it.amount }
@@ -1053,7 +1096,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             text = (if (dateNet >= 0) "+" else "") + decFormat.format(dateNet),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (dateNet >= 0) Color(0xFF10B981) else Color(0xFFF43F5E)
+                            color = if (dateNet >= 0) c.income else c.expense
                         )
                     }
                 }
@@ -1066,7 +1109,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(if (isAdjust) Color(0xFF00E5FF).copy(alpha = 0.05f) else Color.Transparent)
+                                    .background(if (isAdjust) c.accent.copy(alpha = 0.05f) else Color.Transparent)
                                     .clickable { selectedTxForEdit = tx }
                                     .testTag("transaction_item_${tx.id}")
                                     .padding(horizontal = 4.dp, vertical = 10.dp),
@@ -1092,21 +1135,21 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                         text = tx.title,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp,
-                                        color = Color.White,
+                                        color = c.text,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Surface(
-                                            color = Color.White.copy(alpha = 0.06f),
+                                            color = c.divider,
                                             shape = RoundedCornerShape(4.dp)
                                         ) {
                                             Text(
                                                 text = tx.getAccountName(),
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = Color(0xFF00E5FF),
+                                                color = c.accent,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                             )
                                         }
@@ -1131,23 +1174,23 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                         fontWeight = FontWeight.ExtraBold,
                                         fontSize = 15.sp,
                                         color = when (tx.type) {
-                                            "INCOME" -> Color(0xFF10B981)
-                                            "DUPLICATE" -> Color.White.copy(alpha = 0.35f)
-                                            "BALANCE_UPDATE" -> Color.White.copy(alpha = 0.35f)
-                                            else -> Color(0xFFF43F5E)
+                                            "INCOME" -> c.income
+                                            "DUPLICATE" -> c.textTertiary
+                                            "BALANCE_UPDATE" -> c.textTertiary
+                                            else -> c.expense
                                         }
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
                                         fontSize = 10.sp,
-                                        color = Color.White.copy(alpha = 0.3f)
+                                        color = c.textTertiary
                                     )
                                 }
                             }
                             if (txIdx < txList.size - 1) {
                                 HorizontalDivider(
-                                    color = Color.White.copy(alpha = 0.07f),
+                                    color = c.divider,
                                     modifier = Modifier.padding(start = 56.dp)
                                 )
                             }
@@ -1173,7 +1216,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
         ModalBottomSheet(
             onDismissRequest = { showDeleteOptionsSheet = false },
             sheetState = sheetState,
-            containerColor = Color(0xFF131A26),
+            containerColor = c.surface,
             tonalElevation = 4.dp
         ) {
             Column(
@@ -1186,14 +1229,14 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     "Delete Records",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
-                    color = Color.White,
+                    color = c.text,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
                 // Option 1: Delete All Records
                 Surface(
                     onClick = { deleteConfirmMode = "all"; showDeleteConfirmDialog = true },
-                    color = Color(0xFFF43F5E).copy(alpha = 0.08f),
+                    color = c.expense.copy(alpha = 0.08f),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1204,10 +1247,10 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.DeleteForever, contentDescription = null, tint = Color(0xFFF43F5E))
+                        Icon(Icons.Default.DeleteForever, contentDescription = null, tint = c.expense)
                         Column {
-                            Text("Delete All Records", color = Color.White, fontWeight = FontWeight.SemiBold)
-                            Text("Permanently removes every transaction", color = Color.White.copy(0.5f), fontSize = 12.sp)
+                            Text("Delete All Records", color = c.text, fontWeight = FontWeight.SemiBold)
+                            Text("Permanently removes every transaction", color = c.textSecondary, fontSize = 12.sp)
                         }
                     }
                 }
@@ -1230,10 +1273,10 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         Column {
                             Text(
                                 "Delete ${formatPeriodLabel(activeMode, anchorTime)}",
-                                color = Color.White,
+                                color = c.text,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            Text("Remove all transactions in the current period", color = Color.White.copy(0.5f), fontSize = 12.sp)
+                            Text("Remove all transactions in the current period", color = c.textSecondary, fontSize = 12.sp)
                         }
                     }
                 }
@@ -1241,7 +1284,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                 // Option 3: Delete by Category
                 Surface(
                     onClick = { showCategoryPicker = true },
-                    color = Color(0xFF00E5FF).copy(alpha = 0.06f),
+                    color = c.accent.copy(alpha = 0.06f),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1250,13 +1293,13 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.FilterList, contentDescription = null, tint = Color(0xFF00E5FF))
+                        Icon(Icons.Default.FilterList, contentDescription = null, tint = c.accent)
                         Column {
-                            Text("Delete by Category", color = Color.White, fontWeight = FontWeight.SemiBold)
+                            Text("Delete by Category", color = c.text, fontWeight = FontWeight.SemiBold)
                             Text(
                                 if (periodCategories.isEmpty()) "No categories in this period"
                                 else "Choose a category from the current period",
-                                color = Color.White.copy(0.5f),
+                                color = c.textSecondary,
                                 fontSize = 12.sp
                             )
                         }
@@ -1268,10 +1311,10 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
             if (showCategoryPicker) {
                 AlertDialog(
                     onDismissRequest = { showCategoryPicker = false },
-                    title = { Text("Choose Category", color = Color.White) },
+                    title = { Text("Choose Category", color = c.text) },
                     text = {
                         if (periodCategories.isEmpty()) {
-                            Text("No categories found in this period.", color = Color.White.copy(0.6f))
+                            Text("No categories found in this period.", color = c.textSecondary)
                         } else {
                             LazyColumn {
                                 items(periodCategories.size) { i ->
@@ -1287,7 +1330,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                     ) {
                                         Text(
                                             cat,
-                                            color = Color(0xFF00E5FF),
+                                            color = c.accent,
                                             textAlign = TextAlign.Start,
                                             modifier = Modifier.fillMaxWidth()
                                         )
@@ -1298,10 +1341,10 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     },
                     confirmButton = {
                         TextButton(onClick = { showCategoryPicker = false }) {
-                            Text("Cancel", color = Color.White)
+                            Text("Cancel", color = c.text)
                         }
                     },
-                    containerColor = Color(0xFF1E293B)
+                    containerColor = c.border
                 )
             }
         }
@@ -1317,8 +1360,8 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
         }
         AlertDialog(
             onDismissRequest = { showDeleteConfirmDialog = false },
-            title = { Text("Confirm Delete", color = Color.White) },
-            text = { Text(confirmText, color = Color.White.copy(alpha = 0.75f)) },
+            title = { Text("Confirm Delete", color = c.text) },
+            text = { Text(confirmText, color = c.text.copy(alpha = 0.75f)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -1335,17 +1378,17 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         showDeleteConfirmDialog = false
                         showDeleteOptionsSheet = false
                     },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFF43F5E))
+                    colors = ButtonDefaults.textButtonColors(contentColor = c.expense)
                 ) {
                     Text("Delete", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirmDialog = false }) {
-                    Text("Cancel", color = Color.White)
+                    Text("Cancel", color = c.text)
                 }
             },
-            containerColor = Color(0xFF131A26)
+            containerColor = c.surface
         )
     }
 
@@ -1356,8 +1399,8 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
         if (showDeleteConfirm) {
             AlertDialog(
                 onDismissRequest = { showDeleteConfirm = false },
-                title = { Text("Delete Transaction", color = Color.White) },
-                text = { Text("Are you absolutely sure you want to delete this recorded transaction?", color = Color.White.copy(alpha = 0.7f)) },
+                title = { Text("Delete Transaction", color = c.text) },
+                text = { Text("Are you absolutely sure you want to delete this recorded transaction?", color = c.text.copy(alpha = 0.7f)) },
                 confirmButton = {
                     TextButton(
                         onClick = {
@@ -1365,17 +1408,17 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             selectedTxForEdit = null
                             showDeleteConfirm = false
                         },
-                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFF43F5E))
+                        colors = ButtonDefaults.textButtonColors(contentColor = c.expense)
                     ) {
                         Text("Delete", fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showDeleteConfirm = false }) {
-                        Text("Cancel", color = Color.White)
+                        Text("Cancel", color = c.text)
                     }
                 },
-                containerColor = Color(0xFF131A26)
+                containerColor = c.surface
             )
         } else {
             EditTransactionDialog(
@@ -1395,6 +1438,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
 // 2. ANALYSIS / ANALYTICS SCREEN
 @Composable
 fun AnalyticsScreen(viewModel: FinanceViewModel) {
+    val c = LocalAppColors.current
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
     val rawMonthYear by viewModel.selectedMonthYear.collectAsStateWithLifecycle()
     val anchorTime by viewModel.anchorDate.collectAsStateWithLifecycle()
@@ -1427,7 +1471,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
         buildDailyFlowPoints(filteredTransactions, analysisStart, analysisEnd)
     }
     val accountStats = remember(filteredTransactions) {
-        buildAccountAnalytics(filteredTransactions)
+        buildAccountAnalytics(filteredTransactions, c)
     }
 
     LazyColumn(
@@ -1446,9 +1490,9 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
-                        color = Color(0xFF131A26),
+                        color = c.surface,
                         shape = RoundedCornerShape(24.dp),
-                        border = BorderStroke(1.dp, Color(0xFF1D293B)),
+                        border = BorderStroke(1.dp, c.border),
                         modifier = Modifier.weight(1f)
                     ) {
                         Row(
@@ -1462,13 +1506,13 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                 onClick = { shiftAnalyticsPeriod(viewModel, rawMonthYear, timeFilter, -1, anchorTime) },
                                 modifier = Modifier.size(36.dp)
                             ) {
-                                Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Period", tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Period", tint = c.accent, modifier = Modifier.size(20.dp))
                             }
                             Text(
                                 text = formatAnalyticsPeriodLabel(rawMonthYear, timeFilter, anchorTime),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
-                                color = Color.White,
+                                color = c.text,
                                 modifier = Modifier.weight(1f),
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
@@ -1478,7 +1522,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                 onClick = { shiftAnalyticsPeriod(viewModel, rawMonthYear, timeFilter, 1, anchorTime) },
                                 modifier = Modifier.size(36.dp)
                             ) {
-                                Icon(Icons.Default.ChevronRight, contentDescription = "Next Period", tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.ChevronRight, contentDescription = "Next Period", tint = c.accent, modifier = Modifier.size(20.dp))
                             }
                         }
                     }
@@ -1486,8 +1530,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                         FilledTonalIconButton(
                             onClick = { showPeriodMenu = true },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = Color.White.copy(alpha = 0.08f),
-                                contentColor = Color.White
+                                containerColor = c.divider,
+                                contentColor = c.text
                             ),
                             modifier = Modifier.size(36.dp)
                         ) {
@@ -1497,12 +1541,12 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                             expanded = showPeriodMenu,
                             onDismissRequest = { showPeriodMenu = false },
                             modifier = Modifier
-                                .background(Color(0xFF0F172A))
-                                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
+                                .background(c.surfaceVariant)
+                                .border(1.dp, c.border, RoundedCornerShape(8.dp))
                                 .width(180.dp)
                         ) {
                             DropdownMenuItem(
-                                text = { Text("PERIOD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.45f)) },
+                                text = { Text("PERIOD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary) },
                                 onClick = {},
                                 enabled = false
                             )
@@ -1514,8 +1558,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text(label, color = if (timeFilter == key) Color(0xFF00E5FF) else Color.White, fontSize = 13.sp)
-                                            if (timeFilter == key) Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(16.dp))
+                                            Text(label, color = if (timeFilter == key) c.accent else c.text, fontSize = 13.sp)
+                                            if (timeFilter == key) Icon(Icons.Default.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
                                         }
                                     },
                                     onClick = { timeFilter = key; showPeriodMenu = false }
@@ -1529,8 +1573,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                     OutlinedButton(
                         onClick = { showModeMenu = true },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
+                        border = BorderStroke(1.dp, c.divider),
                         shape = RoundedCornerShape(18.dp)
                     ) {
                         Row(
@@ -1542,31 +1586,31 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                 Text(
                                     text = "Analysis Mode",
                                     fontSize = 11.sp,
-                                    color = Color.White.copy(alpha = 0.55f),
+                                    color = c.textSecondary,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
                                     text = selectedMode.label,
                                     fontSize = 15.sp,
-                                    color = Color.White,
+                                    color = c.text,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            Icon(Icons.Default.ExpandMore, contentDescription = "Select analysis mode", tint = Color(0xFF00E5FF))
+                            Icon(Icons.Default.ExpandMore, contentDescription = "Select analysis mode", tint = c.accent)
                         }
                     }
 
                     DropdownMenu(
                         expanded = showModeMenu,
                         onDismissRequest = { showModeMenu = false },
-                        modifier = Modifier.background(Color(0xFF131A26))
+                        modifier = Modifier.background(c.surface)
                     ) {
                         AnalyticsMode.entries.forEach { mode ->
                             DropdownMenuItem(
                                 text = {
                                     Text(
                                         mode.label,
-                                        color = if (mode == selectedMode) Color(0xFF00E5FF) else Color.White,
+                                        color = if (mode == selectedMode) c.accent else c.text,
                                         fontWeight = if (mode == selectedMode) FontWeight.Bold else FontWeight.Medium
                                     )
                                 },
@@ -1614,7 +1658,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                         title = "Expense Flow",
                         points = flowPoints,
                         showIncome = false,
-                        accent = Color(0xFFF43F5E),
+                        accent = c.expense,
                         emptyMessage = "No expense flow available for this period."
                     )
                 }
@@ -1626,7 +1670,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                         title = "Income Flow",
                         points = flowPoints,
                         showIncome = true,
-                        accent = Color(0xFF10B981),
+                        accent = c.income,
                         emptyMessage = "No income flow available for this period."
                     )
                 }
@@ -1682,14 +1726,15 @@ private fun AnalyticsOverviewSection(
     percentSuffix: String,
     emptyMessage: String
 ) {
+    val c = LocalAppColors.current
     var activeSectorIndex by remember(categoryTotals, totalLabel) { mutableStateOf(-1) }
     val decFormat = remember { DecimalFormat("₹#,##0.00") }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Surface(
-            color = Color(0xFF131A26),
+            color = c.surface,
             shape = RoundedCornerShape(24.dp),
-            border = BorderStroke(1.dp, Color(0xFF1E293B)),
+            border = BorderStroke(1.dp, c.border),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -1703,7 +1748,7 @@ private fun AnalyticsOverviewSection(
                             .height(200.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(emptyMessage, color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
+                        Text(emptyMessage, color = c.textSecondary, fontSize = 12.sp)
                     }
                 } else {
                     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -1865,7 +1910,7 @@ private fun AnalyticsOverviewSection(
                                             .clickable {
                                                 activeSectorIndex = if (activeSectorIndex == idx) -1 else idx
                                             }
-                                            .background(if (activeSectorIndex == idx) Color.White.copy(alpha = 0.06f) else Color.Transparent)
+                                            .background(if (activeSectorIndex == idx) c.divider else Color.Transparent)
                                             .padding(horizontal = 4.dp, vertical = 1.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -1877,7 +1922,7 @@ private fun AnalyticsOverviewSection(
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
                                             stats.category.displayName,
-                                            color = Color.White.copy(alpha = 0.85f),
+                                            color = c.text.copy(alpha = 0.85f),
                                             fontSize = 10.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
@@ -1911,15 +1956,15 @@ private fun AnalyticsOverviewSection(
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,
                 letterSpacing = 1.sp,
-                color = Color.White.copy(alpha = 0.6f)
+                color = c.textSecondary
             )
 
             categoryTotals.forEachIndexed { idx, stats ->
                 val active = activeSectorIndex == idx
                 Surface(
-                    color = if (active) Color(0xFF1E293B) else Color(0xFF131A26),
+                    color = if (active) c.border else c.surface,
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, if (active) Color(0xFF00E5FF) else Color(0xFF1E293B)),
+                    border = BorderStroke(1.dp, if (active) c.accent else c.border),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
@@ -1954,18 +1999,18 @@ private fun AnalyticsOverviewSection(
                                     stats.category.displayName,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
-                                    color = Color.White,
+                                    color = c.text,
                                     modifier = Modifier.weight(1f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text(decFormat.format(stats.total), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                                Text(decFormat.format(stats.total), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.text)
                             }
                             LinearProgressIndicator(
                                 progress = stats.percentage.toFloat(),
                                 color = stats.category.color,
-                                trackColor = Color.White.copy(alpha = 0.06f),
+                                trackColor = c.divider,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(6.dp)
@@ -1997,6 +2042,7 @@ private fun AnalyticsFlowSection(
     accent: Color,
     emptyMessage: String
 ) {
+    val c = LocalAppColors.current
     val decFormat = remember { DecimalFormat("₹#,##0.00") }
     val pointValues = remember(points, showIncome) {
         points.map { if (showIncome) it.income else it.expense }
@@ -2030,18 +2076,18 @@ private fun AnalyticsFlowSection(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text(title.uppercase(Locale.getDefault()), fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp, color = Color.White.copy(alpha = 0.5f))
+                        Text(title.uppercase(Locale.getDefault()), fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp, color = c.textSecondary)
                         Text(decFormat.format(total), fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, color = accent)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text("Average active day", fontSize = 11.sp, color = Color.White.copy(alpha = 0.45f))
-                        Text(decFormat.format(average), fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Average active day", fontSize = 11.sp, color = c.textSecondary)
+                        Text(decFormat.format(average), fontWeight = FontWeight.Bold, color = c.text)
                     }
                 }
 
                 if (nonZeroPoints.isEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
-                        Text(emptyMessage, color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
+                        Text(emptyMessage, color = c.textSecondary, fontSize = 12.sp)
                     }
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -2054,7 +2100,7 @@ private fun AnalyticsFlowSection(
                                 text = activePoint?.fullLabel ?: title,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = c.text
                             )
                             Surface(
                                 color = accent.copy(alpha = 0.12f),
@@ -2085,7 +2131,7 @@ private fun AnalyticsFlowSection(
                                 yAxisValues.forEach { value ->
                                     Text(
                                         text = compactCurrency(value),
-                                        color = Color.White.copy(alpha = 0.45f),
+                                        color = c.textSecondary,
                                         fontSize = 10.sp,
                                         textAlign = TextAlign.End
                                     )
@@ -2117,7 +2163,7 @@ private fun AnalyticsFlowSection(
                                 yAxisValues.forEachIndexed { index, _ ->
                                     val y = topPad + chartHeight * index / (yAxisValues.lastIndex.coerceAtLeast(1)).toFloat()
                                     drawLine(
-                                        color = Color.White.copy(alpha = 0.08f),
+                                        color = c.divider,
                                         start = Offset(0f, y),
                                         end = Offset(chartWidth, y),
                                         strokeWidth = 1.dp.toPx()
@@ -2168,7 +2214,7 @@ private fun AnalyticsFlowSection(
                             xAxisIndices.forEach { index ->
                                 Text(
                                     text = points[index].dayOfMonthLabel,
-                                    color = if (index == activePointIndex) accent else Color.White.copy(alpha = 0.45f),
+                                    color = if (index == activePointIndex) accent else c.textSecondary,
                                     fontSize = 10.sp,
                                     fontWeight = if (index == activePointIndex) FontWeight.Bold else FontWeight.Medium
                                 )
@@ -2183,7 +2229,7 @@ private fun AnalyticsFlowSection(
             fontWeight = FontWeight.Bold,
             fontSize = 12.sp,
             letterSpacing = 1.sp,
-            color = Color.White.copy(alpha = 0.6f)
+            color = c.textSecondary
         )
 
         Column(
@@ -2192,7 +2238,7 @@ private fun AnalyticsFlowSection(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.White.copy(alpha = 0.03f))
+                    .background(c.divider)
                     .padding(vertical = 6.dp)
             ) {
                     listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat").forEach { day ->
@@ -2202,13 +2248,13 @@ private fun AnalyticsFlowSection(
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp,
-                            color = Color.White.copy(alpha = 0.5f)
+                            color = c.textSecondary
                         )
                     }
                 }
-                HorizontalDivider(color = Color.White.copy(alpha = 0.07f))
+                HorizontalDivider(color = c.divider)
                 calendarCells.chunked(7).forEachIndexed { weekIdx, week ->
-                    if (weekIdx > 0) HorizontalDivider(color = Color.White.copy(alpha = 0.04f))
+                    if (weekIdx > 0) HorizontalDivider(color = c.divider)
                     Row(modifier = Modifier.fillMaxWidth().height(50.dp)) {
                         week.forEachIndexed { dayIdx, point ->
                             if (dayIdx > 0) {
@@ -2216,7 +2262,7 @@ private fun AnalyticsFlowSection(
                                     modifier = Modifier
                                         .fillMaxHeight()
                                         .width(1.dp)
-                                        .background(Color.White.copy(alpha = 0.04f))
+                                        .background(c.divider)
                                 )
                             }
                             val value = point?.let { if (showIncome) it.income else it.expense } ?: 0.0
@@ -2239,14 +2285,14 @@ private fun AnalyticsFlowSection(
                                             text = point.dayOfMonthLabel,
                                             fontSize = 7.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.White.copy(alpha = 0.5f),
+                                            color = c.textSecondary,
                                             modifier = Modifier.align(Alignment.Start)
                                         )
                                         Text(
                                             text = if (value > 0.0) compactCurrency(value) else "\u00b7",
                                             fontSize = 7.sp,
                                             fontWeight = if (value > 0.0) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (value > 0.0) accent else Color.White.copy(alpha = 0.18f),
+                                            color = if (value > 0.0) accent else c.text.copy(alpha = 0.18f),
                                             textAlign = TextAlign.Center,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
@@ -2264,6 +2310,7 @@ private fun AnalyticsFlowSection(
 
 @Composable
 private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>) {
+    val c = LocalAppColors.current
     val decFormat = remember { DecimalFormat("₹#,##0.00") }
     val maxActivity = accountStats.maxOfOrNull { maxOf(it.income, it.expense) }?.coerceAtLeast(1.0) ?: 1.0
     val yAxisValues = remember(maxActivity) {
@@ -2274,11 +2321,11 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("ACCOUNT ACTIVITY CHART", fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp, color = Color.White.copy(alpha = 0.5f))
+            Text("ACCOUNT ACTIVITY CHART", fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp, color = c.textSecondary)
 
                 if (accountStats.isEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
-                        Text("No account activity available for this period.", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
+                        Text("No account activity available for this period.", color = c.textSecondary, fontSize = 12.sp)
                     }
                 } else {
                     activeAccount?.let { stats ->
@@ -2295,33 +2342,33 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Surface(
-                                color = Color(0xFF10B981).copy(alpha = 0.12f),
+                                color = c.income.copy(alpha = 0.12f),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                                    Text("INCOME", color = Color.White.copy(alpha = 0.55f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(compactCurrency(stats.income), color = Color(0xFF10B981), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("INCOME", color = c.textSecondary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(compactCurrency(stats.income), color = c.income, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                             }
                             Surface(
-                                color = Color(0xFFF43F5E).copy(alpha = 0.12f),
+                                color = c.expense.copy(alpha = 0.12f),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                                    Text("EXPENSE", color = Color.White.copy(alpha = 0.55f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(compactCurrency(stats.expense), color = Color(0xFFF43F5E), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("EXPENSE", color = c.textSecondary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(compactCurrency(stats.expense), color = c.expense, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                             }
                             Surface(
-                                color = (if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043)).copy(alpha = 0.12f),
+                                color = (if (stats.net >= 0) c.accent else Color(0xFFFF7043)).copy(alpha = 0.12f),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                                    Text("NET", color = Color.White.copy(alpha = 0.55f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(compactCurrency(stats.net), color = if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("NET", color = c.textSecondary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(compactCurrency(stats.net), color = if (stats.net >= 0) c.accent else Color(0xFFFF7043), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                             }
                         }
@@ -2341,7 +2388,7 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                             yAxisValues.forEach { value ->
                                 Text(
                                     text = compactCurrency(value),
-                                    color = Color.White.copy(alpha = 0.45f),
+                                    color = c.textSecondary,
                                     fontSize = 10.sp,
                                     textAlign = TextAlign.End
                                 )
@@ -2369,7 +2416,7 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                             yAxisValues.forEachIndexed { index, _ ->
                                 val y = topPad + chartHeight * index / (yAxisValues.lastIndex.coerceAtLeast(1)).toFloat()
                                 drawLine(
-                                    color = Color.White.copy(alpha = 0.08f),
+                                    color = c.divider,
                                     start = Offset(0f, y),
                                     end = Offset(size.width, y),
                                     strokeWidth = 1.dp.toPx()
@@ -2389,7 +2436,7 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
 
                                 if (index == activeAccountIndex) {
                                     drawRoundRect(
-                                        color = Color.White.copy(alpha = 0.04f),
+                                        color = c.divider,
                                         topLeft = Offset(slotWidth * index + 4.dp.toPx(), topPad),
                                         size = Size(slotWidth - 8.dp.toPx(), chartHeight),
                                         cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
@@ -2398,7 +2445,7 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
 
                                 if (stats.income > 0.0) {
                                     drawRoundRect(
-                                        color = Color(0xFF10B981),
+                                        color = c.income,
                                         topLeft = Offset(incomeCenterX - barWidth / 2f, incomeY),
                                         size = Size(barWidth, (barBottom - incomeY).coerceAtLeast(4.dp.toPx())),
                                         cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
@@ -2407,7 +2454,7 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                                 }
                                 if (stats.expense > 0.0) {
                                     drawRoundRect(
-                                        color = Color(0xFFF43F5E),
+                                        color = c.expense,
                                         topLeft = Offset(expenseCenterX - barWidth / 2f, expenseY),
                                         size = Size(barWidth, (barBottom - expenseY).coerceAtLeast(4.dp.toPx())),
                                         cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
@@ -2433,7 +2480,7 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                                     } else "BNK"
                                     "${n.split(" ").first().take(4).uppercase(java.util.Locale.getDefault())} $tag"
                                 },
-                                color = if (index == activeAccountIndex) stats.color else Color.White.copy(alpha = 0.45f),
+                                color = if (index == activeAccountIndex) stats.color else c.textSecondary,
                                 fontSize = 10.sp,
                                 fontWeight = if (index == activeAccountIndex) FontWeight.Bold else FontWeight.Medium,
                                 modifier = Modifier.weight(1f),
@@ -2452,12 +2499,12 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,
                 letterSpacing = 1.sp,
-                color = Color.White.copy(alpha = 0.6f)
+                color = c.textSecondary
             )
 
             accountStats.forEach { stats ->
                 Surface(
-                    color = Color(0xFF131A26),
+                    color = c.surface,
                     shape = RoundedCornerShape(18.dp),
                     border = BorderStroke(1.dp, stats.color.copy(alpha = 0.45f)),
                     modifier = Modifier.fillMaxWidth()
@@ -2471,7 +2518,7 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                     ) {
                         Text(
                             stats.accountName,
-                            color = Color.White,
+                            color = c.text,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             maxLines = 2,
@@ -2480,16 +2527,16 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Column(horizontalAlignment = Alignment.End) {
-                                Text("IN", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
-                                Text(compactCurrency(stats.income), color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("IN", color = c.textSecondary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+                                Text(compactCurrency(stats.income), color = c.income, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                             Column(horizontalAlignment = Alignment.End) {
-                                Text("OUT", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
-                                Text(compactCurrency(stats.expense), color = Color(0xFFF43F5E), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("OUT", color = c.textSecondary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+                                Text(compactCurrency(stats.expense), color = c.expense, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                             Column(horizontalAlignment = Alignment.End) {
-                                Text("NET", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
-                                Text(compactCurrency(stats.net), color = if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("NET", color = c.textSecondary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+                                Text(compactCurrency(stats.net), color = if (stats.net >= 0) c.accent else Color(0xFFFF7043), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                         }
                     }
@@ -2506,6 +2553,7 @@ private fun AccountStatChip(
     tone: Color,
     modifier: Modifier = Modifier
 ) {
+    val c = LocalAppColors.current
     val decFormat = remember { DecimalFormat("₹#,##0.00") }
     Surface(
         color = tone.copy(alpha = 0.12f),
@@ -2514,7 +2562,7 @@ private fun AccountStatChip(
         modifier = modifier
     ) {
         Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(label, color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            Text(label, color = c.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
             Text(decFormat.format(amount), color = tone, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         }
     }
@@ -2591,10 +2639,10 @@ private fun buildAnalyticsCalendarCells(points: List<AnalyticsFlowPoint>): List<
     return cells
 }
 
-private fun buildAccountAnalytics(transactions: List<TransactionEntry>): List<AccountAnalyticsSummary> {
+private fun buildAccountAnalytics(transactions: List<TransactionEntry>, appColors: com.example.ui.theme.AppColors): List<AccountAnalyticsSummary> {
     val palette = listOf(
-        Color(0xFF00E5FF),
-        Color(0xFF10B981),
+        appColors.accent,
+        appColors.income,
         Color(0xFFFF7043),
         Color(0xFFFFC107),
         Color(0xFF7C4DFF),
@@ -2674,6 +2722,7 @@ val categoryColorsList = listOf(
 // 3. BUDGETS SCREEN
 @Composable
 fun BudgetsScreen(viewModel: FinanceViewModel) {
+    val c = LocalAppColors.current
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
     val rawMonthYear by viewModel.selectedMonthYear.collectAsStateWithLifecycle()
     val activeBudgets by viewModel.monthlyBudgets.collectAsStateWithLifecycle()
@@ -2736,8 +2785,8 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         FilledTonalIconButton(
                             onClick = { viewModel.setMonthYear(shiftMonthYear(rawMonthYear, -1)) },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = Color.White.copy(alpha = 0.06f),
-                                contentColor = Color.White
+                                containerColor = c.divider,
+                                contentColor = c.text
                             ),
                             modifier = Modifier.size(32.dp)
                         ) {
@@ -2745,14 +2794,14 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         }
 
                         Surface(
-                            color = Color(0xFF131A26),
+                            color = c.surface,
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
                                 text = formatDisplay.format(currentMonthDate),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp,
-                                color = Color(0xFF00E5FF),
+                                color = c.accent,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                             )
                         }
@@ -2760,8 +2809,8 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         FilledTonalIconButton(
                             onClick = { viewModel.setMonthYear(shiftMonthYear(rawMonthYear, 1)) },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = Color.White.copy(alpha = 0.06f),
-                                contentColor = Color.White
+                                containerColor = c.divider,
+                                contentColor = c.text
                             ),
                             modifier = Modifier.size(32.dp)
                         ) {
@@ -2772,10 +2821,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                     Button(
                         onClick = { showAddCategoryDialog = true },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF00E5FF).copy(alpha = 0.15f),
-                            contentColor = Color(0xFF00E5FF)
+                            containerColor = c.accent.copy(alpha = 0.15f),
+                            contentColor = c.accent
                         ),
-                        border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f)),
+                        border = BorderStroke(1.dp, c.accent.copy(alpha = 0.5f)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         modifier = Modifier.testTag("add_custom_category_button")
                     ) {
@@ -2792,7 +2841,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                    .background(c.text.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                     .padding(4.dp)
             ) {
                 val isExp = activeCategoryTypeTab == "EXPENSE"
@@ -2800,27 +2849,27 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (isExp) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent)
-                        .border(1.dp, if (isExp) Color(0xFF00E5FF) else Color.Transparent, RoundedCornerShape(8.dp))
+                        .background(if (isExp) c.accent.copy(alpha = 0.15f) else Color.Transparent)
+                        .border(1.dp, if (isExp) c.accent else Color.Transparent, RoundedCornerShape(8.dp))
                         .clickable { activeCategoryTypeTab = "EXPENSE" }
                         .padding(vertical = 10.dp)
                         .testTag("categories_tab_expense"),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Expense Categories", color = if (isExp) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("Expense Categories", color = if (isExp) c.accent else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (!isExp) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent)
-                        .border(1.dp, if (!isExp) Color(0xFF00E5FF) else Color.Transparent, RoundedCornerShape(8.dp))
+                        .background(if (!isExp) c.accent.copy(alpha = 0.15f) else Color.Transparent)
+                        .border(1.dp, if (!isExp) c.accent else Color.Transparent, RoundedCornerShape(8.dp))
                         .clickable { activeCategoryTypeTab = "INCOME" }
                         .padding(vertical = 10.dp)
                         .testTag("categories_tab_income"),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Income Categories", color = if (!isExp) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("Income Categories", color = if (!isExp) c.accent else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
             }
         }
@@ -2839,7 +2888,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                 val percent = if (globalBudgetLimit > 0) (globalBudgetSpend / globalBudgetLimit * 100) else 0.0
                 val progressFraction = if (globalBudgetLimit > 0) (globalBudgetSpend / globalBudgetLimit).toFloat().coerceIn(0f, 1f) else 0f
                 val overBudget = globalBudgetLimit > 0 && globalBudgetSpend > globalBudgetLimit
-                val accentColor = if (overBudget) Color(0xFFF43F5E) else budgetProgressColor(percent)
+                val accentColor = if (overBudget) c.expense else budgetProgressColor(percent, c)
 
                 Box(
                     modifier = Modifier
@@ -2849,7 +2898,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             Brush.horizontalGradient(
                                 listOf(
                                     accentColor.copy(alpha = 0.18f),
-                                    Color(0xFF131A26)
+                                    c.surface
                                 )
                             )
                         )
@@ -2867,7 +2916,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 1.2.sp,
-                                    color = Color.White.copy(alpha = 0.45f)
+                                    color = c.textSecondary
                                 )
                                 Spacer(Modifier.height(2.dp))
                                 Text(
@@ -2889,7 +2938,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                 Text(
                                     text = "of ${decFormat.format(globalBudgetLimit)}",
                                     fontSize = 12.sp,
-                                    color = Color.White.copy(alpha = 0.5f)
+                                    color = c.textSecondary
                                 )
                             }
                         }
@@ -2900,7 +2949,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                     .fillMaxWidth()
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp))
-                                    .background(Color.White.copy(alpha = 0.08f))
+                                    .background(c.divider)
                             ) {
                                 Box(
                                     modifier = Modifier
@@ -2919,7 +2968,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                 Text(
                                     text = "Over by ${decFormat.format(globalBudgetSpend - globalBudgetLimit)}",
                                     fontSize = 11.sp,
-                                    color = Color(0xFFF43F5E),
+                                    color = c.expense,
                                     fontWeight = FontWeight.SemiBold
                                 )
                             }
@@ -2942,7 +2991,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                     val incPct = if (incomeExpectedTotal > 0) (incomeReceivedTotal / incomeExpectedTotal * 100) else 0.0
                     val incFraction = if (incomeExpectedTotal > 0) (incomeReceivedTotal / incomeExpectedTotal).toFloat().coerceIn(0f, 1f) else 0f
                     val overTarget = incomeReceivedTotal >= incomeExpectedTotal
-                    val incColor = if (overTarget) Color(0xFF10B981) else Color(0xFF00E5FF)
+                    val incColor = if (overTarget) c.income else c.accent
 
                     Box(
                         modifier = Modifier
@@ -2950,7 +2999,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             .clip(RoundedCornerShape(20.dp))
                             .background(
                                 Brush.horizontalGradient(
-                                    listOf(incColor.copy(alpha = 0.18f), Color(0xFF131A26))
+                                    listOf(incColor.copy(alpha = 0.18f), c.surface)
                                 )
                             )
                             .border(1.dp, incColor.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
@@ -2967,7 +3016,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 1.2.sp,
-                                        color = Color.White.copy(alpha = 0.45f)
+                                        color = c.textSecondary
                                     )
                                     Spacer(Modifier.height(2.dp))
                                     Text(
@@ -2987,7 +3036,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                     Text(
                                         text = "of ${decFormat.format(incomeExpectedTotal)}",
                                         fontSize = 12.sp,
-                                        color = Color.White.copy(alpha = 0.5f)
+                                        color = c.textSecondary
                                     )
                                 }
                             }
@@ -2997,7 +3046,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                     .fillMaxWidth()
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp))
-                                    .background(Color.White.copy(alpha = 0.08f))
+                                    .background(c.divider)
                             ) {
                                 Box(
                                     modifier = Modifier
@@ -3016,7 +3065,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                 Text(
                                     text = "Target reached! +${decFormat.format(incomeReceivedTotal - incomeExpectedTotal)} extra",
                                     fontSize = 11.sp,
-                                    color = Color(0xFF10B981),
+                                    color = c.income,
                                     fontWeight = FontWeight.SemiBold
                                 )
                             }
@@ -3033,7 +3082,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,
                 letterSpacing = 1.sp,
-                color = Color.White.copy(alpha = 0.6f)
+                color = c.textSecondary
             )
         }
 
@@ -3053,7 +3102,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                     Text(
                         text = if (activeCategoryTypeTab == "EXPENSE") "BUDGETED" else "EXPECTED INCOME",
                         fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp,
-                        color = Color(0xFF00E5FF), modifier = Modifier.padding(vertical = 4.dp)
+                        color = c.accent, modifier = Modifier.padding(vertical = 4.dp)
                     )
                 }
                 budgetedCats.forEach { cat ->
@@ -3070,10 +3119,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                     val limit = budgetObj.amountLimit
                     val ratio = if (limit > 0) (catSpend / limit) else 0.0
                     val percent = ratio * 100
-                    val progressColor = budgetProgressColor(percent)
+                    val progressColor = budgetProgressColor(percent, c)
                     val remaining = limit - catSpend
                     Surface(
-                        color = if (isDragging) Color(0xFF1E3048) else Color(0xFF131A26),
+                        color = if (isDragging) Color(0xFF1E3048) else c.surface,
                         shape = RoundedCornerShape(16.dp),
                         border = BorderStroke(1.dp, if (isDragging) cat.color else cat.color.copy(alpha = 0.45f)),
                         modifier = Modifier.fillMaxWidth().pointerInput(cat.name) {
@@ -3110,25 +3159,25 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White,
+                                        Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text,
                                             modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("${compactCurrency(catSpend)} / ${compactCurrency(limit)}", fontSize = 13.sp, color = Color.White.copy(alpha = 0.65f), fontWeight = FontWeight.SemiBold)
+                                        Text("${compactCurrency(catSpend)} / ${compactCurrency(limit)}", fontSize = 13.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
                                         Box {
                                             IconButton(onClick = { showCategoryMenuFor = cat.name }, modifier = Modifier.size(28.dp)) {
-                                                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+                                                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = c.textSecondary, modifier = Modifier.size(16.dp))
                                             }
                                             DropdownMenu(
                                                 expanded = showCategoryMenuFor == cat.name,
                                                 onDismissRequest = { showCategoryMenuFor = null },
-                                                containerColor = Color(0xFF1E293B)
+                                                containerColor = c.border
                                             ) {
                                                 DropdownMenuItem(
-                                                    text = { Text(if (activeCategoryTypeTab == "INCOME") "Edit Expected Amount" else "Edit Budget", color = Color.White, fontSize = 13.sp) },
+                                                    text = { Text(if (activeCategoryTypeTab == "INCOME") "Edit Expected Amount" else "Edit Budget", color = c.text, fontSize = 13.sp) },
                                                     onClick = { showBudgetAmountDialog = cat; showCategoryMenuFor = null }
                                                 )
                                                 DropdownMenuItem(
-                                                    text = { Text("Remove Budget", color = Color(0xFFF43F5E), fontSize = 13.sp) },
+                                                    text = { Text("Remove Budget", color = c.expense, fontSize = 13.sp) },
                                                     onClick = { viewModel.deleteBudget(budgetObj.id); showCategoryMenuFor = null }
                                                 )
                                             }
@@ -3137,14 +3186,14 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                     Text(
                                         text = "Remaining: ${compactCurrency(remaining)}",
                                         fontSize = 12.sp,
-                                        color = if (remaining < 0) Color(0xFFF43F5E) else Color(0xFF10B981)
+                                        color = if (remaining < 0) c.expense else c.income
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         LinearProgressIndicator(
                                             progress = ratio.toFloat().coerceIn(0f, 1f),
                                             color = progressColor,
-                                            trackColor = Color.White.copy(alpha = 0.05f),
+                                            trackColor = c.text.copy(alpha = 0.05f),
                                             modifier = Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp))
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
@@ -3164,7 +3213,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                     Text(
                         text = "NOT BUDGETED",
                         fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp,
-                        color = Color.White.copy(alpha = 0.4f), modifier = Modifier.padding(vertical = 4.dp)
+                        color = c.textSecondary, modifier = Modifier.padding(vertical = 4.dp)
                     )
                 }
                 unbudgetedCats.forEach { cat ->
@@ -3173,9 +3222,9 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         txMonth == rawMonthYear && it.type == "INCOME" && it.category.equals(cat.name, ignoreCase = true)
                     }.sumOf { it.amount }
                     Surface(
-                        color = Color(0xFF131A26),
+                        color = c.surface,
                         shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                        border = BorderStroke(1.dp, c.border),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { showEditCategoryDialog = cat }
@@ -3192,20 +3241,20 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             Spacer(modifier = Modifier.width(12.dp))
                             if (activeCategoryTypeTab == "INCOME") {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     if (catIncome > 0) {
-                                        Text("${compactCurrency(catIncome)} received", fontSize = 12.sp, color = Color(0xFF10B981), fontWeight = FontWeight.SemiBold)
+                                        Text("${compactCurrency(catIncome)} received", fontSize = 12.sp, color = c.income, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             } else {
-                                Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White,
+                                Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text,
                                     modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             OutlinedButton(
                                 onClick = { showBudgetAmountDialog = cat },
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF00E5FF)),
-                                border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.6f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = c.accent),
+                                border = BorderStroke(1.dp, c.accent.copy(alpha = 0.6f)),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 modifier = Modifier.height(32.dp)
                             ) {
@@ -3241,7 +3290,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
 
         AlertDialog(
             onDismissRequest = { showEditCategoryDialog = null },
-            title = { Text("Edit Category", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 16.sp) },
+            title = { Text("Edit Category", fontWeight = FontWeight.Bold, color = c.text, fontSize = 16.sp) },
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -3252,17 +3301,17 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         onValueChange = { editCatName = it },
                         label = { Text("Category Name") },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF00E5FF),
-                            focusedLabelColor = Color(0xFF00E5FF),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            unfocusedLabelColor = Color.White.copy(alpha = 0.5f)
+                            focusedTextColor = c.text,
+                            unfocusedTextColor = c.text,
+                            focusedBorderColor = c.accent,
+                            focusedLabelColor = c.accent,
+                            unfocusedBorderColor = c.textTertiary,
+                            unfocusedLabelColor = c.textSecondary
                         ),
                         modifier = Modifier.fillMaxWidth().testTag("edit_category_name_field")
                     )
 
-                    Text("Select Icon", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
+                    Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxWidth()
@@ -3271,7 +3320,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             val isSelected = selectedIconName == iconName
                             Surface(
                                 shape = CircleShape,
-                                color = if (isSelected) selectedColor.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.05f),
+                                color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
                                 border = BorderStroke(2.dp, if (isSelected) selectedColor else Color.Transparent),
                                 modifier = Modifier
                                     .size(44.dp)
@@ -3282,7 +3331,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                     Icon(
                                         imageVector = iconVec,
                                         contentDescription = iconName,
-                                        tint = if (isSelected) selectedColor else Color.White.copy(alpha = 0.7f),
+                                        tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -3290,7 +3339,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         }
                     }
 
-                    Text("Select Color", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
+                    Text("Select Color", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxWidth()
@@ -3300,7 +3349,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             Surface(
                                 shape = CircleShape,
                                 color = colorObj,
-                                border = BorderStroke(2.dp, if (isSelected) Color.White else Color.Transparent),
+                                border = BorderStroke(2.dp, if (isSelected) c.text else Color.Transparent),
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clickable { selectedColorHex = hexStr; selectedColor = colorObj }
@@ -3311,7 +3360,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                         Icon(
                                             imageVector = Icons.Default.Check,
                                             contentDescription = "Selected",
-                                            tint = Color.White,
+                                            tint = c.text,
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
@@ -3333,7 +3382,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             if (checkCurrent != null) viewModel.deleteBudget(checkCurrent.id)
                             showEditCategoryDialog = null
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF43F5E), contentColor = Color.White),
+                        colors = ButtonDefaults.buttonColors(containerColor = c.expense, contentColor = c.text),
                         modifier = Modifier.testTag("delete_custom_category_button")
                     ) {
                         Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(16.dp))
@@ -3364,7 +3413,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             }
                             showEditCategoryDialog = null
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19)),
+                        colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
                         modifier = Modifier.testTag("save_category_changes_button")
                     ) {
                         Text("Save Changes", fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -3376,10 +3425,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                     onClick = { showEditCategoryDialog = null },
                     modifier = Modifier.testTag("cancel_category_changes_button")
                 ) {
-                    Text("Cancel", color = Color.White)
+                    Text("Cancel", color = c.text)
                 }
             },
-            containerColor = Color(0xFF131A26)
+            containerColor = c.surface
         )
     }
 
@@ -3397,7 +3446,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                 Text(
                     if (cat.type == "INCOME") "Set Expected Income" else "Set Budget Limit",
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = c.text,
                     fontSize = 16.sp
                 )
             },
@@ -3409,7 +3458,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         else
                             "Set a monthly budget limit for ${cat.displayName}",
                         fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.6f)
+                        color = c.textSecondary
                     )
                     OutlinedTextField(
                         value = budgetValStr,
@@ -3417,12 +3466,12 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         label = { Text(if (cat.type == "INCOME") "Expected Amount (₹)" else "Budget Limit (₹)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF00E5FF),
-                            focusedLabelColor = Color(0xFF00E5FF),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            unfocusedLabelColor = Color.White.copy(alpha = 0.5f)
+                            focusedTextColor = c.text,
+                            unfocusedTextColor = c.text,
+                            focusedBorderColor = c.accent,
+                            focusedLabelColor = c.accent,
+                            unfocusedBorderColor = c.textTertiary,
+                            unfocusedLabelColor = c.textSecondary
                         ),
                         modifier = Modifier.fillMaxWidth().testTag("edit_category_budget_field")
                     )
@@ -3433,7 +3482,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                     if (checkCurrent != null) {
                         TextButton(
                             onClick = { viewModel.deleteBudget(checkCurrent.id); showBudgetAmountDialog = null },
-                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFF43F5E))
+                            colors = ButtonDefaults.textButtonColors(contentColor = c.expense)
                         ) { Text("Remove", fontWeight = FontWeight.Bold) }
                     }
                     Button(
@@ -3445,16 +3494,16 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             }
                             showBudgetAmountDialog = null
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
+                        colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
                     ) {
                         Text(if (checkCurrent != null) "Update" else "Set Budget", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showBudgetAmountDialog = null }) { Text("Cancel", color = Color.White) }
+                TextButton(onClick = { showBudgetAmountDialog = null }) { Text("Cancel", color = c.text) }
             },
-            containerColor = Color(0xFF131A26)
+            containerColor = c.surface
         )
     }
 
@@ -3462,7 +3511,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
         var newCatName by remember { mutableStateOf("") }
         var selectedIconName by remember { mutableStateOf("restaurant") }
         var selectedColorHex by remember { mutableStateOf("#00E5FF") }
-        var selectedColor by remember { mutableStateOf(Color(0xFF00E5FF)) }
+        var selectedColor by remember { mutableStateOf(c.accent) }
         var selectedType by remember { mutableStateOf("EXPENSE") }
         var initialBudgetAmt by remember { mutableStateOf("") }
 
@@ -3472,7 +3521,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                 Text(
                     "Add New Category",
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = c.text,
                     fontSize = 18.sp
                 )
             },
@@ -3486,21 +3535,21 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         onValueChange = { newCatName = it },
                         label = { Text("Category Name") },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF00E5FF),
-                            focusedLabelColor = Color(0xFF00E5FF),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            unfocusedLabelColor = Color.White.copy(alpha = 0.5f)
+                            focusedTextColor = c.text,
+                            unfocusedTextColor = c.text,
+                            focusedBorderColor = c.accent,
+                            focusedLabelColor = c.accent,
+                            unfocusedBorderColor = c.textTertiary,
+                            unfocusedLabelColor = c.textSecondary
                         ),
                         modifier = Modifier.fillMaxWidth().testTag("add_category_name_field")
                     )
 
-                    Text("Category Type", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
+                    Text("Category Type", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                            .background(c.text.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                             .padding(4.dp)
                     ) {
                         val isExp = selectedType == "EXPENSE"
@@ -3508,25 +3557,25 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (isExp) Color(0xFFF43F5E) else Color.Transparent)
+                                .background(if (isExp) c.expense else Color.Transparent)
                                 .clickable { selectedType = "EXPENSE" }
                                 .padding(8.dp)
                                 .testTag("type_selector_expense"),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Expense", color = if (isExp) Color.White else Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Expense", color = if (isExp) c.text else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (!isExp) Color(0xFF10B981) else Color.Transparent)
+                                .background(if (!isExp) c.income else Color.Transparent)
                                 .clickable { selectedType = "INCOME" }
                                 .padding(8.dp)
                                 .testTag("type_selector_income"),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Income", color = if (!isExp) Color.White else Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Income", color = if (!isExp) c.text else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
 
@@ -3537,18 +3586,18 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             label = { Text("Monthly Budget Limit (₹, Optional)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color(0xFF00E5FF),
-                                focusedLabelColor = Color(0xFF00E5FF),
-                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                                unfocusedLabelColor = Color.White.copy(alpha = 0.5f)
+                                focusedTextColor = c.text,
+                                unfocusedTextColor = c.text,
+                                focusedBorderColor = c.accent,
+                                focusedLabelColor = c.accent,
+                                unfocusedBorderColor = c.textTertiary,
+                                unfocusedLabelColor = c.textSecondary
                             ),
                             modifier = Modifier.fillMaxWidth().testTag("add_category_budget_field")
                         )
                     }
 
-                    Text("Select Icon", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
+                    Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxWidth()
@@ -3557,7 +3606,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             val isSelected = selectedIconName == iconName
                             Surface(
                                 shape = CircleShape,
-                                color = if (isSelected) selectedColor.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.05f),
+                                color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
                                 border = BorderStroke(2.dp, if (isSelected) selectedColor else Color.Transparent),
                                 modifier = Modifier
                                     .size(44.dp)
@@ -3568,7 +3617,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                     Icon(
                                         imageVector = iconVec,
                                         contentDescription = iconName,
-                                        tint = if (isSelected) selectedColor else Color.White.copy(alpha = 0.7f),
+                                        tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -3576,7 +3625,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         }
                     }
 
-                    Text("Select Color", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
+                    Text("Select Color", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxWidth()
@@ -3586,7 +3635,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             Surface(
                                 shape = CircleShape,
                                 color = colorObj,
-                                border = BorderStroke(2.dp, if (isSelected) Color.White else Color.Transparent),
+                                border = BorderStroke(2.dp, if (isSelected) c.text else Color.Transparent),
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clickable {
@@ -3600,7 +3649,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                         Icon(
                                             imageVector = Icons.Default.Check,
                                             contentDescription = "Selected",
-                                            tint = Color.White,
+                                            tint = c.text,
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
@@ -3623,7 +3672,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         }
                         showAddCategoryDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19)),
+                    colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
                     modifier = Modifier.testTag("add_category_confirm_button")
                 ) {
                     Text("Add Category", fontWeight = FontWeight.Bold)
@@ -3634,10 +3683,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                     onClick = { showAddCategoryDialog = false },
                     modifier = Modifier.testTag("add_category_cancel_button")
                 ) {
-                    Text("Cancel", color = Color.White)
+                    Text("Cancel", color = c.text)
                 }
             },
-            containerColor = Color(0xFF131A26)
+            containerColor = c.surface
         )
     }
 }
@@ -3646,6 +3695,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountScreen(viewModel: FinanceViewModel) {
+    val c = LocalAppColors.current
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
     val carryOverPreviousAmount by viewModel.carryOverPreviousAmount.collectAsStateWithLifecycle()
@@ -3688,10 +3738,10 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                     text = "Accounts Center",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
-                    color = Color.White
+                    color = c.text
                 )
                 IconButton(onClick = { showAccountCenterSettings = true }) {
-                    Icon(Icons.Default.Menu, contentDescription = "Account Settings", tint = Color.White)
+                    Icon(Icons.Default.Menu, contentDescription = "Account Settings", tint = c.text)
                 }
             }
             if (showAccountCenterSettings) {
@@ -3709,9 +3759,9 @@ fun AccountScreen(viewModel: FinanceViewModel) {
         // Net Wealth Overview Card
         item {
             Surface(
-                color = Color(0xFF131A26),
+                color = c.surface,
                 shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.2.dp, Color(0xFF00E5FF).copy(alpha = 0.4f)),
+                border = BorderStroke(1.2.dp, c.accent.copy(alpha = 0.4f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -3720,25 +3770,25 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.2.sp,
-                        color = Color.White.copy(alpha = 0.5f)
+                        color = c.textSecondary
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = if (showTotal) decFormat.format(totalAllAccounts) else "₹ ••••",
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 28.sp,
-                        color = Color(0xFF00E5FF)
+                        color = c.accent
                     )
 
                     Spacer(modifier = Modifier.height(18.dp))
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Income so far", fontSize = 11.sp, color = Color.White.copy(alpha = 0.4f))
-                            Text(if (showTotal) decFormat.format(totalIncomeSoFar) else "₹ ••••", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF10B981))
+                            Text("Income so far", fontSize = 11.sp, color = c.textSecondary)
+                            Text(if (showTotal) decFormat.format(totalIncomeSoFar) else "₹ ••••", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.income)
                         }
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Expense so far", fontSize = 11.sp, color = Color.White.copy(alpha = 0.4f))
-                            Text(if (showTotal) decFormat.format(totalExpenseSoFar) else "₹ ••••", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFFF43F5E))
+                            Text("Expense so far", fontSize = 11.sp, color = c.textSecondary)
+                            Text(if (showTotal) decFormat.format(totalExpenseSoFar) else "₹ ••••", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.expense)
                         }
                     }
                 }
@@ -3749,8 +3799,8 @@ fun AccountScreen(viewModel: FinanceViewModel) {
         item {
             Button(
                 onClick = { showTransferDialog = true },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF).copy(alpha = 0.15f), contentColor = Color(0xFF00E5FF)),
-                border = BorderStroke(1.2.dp, Color(0xFF00E5FF)),
+                colors = ButtonDefaults.buttonColors(containerColor = c.accent.copy(alpha = 0.15f), contentColor = c.accent),
+                border = BorderStroke(1.2.dp, c.accent),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3779,11 +3829,11 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
                     letterSpacing = 1.sp,
-                    color = Color.White.copy(alpha = 0.6f)
+                    color = c.textSecondary
                 )
                 TextButton(
                     onClick = { showAddAccountDialog = true },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF00E5FF))
+                    colors = ButtonDefaults.textButtonColors(contentColor = c.accent)
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Add Icon", modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
@@ -3795,9 +3845,9 @@ fun AccountScreen(viewModel: FinanceViewModel) {
         if (activeAccounts.isEmpty()) {
             item {
                 Surface(
-                    color = Color(0xFF131A26),
+                    color = c.surface,
                     shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                    border = BorderStroke(1.dp, c.border),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -3810,18 +3860,18 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         Icon(
                             imageVector = Icons.Default.AccountBalanceWallet,
                             contentDescription = "No wallets",
-                            tint = Color.White.copy(alpha = 0.25f),
+                            tint = c.textTertiary,
                             modifier = Modifier.size(40.dp)
                         )
                         Text(
                             text = "No wallets added yet",
-                            color = Color.White,
+                            color = c.text,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
                         Text(
                             text = "Add a wallet to track real balances. No default balances are created automatically.",
-                            color = Color.White.copy(alpha = 0.55f),
+                            color = c.textSecondary,
                             fontSize = 12.sp,
                             textAlign = TextAlign.Center
                         )
@@ -3838,17 +3888,17 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         val bal = walletsBalances[acc.name] ?: 0.0
                         val smsTrackingBlocked = blockedSmsAccountIds.contains(acc.id)
                         val color = when(acc.type) {
-                            "CASH" -> Color(0xFF10B981)
-                            "BANK" -> Color(0xFF00E5FF)
-                            "CREDIT_CARD" -> Color(0xFFF43F5E)
+                            "CASH" -> c.income
+                            "BANK" -> c.accent
+                            "CREDIT_CARD" -> c.expense
                             "WALLET" -> Color(0xFFFF9800)
                             else -> Color(0xFF94A3B8)
                         }
 
                         Surface(
-                            color = Color(0xFF131A26),
+                            color = c.surface,
                             shape = RoundedCornerShape(20.dp),
-                            border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                            border = BorderStroke(1.dp, c.border),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { selectedAccountForEdit = acc }
@@ -3877,7 +3927,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                         acc.name,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 15.sp,
-                                        color = Color.White
+                                        color = c.text
                                     )
                                     if (smsTrackingBlocked) {
                                         Text(
@@ -3894,13 +3944,13 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                         decFormat.format(bal),
                                         fontWeight = FontWeight.ExtraBold,
                                         fontSize = 16.sp,
-                                        color = if (bal >= 0) Color(0xFF10B981) else Color(0xFFF43F5E)
+                                        color = if (bal >= 0) c.income else c.expense
                                     )
                                     if (acc.type == "CREDIT_CARD" && showCreditCardDetails && acc.availableLimit > 0) {
                                         Text(
                                             text = "Avail: ${decFormat.format(acc.availableLimit)}",
                                             fontSize = 11.sp,
-                                            color = Color(0xFF00E5FF)
+                                            color = c.accent
                                         )
                                         if (acc.creditLimit > 0) {
                                             val outstanding = acc.creditLimit - acc.availableLimit
@@ -3930,10 +3980,10 @@ fun AccountScreen(viewModel: FinanceViewModel) {
 
         AlertDialog(
             onDismissRequest = { showTransferDialog = false },
-            title = { Text("Transfer Funds", fontWeight = FontWeight.Bold, color = Color.White) },
+            title = { Text("Transfer Funds", fontWeight = FontWeight.Bold, color = c.text) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("Record a virtual transfer of liquidity. Note: This creates a synchronized offsetting expense & income transaction.", fontSize = 11.sp, color = Color.White.copy(alpha = 0.6f))
+                    Text("Record a virtual transfer of liquidity. Note: This creates a synchronized offsetting expense & income transaction.", fontSize = 11.sp, color = c.textSecondary)
                     
                     OutlinedTextField(
                         value = trAmount,
@@ -3941,14 +3991,14 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         label = { Text("Transfer Amount (₹)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                            focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     // Source Select Dropdown
                     Column {
-                        Text("FROM SOURCE WALLET", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+                        Text("FROM SOURCE WALLET", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                         Spacer(modifier = Modifier.height(4.dp))
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(supportWallets.size) { i ->
@@ -3956,8 +4006,8 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                 val sel = sourceWall == w
                                 Box(
                                     modifier = Modifier
-                                        .background(if (sel) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-                                        .border(1.dp, if (sel) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                        .background(if (sel) c.accent.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                        .border(1.dp, if (sel) c.accent else c.text.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
                                         .clickable { sourceWall = w }
                                         .padding(8.dp),
                                     contentAlignment = Alignment.Center
@@ -3965,7 +4015,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                     Text(
                                         text = w,
                                         fontSize = 11.sp,
-                                        color = if (sel) Color(0xFF00E5FF) else Color.White,
+                                        color = if (sel) c.accent else c.text,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 2
                                     )
@@ -3976,7 +4026,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
 
                     // Dest Select Dropdown
                     Column {
-                        Text("TO DESTINATION WALLET", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+                        Text("TO DESTINATION WALLET", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                         Spacer(modifier = Modifier.height(4.dp))
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(supportWallets.size) { i ->
@@ -3984,8 +4034,8 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                 val sel = destWall == w
                                 Box(
                                     modifier = Modifier
-                                        .background(if (sel) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-                                        .border(1.dp, if (sel) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                        .background(if (sel) c.accent.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                        .border(1.dp, if (sel) c.accent else c.text.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
                                         .clickable { destWall = w }
                                         .padding(8.dp),
                                     contentAlignment = Alignment.Center
@@ -3993,7 +4043,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                     Text(
                                         text = w,
                                         fontSize = 11.sp,
-                                        color = if (sel) Color(0xFF00E5FF) else Color.White,
+                                        color = if (sel) c.accent else c.text,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 2
                                     )
@@ -4027,15 +4077,15 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         }
                         showTransferDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
+                    colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
                 ) {
                     Text("Execute Transfer", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showTransferDialog = false }) { Text("Cancel", color = Color.White) }
+                TextButton(onClick = { showTransferDialog = false }) { Text("Cancel", color = c.text) }
             },
-            containerColor = Color(0xFF131A26)
+            containerColor = c.surface
         )
     }
 
@@ -4051,14 +4101,14 @@ fun AccountScreen(viewModel: FinanceViewModel) {
 
         AlertDialog(
             onDismissRequest = { showAddAccountDialog = false },
-            title = { Text("Create New Wallet", fontWeight = FontWeight.Bold, color = Color.White) },
+            title = { Text("Create New Wallet", fontWeight = FontWeight.Bold, color = c.text) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     OutlinedTextField(
                         value = nameInput,
                         onValueChange = { nameInput = it },
                         label = { Text("Account Name (e.g. SBI Bank)") },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF)),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -4067,7 +4117,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         onValueChange = { baseBalanceInput = it },
                         label = { Text("Initial Ledger Balance (₹)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF)),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -4082,12 +4132,12 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         onValueChange = { last4Input = it },
                         label = { Text("Last 4 digits (optional ID)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF)),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     Column {
-                        Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+                        Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             types.forEach { t ->
@@ -4095,13 +4145,13 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .background(if (sel) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-                                        .border(1.dp, if (sel) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                        .background(if (sel) c.accent.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                        .border(1.dp, if (sel) c.accent else c.text.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
                                         .clickable { typeInput = t }
                                         .padding(6.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(t.replace("_", " "), fontSize = 9.sp, color = if (sel) Color(0xFF00E5FF) else Color.White, fontWeight = FontWeight.Bold)
+                                    Text(t.replace("_", " "), fontSize = 9.sp, color = if (sel) c.accent else c.text, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -4121,15 +4171,15 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         )
                         showAddAccountDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
+                    colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
                 ) {
                     Text("Provision Wallet", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddAccountDialog = false }) { Text("Cancel", color = Color.White) }
+                TextButton(onClick = { showAddAccountDialog = false }) { Text("Cancel", color = c.text) }
             },
-            containerColor = Color(0xFF131A26)
+            containerColor = c.surface
         )
     }
 
@@ -4145,24 +4195,24 @@ fun AccountScreen(viewModel: FinanceViewModel) {
 
         AlertDialog(
             onDismissRequest = { selectedAccountForEdit = null },
-            title = { Text("Edit Wallet", fontWeight = FontWeight.Bold, color = Color.White) },
+            title = { Text("Edit Wallet", fontWeight = FontWeight.Bold, color = c.text) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Surface(
-                        color = Color(0xFF00E5FF).copy(alpha = 0.08f),
+                        color = c.accent.copy(alpha = 0.08f),
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.3f))
+                        border = BorderStroke(1.dp, c.accent.copy(alpha = 0.3f))
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Current Balance", fontSize = 12.sp, color = Color.White.copy(0.6f))
+                            Text("Current Balance", fontSize = 12.sp, color = c.textSecondary)
                             Text(
                                 text = "₹${String.format("%.2f", computedBal)}",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF00E5FF)
+                                color = c.accent
                             )
                         }
                     }
@@ -4171,7 +4221,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         value = editName,
                         onValueChange = { editName = it },
                         label = { Text("Account Name") },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF)),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -4179,9 +4229,9 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         value = editBalanceInput,
                         onValueChange = { editBalanceInput = it },
                         label = { Text("Set New Balance (₹)") },
-                        placeholder = { Text("e.g. 25000", color = Color.White.copy(0.4f)) },
+                        placeholder = { Text("e.g. 25000", color = c.text.copy(0.4f)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF)),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -4191,12 +4241,12 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                             onValueChange = { editCreditLimit = it },
                             label = { Text("Credit Limit (₹)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF)),
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                     Column {
-                        Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+                        Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             types.forEach { t ->
@@ -4204,13 +4254,13 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .background(if (sel) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-                                        .border(1.dp, if (sel) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                        .background(if (sel) c.accent.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                        .border(1.dp, if (sel) c.accent else c.text.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
                                         .clickable { editType = t }
                                         .padding(6.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(t.replace("_", " "), fontSize = 9.sp, color = if (sel) Color(0xFF00E5FF) else Color.White, fontWeight = FontWeight.Bold)
+                                    Text(t.replace("_", " "), fontSize = 9.sp, color = if (sel) c.accent else c.text, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -4224,7 +4274,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                             viewModel.deleteAccount(acc.id)
                             selectedAccountForEdit = null
                         },
-                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFF43F5E))
+                        colors = ButtonDefaults.textButtonColors(contentColor = c.expense)
                     ) {
                         Text("Delete Wallet", fontWeight = FontWeight.Bold)
                     }
@@ -4254,16 +4304,16 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                             }
                             selectedAccountForEdit = null
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
+                        colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
                     ) {
                         Text("Save Changes", fontWeight = FontWeight.Bold)
                     }
                 }
             },
             dismissButton = {
-                TextButton(onClick = { selectedAccountForEdit = null }) { Text("Cancel", color = Color.White) }
+                TextButton(onClick = { selectedAccountForEdit = null }) { Text("Cancel", color = c.text) }
             },
-            containerColor = Color(0xFF131A26)
+            containerColor = c.surface
         )
     }
 }
@@ -4272,6 +4322,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AutoScanHubScreen(viewModel: FinanceViewModel) {
+    val c = LocalAppColors.current
     val context = LocalContext.current
     var manualSmsSender by remember { mutableStateOf("HDFC-BANK") }
     var manualSmsBody by remember { mutableStateOf("") }
@@ -4335,32 +4386,32 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                 text = "SMS Automatic Tracking",
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
-                color = Color.White
+                color = c.text
             )
         }
 
         // Device Scan Action panel
         item {
             Surface(
-                color = Color(0xFF131A26),
+                color = c.surface,
                 shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                border = BorderStroke(1.dp, c.border),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
                         imageVector = Icons.Default.Security,
                         contentDescription = "Security badge",
-                        tint = Color(0xFF00E5FF),
+                        tint = c.accent,
                         modifier = Modifier.size(44.dp)
                     )
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text("Secure Offline Automated Scanner", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                    Text("Secure Offline Automated Scanner", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         "Reads your messages locally using regex pattern matching and/or local AI. No financial or personal data ever leaves your device.",
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = c.textSecondary,
                         textAlign = TextAlign.Center
                     )
 
@@ -4370,16 +4421,16 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Permission Status", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Permission Status", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.text)
                         Surface(
-                            color = if (hasSmsPermissions) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF43F5E).copy(alpha = 0.15f),
+                            color = if (hasSmsPermissions) c.income.copy(alpha = 0.15f) else c.expense.copy(alpha = 0.15f),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text(
                                 text = if (hasSmsPermissions) "GRANTED" else "REQUIRED",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (hasSmsPermissions) Color(0xFF10B981) else Color(0xFFF43F5E),
+                                color = if (hasSmsPermissions) c.income else c.expense,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
@@ -4388,7 +4439,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Scan range selector
-                    Text("Scan Range", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.fillMaxWidth())
+                    Text("Scan Range", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.text, modifier = Modifier.fillMaxWidth())
                     Spacer(modifier = Modifier.height(8.dp))
                     val scanRangeOptions = listOf(1 to "This Month", 2 to "Last 2 Months", 3 to "Last 3 Months")
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -4396,16 +4447,16 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             val selected = smsScanMonthsBack == months
                             Surface(
                                 onClick = { smsScanMonthsBack = months },
-                                color = if (selected) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color(0xFF1E293B),
+                                color = if (selected) c.accent.copy(alpha = 0.15f) else c.border,
                                 shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, if (selected) Color(0xFF00E5FF) else Color(0xFF2D3748)),
+                                border = BorderStroke(1.dp, if (selected) c.accent else Color(0xFF2D3748)),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(
                                     label,
                                     fontSize = 11.sp,
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (selected) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.6f),
+                                    color = if (selected) c.accent else c.textSecondary,
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.padding(vertical = 8.dp)
                                 )
@@ -4426,7 +4477,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                     requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19)),
+                            colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
                                 .weight(1f)
@@ -4443,17 +4494,17 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                 "Bal\nSync",
                                 fontSize = 10.sp,
                                 lineHeight = 13.sp,
-                                color = Color.White.copy(alpha = 0.6f),
+                                color = c.textSecondary,
                                 textAlign = TextAlign.End
                             )
                             Switch(
                                 checked = enableBalanceSync,
                                 onCheckedChange = { viewModel.setEnableBalanceSync(it) },
                                 colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color(0xFF00E5FF),
-                                    checkedTrackColor = Color(0xFF00E5FF).copy(alpha = 0.35f),
-                                    uncheckedThumbColor = Color.White.copy(alpha = 0.5f),
-                                    uncheckedTrackColor = Color.White.copy(alpha = 0.1f)
+                                    checkedThumbColor = c.accent,
+                                    checkedTrackColor = c.accent.copy(alpha = 0.35f),
+                                    uncheckedThumbColor = c.textSecondary,
+                                    uncheckedTrackColor = c.divider
                                 )
                             )
                         }
@@ -4464,8 +4515,8 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
         // Manual pasted SMS analyzer
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF131A26)),
-                border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                colors = CardDefaults.cardColors(containerColor = c.surface),
+                border = BorderStroke(1.dp, c.border),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -4474,13 +4525,13 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         letterSpacing = 1.sp,
-                        color = Color.White.copy(alpha = 0.5f)
+                        color = c.textSecondary
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         "Select core keys and/or add custom patterns. Prefix with ! to exclude — e.g. !(emi Balance) skips any SMS containing that text. Hit \"Scan Inbox\" to apply globally. ",
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.6f)
+                        color = c.textSecondary
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -4489,14 +4540,14 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         "Parser keys (must contain at least one)",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White.copy(alpha = 0.55f)
+                        color = c.textSecondary
                     )
                     if (suggestedForcePatterns.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             "Suggested from pasted SMS: ${suggestedForcePatterns.joinToString(", ")}",
                             fontSize = 10.sp,
-                            color = Color(0xFF00E5FF)
+                            color = c.accent
                         )
                     }
                     Spacer(modifier = Modifier.height(4.dp))
@@ -4521,17 +4572,17 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                     null
                                 },
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Color(0xFF00E5FF).copy(alpha = 0.18f),
-                                    selectedLabelColor = Color(0xFF00E5FF),
-                                    selectedLeadingIconColor = Color(0xFF00E5FF),
-                                    containerColor = Color.White.copy(alpha = 0.04f),
-                                    labelColor = Color.White
+                                    selectedContainerColor = c.accent.copy(alpha = 0.18f),
+                                    selectedLabelColor = c.accent,
+                                    selectedLeadingIconColor = c.accent,
+                                    containerColor = c.divider,
+                                    labelColor = c.text
                                 ),
                                 border = FilterChipDefaults.filterChipBorder(
                                     enabled = true,
                                     selected = selectedForcePatterns.contains(pattern),
-                                    borderColor = Color.White.copy(alpha = 0.08f),
-                                    selectedBorderColor = Color(0xFF00E5FF).copy(alpha = 0.45f)
+                                    borderColor = c.divider,
+                                    selectedBorderColor = c.accent.copy(alpha = 0.45f)
                                 )
                             )
                         }
@@ -4550,7 +4601,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             label = { Text("Add Custom Pattern") },
                             placeholder = { Text("salary  |  !(emi Balance)") },
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                                focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                             ),
                             modifier = Modifier.weight(1f)
                         )
@@ -4562,9 +4613,9 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                 }
                                 customPatternInput = ""
                             },
-                            border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.45f))
+                            border = BorderStroke(1.dp, c.accent.copy(alpha = 0.45f))
                         ) {
-                            Text("Add", color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold)
+                            Text("Add", color = c.accent, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -4583,9 +4634,9 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                         Icon(Icons.Default.Close, contentDescription = "Remove pattern", modifier = Modifier.size(16.dp))
                                     },
                                     colors = InputChipDefaults.inputChipColors(
-                                        selectedContainerColor = Color(0xFF10B981).copy(alpha = 0.15f),
-                                        selectedLabelColor = Color(0xFF10B981),
-                                        selectedTrailingIconColor = Color(0xFF10B981)
+                                        selectedContainerColor = c.income.copy(alpha = 0.15f),
+                                        selectedLabelColor = c.income,
+                                        selectedTrailingIconColor = c.income
                                     )
                                 )
                             }
@@ -4609,7 +4660,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             }
                         },
                         enabled = !isSmsParsing,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF), contentColor = Color.White),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF), contentColor = c.text),
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth().height(48.dp)
                     ) {
@@ -4624,7 +4675,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.07f))
+                    HorizontalDivider(color = c.divider)
                     Spacer(modifier = Modifier.height(14.dp))
 
                     Text(
@@ -4632,7 +4683,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         letterSpacing = 1.sp,
-                        color = Color.White.copy(alpha = 0.5f)
+                        color = c.textSecondary
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -4641,7 +4692,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         onValueChange = { manualSmsSender = it },
                         label = { Text("Sender ID") },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                            focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -4653,7 +4704,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         onValueChange = { manualSmsBody = it },
                         label = { Text("Real SMS Body") },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                            focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -4664,7 +4715,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     Button(
                         onClick = { viewModel.analyzePastedSms(manualSmsBody, manualSmsSender, selectedForcePatterns.toList(), customPatterns) },
                         enabled = manualSmsBody.isNotBlank() && !isSmsParsing,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981), contentColor = Color(0xFF0B0F19)),
+                        colors = ButtonDefaults.buttonColors(containerColor = c.income, contentColor = c.bg),
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -4680,14 +4731,14 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
         // ── Merchant → Category Mapping ───────────────────────────────────────
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF131A26)),
+                colors = CardDefaults.cardColors(containerColor = c.surface),
                 border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.4f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(Icons.Default.Category, contentDescription = null, tint = Color(0xFF7C4DFF), modifier = Modifier.size(20.dp))
-                        Text("Merchant → Category Rules", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                        Text("Merchant → Category Rules", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.text)
                     }
                     Text(
                         "Map payee/merchant names to categories. Supports wildcards:\n" +
@@ -4696,7 +4747,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         "  *nova     →  ends with\n" +
                         "  (no *)    →  contains (same as *text*)\n" +
                         "Rules here override built-in categorization.",
-                        fontSize = 10.sp, color = Color.White.copy(alpha = 0.5f), lineHeight = 16.sp
+                        fontSize = 10.sp, color = c.textSecondary, lineHeight = 16.sp
                     )
 
                     // Input row
@@ -4706,9 +4757,9 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         label = { Text("Merchant Pattern (e.g. zerodha*, *paytm*)") },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                            focusedTextColor = c.text, unfocusedTextColor = c.text,
                             focusedBorderColor = Color(0xFF7C4DFF), unfocusedBorderColor = Color(0xFF2D3748),
-                            focusedLabelColor = Color(0xFF7C4DFF), unfocusedLabelColor = Color.White.copy(alpha = 0.4f)
+                            focusedLabelColor = Color(0xFF7C4DFF), unfocusedLabelColor = c.textSecondary
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -4726,20 +4777,20 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                                focusedTextColor = c.text, unfocusedTextColor = c.text,
                                 focusedBorderColor = Color(0xFF7C4DFF), unfocusedBorderColor = Color(0xFF2D3748),
-                                focusedLabelColor = Color(0xFF7C4DFF), unfocusedLabelColor = Color.White.copy(alpha = 0.4f)
+                                focusedLabelColor = Color(0xFF7C4DFF), unfocusedLabelColor = c.textSecondary
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
                         DropdownMenu(
                             expanded = merchantCategoryDropdownExpanded,
                             onDismissRequest = { merchantCategoryDropdownExpanded = false },
-                            modifier = Modifier.background(Color(0xFF1E293B)).heightIn(max = 280.dp)
+                            modifier = Modifier.background(c.border).heightIn(max = 280.dp)
                         ) {
                             allMerchantCategoryOptions.forEach { (catName, catDisplay) ->
                                 DropdownMenuItem(
-                                    text = { Text(catDisplay, fontSize = 13.sp, color = Color.White) },
+                                    text = { Text(catDisplay, fontSize = 13.sp, color = c.text) },
                                     onClick = {
                                         merchantCategoryInput = catName
                                         merchantCategoryDropdownExpanded = false
@@ -4759,7 +4810,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             }
                         },
                         enabled = merchantPatternInput.isNotBlank() && merchantCategoryInput.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF), contentColor = Color.White),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF), contentColor = c.text),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().height(44.dp)
                     ) {
@@ -4770,11 +4821,11 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
 
                     // Existing rules list
                     if (merchantRules.isNotEmpty()) {
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.07f))
-                        Text("Active Rules (${merchantRules.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.6f))
+                        HorizontalDivider(color = c.divider)
+                        Text("Active Rules (${merchantRules.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                         merchantRules.forEach { (pattern, category) ->
                             Surface(
-                                color = Color(0xFF0B0F19),
+                                color = c.bg,
                                 shape = RoundedCornerShape(8.dp),
                                 border = BorderStroke(1.dp, Color(0xFF2D3748)),
                                 modifier = Modifier.fillMaxWidth()
@@ -4785,14 +4836,14 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(pattern, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF00E5FF))
-                                        Text("→ $category", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
+                                        Text(pattern, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = c.accent)
+                                        Text("→ $category", fontSize = 11.sp, color = c.textSecondary)
                                     }
                                     IconButton(
                                         onClick = { viewModel.removeMerchantCategoryRule(pattern) },
                                         modifier = Modifier.size(32.dp)
                                     ) {
-                                        Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color(0xFFF43F5E), modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Close, contentDescription = "Remove", tint = c.expense, modifier = Modifier.size(16.dp))
                                     }
                                 }
                             }
@@ -4818,7 +4869,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1320)),
-                border = BorderStroke(1.dp, Color(0xFFF43F5E).copy(alpha = 0.25f)),
+                border = BorderStroke(1.dp, c.expense.copy(alpha = 0.25f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -4827,21 +4878,21 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         letterSpacing = 1.sp,
-                        color = Color(0xFFF43F5E).copy(alpha = 0.8f)
+                        color = c.expense.copy(alpha = 0.8f)
                     )
                     Text(
                         "These are the hard-coded rules the parser uses. Messages matching ANY exclusion word are rejected. Messages missing ALL inclusion words are also rejected.",
                         fontSize = 10.sp,
-                        color = Color.White.copy(alpha = 0.5f)
+                        color = c.textSecondary
                     )
 
                     // EXCLUSION keywords (SmsFilterUtility hard-rejects)
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("AUTO-REJECT if body contains:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF43F5E))
+                        Text("AUTO-REJECT if body contains:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.expense)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf("due", "emi", "loan", "otp", "mandate", "load", "eligibility", "apply", "approved").forEach { kw ->
-                                Surface(color = Color(0xFFF43F5E).copy(alpha = 0.12f), shape = RoundedCornerShape(6.dp)) {
-                                    Text(kw, fontSize = 10.sp, color = Color(0xFFF43F5E), fontWeight = FontWeight.SemiBold,
+                                Surface(color = c.expense.copy(alpha = 0.12f), shape = RoundedCornerShape(6.dp)) {
+                                    Text(kw, fontSize = 10.sp, color = c.expense, fontWeight = FontWeight.SemiBold,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
                                 }
                             }
@@ -4866,12 +4917,12 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
 
                     // REQUIRED inclusion keywords
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("REQUIRED — must contain at least one:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                        Text("REQUIRED — must contain at least one:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.income)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf("debited", "credited", "spent", "received", "deducted", "sent", "paid", "withdrawn",
                                 "transfer", "payment", "charge", "txn", "salary", "refund", "autopay").forEach { kw ->
-                                Surface(color = Color(0xFF10B981).copy(alpha = 0.1f), shape = RoundedCornerShape(6.dp)) {
-                                    Text(kw, fontSize = 10.sp, color = Color(0xFF10B981), fontWeight = FontWeight.SemiBold,
+                                Surface(color = c.income.copy(alpha = 0.1f), shape = RoundedCornerShape(6.dp)) {
+                                    Text(kw, fontSize = 10.sp, color = c.income, fontWeight = FontWeight.SemiBold,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
                                 }
                             }
@@ -4879,12 +4930,12 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     }
 
                     // Structural requirement
-                    Surface(color = Color.White.copy(alpha = 0.04f), shape = RoundedCornerShape(10.dp)) {
+                    Surface(color = c.divider, shape = RoundedCornerShape(10.dp)) {
                         Row(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.CreditCard, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.CreditCard, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
                             Text("Must contain a 3–4 digit account/card reference (e.g. a/c xx1234, card ending 4321, acc 567)",
-                                fontSize = 10.sp, color = Color.White.copy(alpha = 0.6f))
+                                fontSize = 10.sp, color = c.textSecondary)
                         }
                     }
                 }
@@ -4900,6 +4951,7 @@ fun AddTransactionDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, Double, String, String, String?, Long) -> Unit
 ) {
+    val c = LocalAppColors.current
     var title by remember { mutableStateOf("") }
     var amountStr by remember { mutableStateOf("") }
     var transactionType by remember { mutableStateOf("EXPENSE") } // EXPENSE, INCOME
@@ -4930,7 +4982,7 @@ fun AddTransactionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Log Cashflow", fontWeight = FontWeight.Bold, color = Color.White) },
+        title = { Text("Log Cashflow", fontWeight = FontWeight.Bold, color = c.text) },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -4940,7 +4992,7 @@ fun AddTransactionDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                        .background(c.text.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                         .padding(4.dp)
                 ) {
                     val isExp = transactionType == "EXPENSE"
@@ -4948,7 +5000,7 @@ fun AddTransactionDialog(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(if (isExp) Color(0xFFF43F5E) else Color.Transparent)
+                            .background(if (isExp) c.expense else Color.Transparent)
                             .clickable {
                                 transactionType = "EXPENSE"
                                 categorySelection = "FOOD"
@@ -4956,13 +5008,13 @@ fun AddTransactionDialog(
                             .padding(8.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Expense", color = if (isExp) Color.White else Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("Expense", color = if (isExp) c.text else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(if (!isExp) Color(0xFF10B981) else Color.Transparent)
+                            .background(if (!isExp) c.income else Color.Transparent)
                             .clickable {
                                 transactionType = "INCOME"
                                 categorySelection = "SALARY"
@@ -4970,7 +5022,7 @@ fun AddTransactionDialog(
                             .padding(8.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Income", color = if (!isExp) Color.White else Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("Income", color = if (!isExp) c.text else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
 
@@ -4980,7 +5032,7 @@ fun AddTransactionDialog(
                     label = { Text("Amount (₹)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                        focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -4990,7 +5042,7 @@ fun AddTransactionDialog(
                     onValueChange = { title = it },
                     label = { Text("Payee / Merchant") },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                        focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -5004,7 +5056,7 @@ fun AddTransactionDialog(
                     label = "Select Wallet",
                     title = accountSelection,
                     icon = walletIconFor(accountSelection, accounts.find { it.name == accountSelection }?.type),
-                    tint = Color(0xFF00E5FF),
+                    tint = c.accent,
                     onClick = { showWalletPicker = true }
                 )
 
@@ -5012,7 +5064,7 @@ fun AddTransactionDialog(
                     label = "Select Category",
                     title = selectedCategory?.displayName ?: "Choose category",
                     icon = selectedCategory?.icon ?: Icons.Default.Category,
-                    tint = selectedCategory?.color ?: Color(0xFF00E5FF),
+                    tint = selectedCategory?.color ?: c.accent,
                     onClick = { showCategoryPicker = true }
                 )
 
@@ -5021,7 +5073,7 @@ fun AddTransactionDialog(
                     onValueChange = { notesStr = it },
                     label = { Text("Details note (Optional)") },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                        focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -5043,15 +5095,15 @@ fun AddTransactionDialog(
                         )
                     }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
+                colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
             ) {
                 Text("Save", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.White) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = c.text) }
         },
-        containerColor = Color(0xFF131A26)
+        containerColor = c.surface
     )
 
     if (showWalletPicker) {
@@ -5127,6 +5179,7 @@ fun EditTransactionDialog(
     onDelete: () -> Unit,
     onConfirm: (TransactionEntry) -> Unit
 ) {
+    val c = LocalAppColors.current
     var title by remember { mutableStateOf(tx.title) }
     var amountStr by remember { mutableStateOf(tx.amount.toInt().toString()) }
     var editType by remember { mutableStateOf(tx.type) }
@@ -5158,7 +5211,7 @@ fun EditTransactionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Update Transaction", fontWeight = FontWeight.Bold, color = Color.White) },
+        title = { Text("Update Transaction", fontWeight = FontWeight.Bold, color = c.text) },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -5170,13 +5223,13 @@ fun EditTransactionDialog(
                     label = { Text("Amount (₹)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                        focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 Column {
-                    Text("TRANSACTION TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+                    Text("TRANSACTION TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("EXPENSE", "INCOME", "DUPLICATE", "BALANCE_UPDATE").forEach { t ->
@@ -5184,8 +5237,8 @@ fun EditTransactionDialog(
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .background(if (sel) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-                                    .border(1.dp, if (sel) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                    .background(if (sel) c.accent.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                    .border(1.dp, if (sel) c.accent else c.divider, RoundedCornerShape(8.dp))
                                     .clickable { editType = t }
                                     .padding(6.dp),
                                 contentAlignment = Alignment.Center
@@ -5193,7 +5246,7 @@ fun EditTransactionDialog(
                                 Text(
                                     text = if (t == "BALANCE_UPDATE") "BAL_UPDATE" else t,
                                     fontSize = 9.sp,
-                                    color = if (sel) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.6f),
+                                    color = if (sel) c.accent else c.textSecondary,
                                     fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center
                                 )
@@ -5207,7 +5260,7 @@ fun EditTransactionDialog(
                     onValueChange = { title = it },
                     label = { Text("Payee / Merchant") },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                        focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -5221,7 +5274,7 @@ fun EditTransactionDialog(
                     label = "Account",
                     title = accountSelection,
                     icon = walletIconFor(accountSelection, accounts.find { it.name == accountSelection }?.type),
-                    tint = Color(0xFF00E5FF),
+                    tint = c.accent,
                     onClick = { showWalletPicker = true }
                 )
 
@@ -5229,7 +5282,7 @@ fun EditTransactionDialog(
                     label = "Category",
                     title = selectedCategory?.displayName ?: "Choose category",
                     icon = selectedCategory?.icon ?: Icons.Default.Category,
-                    tint = selectedCategory?.color ?: Color(0xFF00E5FF),
+                    tint = selectedCategory?.color ?: c.accent,
                     onClick = { showCategoryPicker = true }
                 )
 
@@ -5238,7 +5291,7 @@ fun EditTransactionDialog(
                     onValueChange = { notesStr = it },
                     label = { Text("Details note (Optional)") },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
+                        focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -5248,7 +5301,7 @@ fun EditTransactionDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(
                     onClick = onDelete,
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFF43F5E))
+                    colors = ButtonDefaults.textButtonColors(contentColor = c.expense)
                 ) {
                     Text("Delete", fontWeight = FontWeight.Bold)
                 }
@@ -5269,16 +5322,16 @@ fun EditTransactionDialog(
                             )
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
+                    colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
                 ) {
                     Text("Save", fontWeight = FontWeight.Bold)
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.White) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = c.text) }
         },
-        containerColor = Color(0xFF131A26)
+        containerColor = c.surface
     )
 
     if (showWalletPicker) {
@@ -5350,6 +5403,7 @@ fun TransactionDateTimePicker(
     onTimestampChange: (Long) -> Unit,
     label: String = "Transaction Date & Time"
 ) {
+    val c = LocalAppColors.current
     val context = LocalContext.current
     val dateLabel = remember(selectedTimestamp) {
         SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(selectedTimestamp))
@@ -5359,7 +5413,7 @@ fun TransactionDateTimePicker(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+        Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             OutlinedButton(
                 onClick = {
@@ -5419,13 +5473,14 @@ private fun PickerButton(
     tint: Color,
     onClick: () -> Unit
 ) {
-    Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+    val c = LocalAppColors.current
+    Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
     OutlinedButton(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
+        border = BorderStroke(1.dp, c.divider)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -5437,7 +5492,7 @@ private fun PickerButton(
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(title, fontWeight = FontWeight.Bold)
             }
-            Icon(Icons.Default.ExpandMore, contentDescription = label, tint = Color.White.copy(alpha = 0.7f))
+            Icon(Icons.Default.ExpandMore, contentDescription = label, tint = c.text.copy(alpha = 0.7f))
         }
     }
 }
@@ -5451,9 +5506,10 @@ private fun WalletSelectionDialog(
     addActionLabel: String? = null,
     onAddAction: (() -> Unit)? = null
 ) {
+    val c = LocalAppColors.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Select Wallet", fontWeight = FontWeight.Bold, color = Color.White) },
+        title = { Text("Select Wallet", fontWeight = FontWeight.Bold, color = c.text) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -5462,9 +5518,9 @@ private fun WalletSelectionDialog(
                 walletOptions.forEach { (walletName, walletType) ->
                     val active = selectedWallet == walletName
                     Surface(
-                        color = if (active) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.White.copy(alpha = 0.04f),
+                        color = if (active) c.accent.copy(alpha = 0.15f) else c.divider,
                         shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, if (active) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.08f)),
+                        border = BorderStroke(1.dp, if (active) c.accent else c.divider),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSelect(walletName) }
@@ -5476,11 +5532,11 @@ private fun WalletSelectionDialog(
                             Icon(
                                 imageVector = walletIconFor(walletName, walletType),
                                 contentDescription = walletName,
-                                tint = if (active) Color(0xFF00E5FF) else Color.White,
+                                tint = if (active) c.accent else c.text,
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text(walletName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(walletName, color = c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                     }
                 }
@@ -5488,8 +5544,8 @@ private fun WalletSelectionDialog(
                     OutlinedButton(
                         onClick = onAddAction,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF00E5FF)),
-                        border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f))
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.accent),
+                        border = BorderStroke(1.dp, c.accent.copy(alpha = 0.5f))
                     ) {
                         Text(addActionLabel, fontWeight = FontWeight.Bold)
                     }
@@ -5498,9 +5554,9 @@ private fun WalletSelectionDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close", color = Color.White) }
+            TextButton(onClick = onDismiss) { Text("Close", color = c.text) }
         },
-        containerColor = Color(0xFF131A26)
+        containerColor = c.surface
     )
 }
 
@@ -5513,10 +5569,11 @@ private fun CategorySelectionDialog(
     addActionLabel: String? = null,
     onAddAction: (() -> Unit)? = null
 ) {
+    val c = LocalAppColors.current
     val sortedCategories = remember(categories) { categories.sortedBy { it.displayName } }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Select Category", fontWeight = FontWeight.Bold, color = Color.White) },
+        title = { Text("Select Category", fontWeight = FontWeight.Bold, color = c.text) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -5525,9 +5582,9 @@ private fun CategorySelectionDialog(
                 sortedCategories.forEach { category ->
                     val active = selectedCategoryName == category.name
                     Surface(
-                        color = if (active) category.color.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.04f),
+                        color = if (active) category.color.copy(alpha = 0.15f) else c.divider,
                         shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, if (active) category.color else Color.White.copy(alpha = 0.08f)),
+                        border = BorderStroke(1.dp, if (active) category.color else c.divider),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSelect(category.name) }
@@ -5543,7 +5600,7 @@ private fun CategorySelectionDialog(
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text(category.displayName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(category.displayName, color = c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                     }
                 }
@@ -5551,8 +5608,8 @@ private fun CategorySelectionDialog(
                     OutlinedButton(
                         onClick = onAddAction,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF00E5FF)),
-                        border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f))
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.accent),
+                        border = BorderStroke(1.dp, c.accent.copy(alpha = 0.5f))
                     ) {
                         Text(addActionLabel, fontWeight = FontWeight.Bold)
                     }
@@ -5561,9 +5618,9 @@ private fun CategorySelectionDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close", color = Color.White) }
+            TextButton(onClick = onDismiss) { Text("Close", color = c.text) }
         },
-        containerColor = Color(0xFF131A26)
+        containerColor = c.surface
     )
 }
 
@@ -5582,6 +5639,7 @@ private fun QuickAddAccountDialog(
     onDismiss: () -> Unit,
     onAdd: (String, Double, String, String?, Long) -> Unit
 ) {
+    val c = LocalAppColors.current
     var name by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("BANK") }
@@ -5590,7 +5648,7 @@ private fun QuickAddAccountDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add New Account", color = Color.White, fontWeight = FontWeight.Bold) },
+        title = { Text("Add New Account", color = c.text, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -5598,9 +5656,9 @@ private fun QuickAddAccountDialog(
                     onValueChange = { name = it },
                     label = { Text("Account Name (e.g. SBI Bank)") },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF00E5FF),
-                        focusedLabelColor = Color(0xFF00E5FF)
+                        focusedTextColor = c.text,
+                        focusedBorderColor = c.accent,
+                        focusedLabelColor = c.accent
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -5610,9 +5668,9 @@ private fun QuickAddAccountDialog(
                     label = { Text("Initial Ledger Balance (₹)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF00E5FF),
-                        focusedLabelColor = Color(0xFF00E5FF)
+                        focusedTextColor = c.text,
+                        focusedBorderColor = c.accent,
+                        focusedLabelColor = c.accent
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -5622,7 +5680,7 @@ private fun QuickAddAccountDialog(
                     label = "Opening Balance Date & Time"
                 )
                 Column {
-                    Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
+                    Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         types.forEach { option ->
@@ -5630,13 +5688,13 @@ private fun QuickAddAccountDialog(
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .background(if (active) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-                                    .border(1.dp, if (active) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                    .background(if (active) c.accent.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                    .border(1.dp, if (active) c.accent else c.text.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
                                     .clickable { type = option }
                                     .padding(6.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(option.replace("_", " "), color = if (active) Color(0xFF00E5FF) else Color.White, fontWeight = FontWeight.Bold, fontSize = 9.sp)
+                                Text(option.replace("_", " "), color = if (active) c.accent else c.text, fontWeight = FontWeight.Bold, fontSize = 9.sp)
                             }
                         }
                     }
@@ -5648,13 +5706,13 @@ private fun QuickAddAccountDialog(
                 onClick = {
                     onAdd(name, amount.toDoubleOrNull() ?: 0.0, type, name.filter { it.isDigit() }.takeLast(4).ifBlank { null }, openingBalanceTimestamp)
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
+                colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
             ) {
                 Text("Add Account", fontWeight = FontWeight.Bold)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = Color.White) } },
-        containerColor = Color(0xFF131A26)
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = c.text) } },
+        containerColor = c.surface
     )
 }
 
@@ -5664,6 +5722,7 @@ private fun QuickAddCategoryDialog(
     onDismiss: () -> Unit,
     onAdd: (String, String, String, String, Double) -> Unit
 ) {
+    val c = LocalAppColors.current
     var name by remember { mutableStateOf("") }
     var type by remember { mutableStateOf(defaultType) }
     var selectedIconName by remember { mutableStateOf(if (defaultType == "INCOME") "salary" else "others") }
@@ -5672,7 +5731,7 @@ private fun QuickAddCategoryDialog(
     var initialBudgetAmt by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add New Category", color = Color.White, fontWeight = FontWeight.Bold) },
+        title = { Text("Add New Category", color = c.text, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -5680,9 +5739,9 @@ private fun QuickAddCategoryDialog(
                     onValueChange = { name = it },
                     label = { Text("Category Name") },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF00E5FF),
-                        focusedLabelColor = Color(0xFF00E5FF)
+                        focusedTextColor = c.text,
+                        focusedBorderColor = c.accent,
+                        focusedLabelColor = c.accent
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -5693,8 +5752,8 @@ private fun QuickAddCategoryDialog(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (active) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent)
-                                .border(1.dp, if (active) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .background(if (active) c.accent.copy(alpha = 0.15f) else Color.Transparent)
+                                .border(1.dp, if (active) c.accent else c.divider, RoundedCornerShape(8.dp))
                                 .clickable {
                                     type = option
                                     if (option == "INCOME") {
@@ -5706,7 +5765,7 @@ private fun QuickAddCategoryDialog(
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(option, color = if (active) Color(0xFF00E5FF) else Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text(option, color = if (active) c.accent else c.text, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                         }
                     }
                 }
@@ -5718,21 +5777,21 @@ private fun QuickAddCategoryDialog(
                         label = { Text("Monthly Budget Limit (₹, Optional)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF00E5FF),
-                            focusedLabelColor = Color(0xFF00E5FF)
+                            focusedTextColor = c.text,
+                            focusedBorderColor = c.accent,
+                            focusedLabelColor = c.accent
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
 
-                Text("Select Icon", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
+                Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     items(suitableIconsList) { (iconName, iconVec) ->
                         val isSelected = selectedIconName == iconName
                         Surface(
                             shape = CircleShape,
-                            color = if (isSelected) selectedColor.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.05f),
+                            color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
                             border = BorderStroke(2.dp, if (isSelected) selectedColor else Color.Transparent),
                             modifier = Modifier
                                 .size(44.dp)
@@ -5742,7 +5801,7 @@ private fun QuickAddCategoryDialog(
                                 Icon(
                                     imageVector = iconVec,
                                     contentDescription = iconName,
-                                    tint = if (isSelected) selectedColor else Color.White.copy(alpha = 0.7f),
+                                    tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -5750,14 +5809,14 @@ private fun QuickAddCategoryDialog(
                     }
                 }
 
-                Text("Select Color", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
+                Text("Select Color", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     items(categoryColorsList) { (hexStr, colorObj) ->
                         val isSelected = selectedColorHex == hexStr
                         Surface(
                             shape = CircleShape,
                             color = colorObj,
-                            border = BorderStroke(2.dp, if (isSelected) Color.White else Color.Transparent),
+                            border = BorderStroke(2.dp, if (isSelected) c.text else Color.Transparent),
                             modifier = Modifier
                                 .size(36.dp)
                                 .clickable {
@@ -5770,7 +5829,7 @@ private fun QuickAddCategoryDialog(
                                     Icon(
                                         imageVector = Icons.Default.Check,
                                         contentDescription = "Selected",
-                                        tint = Color.White,
+                                        tint = c.text,
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -5785,13 +5844,13 @@ private fun QuickAddCategoryDialog(
                 onClick = {
                     onAdd(name, type, selectedIconName, selectedColorHex, initialBudgetAmt.toDoubleOrNull() ?: 0.0)
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
+                colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
             ) {
                 Text("Add Category", fontWeight = FontWeight.Bold)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = Color.White) } },
-        containerColor = Color(0xFF131A26)
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = c.text) } },
+        containerColor = c.surface
     )
 }
 
@@ -5800,6 +5859,7 @@ fun ExportCsvDialog(
     viewModel: FinanceViewModel,
     onDismiss: () -> Unit
 ) {
+    val c = LocalAppColors.current
     val context = LocalContext.current
     val excelExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.ms-excel")) { uri ->
         if (uri != null) {
@@ -5821,22 +5881,22 @@ fun ExportCsvDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Export Financial Records", fontWeight = FontWeight.Bold, color = Color.White) },
+        title = { Text("Export Financial Records", fontWeight = FontWeight.Bold, color = c.text) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     "Export styled month-wise financial reports as Excel or PDF for external analysis.",
                     fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.7f)
+                    color = c.text.copy(alpha = 0.7f)
                 )
                 Surface(
-                    color = Color.White.copy(alpha = 0.05f),
+                    color = c.text.copy(alpha = 0.05f),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
                         text = "Includes month-wise transactions, category color breakdown, carry over balance, monthly total, and grand total.",
                         fontSize = 10.sp,
-                        color = Color(0xFF00E5FF),
+                        color = c.accent,
                         modifier = Modifier.padding(12.dp)
                     )
                 }
@@ -5849,7 +5909,7 @@ fun ExportCsvDialog(
                         val fileName = "mymoney-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.xlsx"
                         excelExporter.launch(fileName)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
+                    colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
                 ) {
                     Text("Export Excel", fontWeight = FontWeight.Bold)
                 }
@@ -5858,16 +5918,16 @@ fun ExportCsvDialog(
                         val fileName = "mymoney-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.pdf"
                         pdfExporter.launch(fileName)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981), contentColor = Color.White)
+                    colors = ButtonDefaults.buttonColors(containerColor = c.income, contentColor = c.text)
                 ) {
                     Text("Export PDF", fontWeight = FontWeight.Bold)
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Dismiss", color = Color.White) }
+            TextButton(onClick = onDismiss) { Text("Dismiss", color = c.text) }
         },
-        containerColor = Color(0xFF131A26)
+        containerColor = c.surface
     )
 }
 
@@ -5876,6 +5936,7 @@ fun BackupDialog(
     viewModel: FinanceViewModel,
     onDismiss: () -> Unit
 ) {
+    val c = LocalAppColors.current
     val context = LocalContext.current
     var exported by remember { mutableStateOf(false) }
 
@@ -5900,14 +5961,14 @@ fun BackupDialog(
                 Box(
                     modifier = Modifier
                         .size(64.dp)
-                        .background(Color(0xFF10B981).copy(alpha = 0.15f), CircleShape)
-                        .border(1.5.dp, Color(0xFF10B981).copy(alpha = 0.4f), CircleShape),
+                        .background(c.income.copy(alpha = 0.15f), CircleShape)
+                        .border(1.5.dp, c.income.copy(alpha = 0.4f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.Backup,
                         contentDescription = null,
-                        tint = Color(0xFF10B981),
+                        tint = c.income,
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -5916,17 +5977,17 @@ fun BackupDialog(
                     "Export Backup ",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = c.text
                 )
                 Text(
                     "Save all your data as a CSV file",
                     fontSize = 12.sp,
-                    color = Color.White.copy(0.5f),
+                    color = c.textSecondary,
                     modifier = Modifier.padding(top = 2.dp)
                 )
 
                 Spacer(Modifier.height(20.dp))
-                HorizontalDivider(color = Color.White.copy(0.08f))
+                HorizontalDivider(color = c.text.copy(0.08f))
                 Spacer(Modifier.height(16.dp))
 
                 // ── What's included ───────────────────────────────────────
@@ -5934,14 +5995,15 @@ fun BackupDialog(
                     "WHAT'S INCLUDED",
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(0.4f),
+                    color = c.text.copy(0.4f),
                     modifier = Modifier.align(Alignment.Start)
                 )
                 Spacer(Modifier.height(10.dp))
                 listOf(
                     Triple(Icons.Default.AccountBalanceWallet, "All Accounts",       "Name, type, balance, last 4 digits"),
                     Triple(Icons.Default.ReceiptLong,          "All Transactions",   "Date, title, amount, category, type"),
-                    Triple(Icons.Default.Category,             "Account Links",       "Each transaction linked to its account")
+                    Triple(Icons.Default.Category,             "Account Links",       "Each transaction linked to its account"),
+                    Triple(Icons.Default.Calculate,            "All Budgets",         "Category limits and month-year targets")
                 ).forEach { (icon, title, sub) ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -5952,15 +6014,15 @@ fun BackupDialog(
                         Box(
                             modifier = Modifier
                                 .size(34.dp)
-                                .background(Color(0xFF10B981).copy(0.12f), RoundedCornerShape(8.dp)),
+                                .background(c.income.copy(0.12f), RoundedCornerShape(8.dp)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(icon, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                            Icon(icon, contentDescription = null, tint = c.income, modifier = Modifier.size(18.dp))
                         }
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                            Text(sub,   fontSize = 11.sp, color = Color.White.copy(0.45f))
+                            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text)
+                            Text(sub,   fontSize = 11.sp, color = c.textSecondary)
                         }
                     }
                 }
@@ -5969,9 +6031,9 @@ fun BackupDialog(
 
                 // ── Info note ─────────────────────────────────────────────
                 Surface(
-                    color = Color(0xFF00E5FF).copy(0.06f),
+                    color = c.accent.copy(0.06f),
                     shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(0.2f)),
+                    border = BorderStroke(1.dp, c.accent.copy(0.2f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -5979,11 +6041,11 @@ fun BackupDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(15.dp))
+                        Icon(Icons.Default.Info, contentDescription = null, tint = c.accent, modifier = Modifier.size(15.dp))
                         Text(
                             "Opens in Excel & Google Sheets. Balance Sync entries are excluded.",
                             fontSize = 11.sp,
-                            color = Color(0xFF00E5FF).copy(0.85f)
+                            color = c.accent.copy(0.85f)
                         )
                     }
                 }
@@ -5992,9 +6054,9 @@ fun BackupDialog(
                 if (exported) {
                     Spacer(Modifier.height(10.dp))
                     Surface(
-                        color = Color(0xFF10B981).copy(0.12f),
+                        color = c.income.copy(0.12f),
                         shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(0.4f)),
+                        border = BorderStroke(1.dp, c.income.copy(0.4f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -6002,14 +6064,14 @@ fun BackupDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
-                            Text("Backup saved successfully!", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = c.income, modifier = Modifier.size(18.dp))
+                            Text("Backup saved successfully!", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.income)
                         }
                     }
                 }
 
                 Spacer(Modifier.height(20.dp))
-                HorizontalDivider(color = Color.White.copy(0.08f))
+                HorizontalDivider(color = c.text.copy(0.08f))
                 Spacer(Modifier.height(14.dp))
 
                 // ── Action buttons ────────────────────────────────────────
@@ -6020,8 +6082,8 @@ fun BackupDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White.copy(0.7f)),
-                        border = BorderStroke(1.dp, Color.White.copy(0.15f))
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text.copy(0.7f)),
+                        border = BorderStroke(1.dp, c.text.copy(0.15f))
                     ) { Text("Close") }
 
                     Button(
@@ -6030,7 +6092,7 @@ fun BackupDialog(
                             createDocLauncher.launch("mymoney_backup_$date.csv")
                         },
                         modifier = Modifier.weight(2f),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981), contentColor = Color.White),
+                        colors = ButtonDefaults.buttonColors(containerColor = c.income, contentColor = c.text),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -6041,7 +6103,7 @@ fun BackupDialog(
             }
         },
         confirmButton = {},
-        containerColor = Color(0xFF131A26),
+        containerColor = c.surface,
         shape = RoundedCornerShape(20.dp)
     )
 }
@@ -6051,6 +6113,7 @@ fun RestoreBackupDialog(
     viewModel: FinanceViewModel,
     onDismiss: () -> Unit
 ) {
+    val c = LocalAppColors.current
     val context = LocalContext.current
     var confirmed by remember { mutableStateOf(false) }
 
@@ -6075,14 +6138,14 @@ fun RestoreBackupDialog(
                 Box(
                     modifier = Modifier
                         .size(64.dp)
-                        .background(Color(0xFFF43F5E).copy(alpha = 0.15f), CircleShape)
-                        .border(1.5.dp, Color(0xFFF43F5E).copy(alpha = 0.4f), CircleShape),
+                        .background(c.expense.copy(alpha = 0.15f), CircleShape)
+                        .border(1.5.dp, c.expense.copy(alpha = 0.4f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.Restore,
                         contentDescription = null,
-                        tint = Color(0xFFF43F5E),
+                        tint = c.expense,
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -6091,12 +6154,12 @@ fun RestoreBackupDialog(
                     "Import Backup",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = c.text
                 )
                 Text(
                     "Restore from a CSV backup file",
                     fontSize = 12.sp,
-                    color = Color.White.copy(0.5f),
+                    color = c.textSecondary,
                     modifier = Modifier.padding(top = 2.dp)
                 )
 
@@ -6104,9 +6167,9 @@ fun RestoreBackupDialog(
 
                 // ── Warning banner ────────────────────────────────────────
                 Surface(
-                    color = Color(0xFFF43F5E).copy(0.08f),
+                    color = c.expense.copy(0.08f),
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color(0xFFF43F5E).copy(0.35f)),
+                    border = BorderStroke(1.dp, c.expense.copy(0.35f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -6114,20 +6177,20 @@ fun RestoreBackupDialog(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.Top
                     ) {
-                        Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFF43F5E), modifier = Modifier.size(18.dp).padding(top = 1.dp))
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = c.expense, modifier = Modifier.size(18.dp).padding(top = 1.dp))
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("Destructive Action", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF43F5E))
+                            Text("Destructive Action", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.expense)
                             Text(
                                 "This will permanently replace ALL existing accounts and transactions with the backup contents.",
                                 fontSize = 11.sp,
-                                color = Color(0xFFF43F5E).copy(0.85f)
+                                color = c.expense.copy(0.85f)
                             )
                         }
                     }
                 }
 
                 Spacer(Modifier.height(16.dp))
-                HorizontalDivider(color = Color.White.copy(0.08f))
+                HorizontalDivider(color = c.text.copy(0.08f))
                 Spacer(Modifier.height(14.dp))
 
                 // ── What gets restored ─────────────────────────────────────
@@ -6135,7 +6198,7 @@ fun RestoreBackupDialog(
                     "WHAT GETS RESTORED",
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(0.4f),
+                    color = c.text.copy(0.4f),
                     modifier = Modifier.align(Alignment.Start)
                 )
                 Spacer(Modifier.height(10.dp))
@@ -6144,8 +6207,8 @@ fun RestoreBackupDialog(
                     Triple(Icons.Default.ReceiptLong,          "Transactions",    "All records with date, amount, category"),
                     Triple(Icons.Default.LinkOff,              "Existing Data",   "Cleared first — cannot be recovered")
                 ).forEachIndexed { idx, (icon, title, sub) ->
-                    val tint = if (idx == 2) Color(0xFFF43F5E) else Color(0xFF00E5FF)
-                    val bg   = if (idx == 2) Color(0xFFF43F5E).copy(0.1f) else Color(0xFF00E5FF).copy(0.08f)
+                    val tint = if (idx == 2) c.expense else c.accent
+                    val bg   = if (idx == 2) c.expense.copy(0.1f) else c.accent.copy(0.08f)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -6162,21 +6225,21 @@ fun RestoreBackupDialog(
                         }
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                            Text(sub,   fontSize = 11.sp, color = Color.White.copy(0.45f))
+                            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text)
+                            Text(sub,   fontSize = 11.sp, color = c.textSecondary)
                         }
                     }
                 }
 
                 Spacer(Modifier.height(14.dp))
-                HorizontalDivider(color = Color.White.copy(0.08f))
+                HorizontalDivider(color = c.text.copy(0.08f))
                 Spacer(Modifier.height(12.dp))
 
                 // ── Confirmation toggle ───────────────────────────────────
                 Surface(
-                    color = if (confirmed) Color(0xFFF43F5E).copy(0.08f) else Color.White.copy(0.04f),
+                    color = if (confirmed) c.expense.copy(0.08f) else c.text.copy(0.04f),
                     shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, if (confirmed) Color(0xFFF43F5E).copy(0.4f) else Color.White.copy(0.1f)),
+                    border = BorderStroke(1.dp, if (confirmed) c.expense.copy(0.4f) else c.text.copy(0.1f)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { confirmed = !confirmed }
@@ -6190,15 +6253,15 @@ fun RestoreBackupDialog(
                             checked = confirmed,
                             onCheckedChange = { confirmed = it },
                             colors = CheckboxDefaults.colors(
-                                checkedColor = Color(0xFFF43F5E),
-                                uncheckedColor = Color.White.copy(0.3f)
+                                checkedColor = c.expense,
+                                uncheckedColor = c.text.copy(0.3f)
                             )
                         )
                         Text(
                             "I understand this will overwrite all my existing data",
                             fontSize = 12.sp,
                             fontWeight = if (confirmed) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (confirmed) Color.White else Color.White.copy(0.6f)
+                            color = if (confirmed) c.text else c.textSecondary
                         )
                     }
                 }
@@ -6213,8 +6276,8 @@ fun RestoreBackupDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White.copy(0.7f)),
-                        border = BorderStroke(1.dp, Color.White.copy(0.15f))
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text.copy(0.7f)),
+                        border = BorderStroke(1.dp, c.text.copy(0.15f))
                     ) { Text("Cancel") }
 
                     Button(
@@ -6222,10 +6285,10 @@ fun RestoreBackupDialog(
                         modifier = Modifier.weight(2f),
                         enabled = confirmed,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFF43F5E),
-                            contentColor = Color.White,
-                            disabledContainerColor = Color(0xFFF43F5E).copy(0.3f),
-                            disabledContentColor = Color.White.copy(0.4f)
+                            containerColor = c.expense,
+                            contentColor = c.text,
+                            disabledContainerColor = c.expense.copy(0.3f),
+                            disabledContentColor = c.text.copy(0.4f)
                         ),
                         shape = RoundedCornerShape(10.dp)
                     ) {
@@ -6237,7 +6300,7 @@ fun RestoreBackupDialog(
             }
         },
         confirmButton = {},
-        containerColor = Color(0xFF131A26),
+        containerColor = c.surface,
         shape = RoundedCornerShape(20.dp)
     )
 }
@@ -6354,11 +6417,12 @@ fun AccountCenterSettingsDialog(
     smsBlocklistPatterns: Set<String>,
     onDismiss: () -> Unit
 ) {
+    val c = LocalAppColors.current
     var patternInput by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Account Center Settings", fontWeight = FontWeight.Bold, color = Color.White) },
+        title = { Text("Account Center Settings", fontWeight = FontWeight.Bold, color = c.text) },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // CC Details toggle
@@ -6369,17 +6433,17 @@ fun AccountCenterSettingsDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Show Credit Card Details", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("Display available limit & due amount on cards", color = Color.White.copy(0.5f), fontSize = 11.sp)
+                            Text("Show Credit Card Details", color = c.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Display available limit & due amount on cards", color = c.textSecondary, fontSize = 11.sp)
                         }
                         Switch(
                             checked = showCreditCardDetails,
                             onCheckedChange = { viewModel.setShowCreditCardDetails(it) },
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF00E5FF),
-                                checkedTrackColor = Color(0xFF00E5FF).copy(alpha = 0.45f),
-                                uncheckedThumbColor = Color.White,
-                                uncheckedTrackColor = Color.White.copy(alpha = 0.2f)
+                                checkedThumbColor = c.accent,
+                                checkedTrackColor = c.accent.copy(alpha = 0.45f),
+                                uncheckedThumbColor = c.text,
+                                uncheckedTrackColor = c.textTertiary
                             )
                         )
                     }
@@ -6390,7 +6454,7 @@ fun AccountCenterSettingsDialog(
                         "WALLET VISIBILITY",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White.copy(0.5f),
+                        color = c.textSecondary,
                         letterSpacing = 1.sp,
                         modifier = Modifier.padding(top = 8.dp)
                     )
@@ -6401,15 +6465,15 @@ fun AccountCenterSettingsDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(acc.name, color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        Text(acc.name, color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
                         Switch(
                             checked = !hiddenAccountIds.contains(acc.id),
                             onCheckedChange = { visible -> viewModel.setAccountHidden(acc.id, !visible) },
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF00E5FF),
-                                checkedTrackColor = Color(0xFF00E5FF).copy(alpha = 0.45f),
-                                uncheckedThumbColor = Color.White,
-                                uncheckedTrackColor = Color.White.copy(alpha = 0.2f)
+                                checkedThumbColor = c.accent,
+                                checkedTrackColor = c.accent.copy(alpha = 0.45f),
+                                uncheckedThumbColor = c.text,
+                                uncheckedTrackColor = c.textTertiary
                             )
                         )
                     }
@@ -6421,12 +6485,12 @@ fun AccountCenterSettingsDialog(
                             "SMS IMPORT BLOCKLIST",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White.copy(0.5f),
+                            color = c.textSecondary,
                             letterSpacing = 1.sp
                         )
                         Text(
                             "Block SMS imports by wallet name or sender. Wildcards: HDFC*, *1234, *paytm*",
-                            color = Color.White.copy(0.5f),
+                            color = c.textSecondary,
                             fontSize = 11.sp,
                             modifier = Modifier.padding(top = 2.dp)
                         )
@@ -6437,14 +6501,14 @@ fun AccountCenterSettingsDialog(
                             OutlinedTextField(
                                 value = patternInput,
                                 onValueChange = { patternInput = it },
-                                placeholder = { Text("e.g. HDFC*, *paytm*", color = Color.White.copy(0.4f), fontSize = 12.sp) },
+                                placeholder = { Text("e.g. HDFC*, *paytm*", color = c.text.copy(0.4f), fontSize = 12.sp) },
                                 singleLine = true,
                                 modifier = Modifier.weight(1f),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color(0xFF00E5FF),
-                                    unfocusedBorderColor = Color.White.copy(0.3f),
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White
+                                    focusedBorderColor = c.accent,
+                                    unfocusedBorderColor = c.text.copy(0.3f),
+                                    focusedTextColor = c.text,
+                                    unfocusedTextColor = c.text
                                 ),
                                 textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
                             )
@@ -6454,7 +6518,7 @@ fun AccountCenterSettingsDialog(
                                     patternInput = ""
                                 }
                             }) {
-                                Icon(Icons.Default.Add, contentDescription = "Add pattern", tint = Color(0xFF00E5FF))
+                                Icon(Icons.Default.Add, contentDescription = "Add pattern", tint = c.accent)
                             }
                         }
                     }
@@ -6465,9 +6529,9 @@ fun AccountCenterSettingsDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(pattern, color = Color(0xFFF43F5E), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Text(pattern, color = c.expense, fontSize = 12.sp, modifier = Modifier.weight(1f))
                         IconButton(onClick = { viewModel.removeSmsBlocklistPattern(pattern) }) {
-                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color(0xFFF43F5E))
+                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = c.expense)
                         }
                     }
                 }
@@ -6475,22 +6539,22 @@ fun AccountCenterSettingsDialog(
                     item {
                         OutlinedButton(
                             onClick = { viewModel.deleteTransactionsMatchingBlocklist() },
-                            border = BorderStroke(1.dp, Color(0xFFF43F5E)),
+                            border = BorderStroke(1.dp, c.expense),
                             modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF43F5E))
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = c.expense)
                         ) {
-                            Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFF43F5E))
+                            Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = c.expense)
                             Spacer(Modifier.width(8.dp))
-                            Text("Delete Matching Transactions", color = Color(0xFFF43F5E), fontSize = 12.sp)
+                            Text("Delete Matching Transactions", color = c.expense, fontSize = 12.sp)
                         }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done", color = Color(0xFF00E5FF)) } },
-        containerColor = Color(0xFF131A26),
-        titleContentColor = Color.White,
-        textContentColor = Color.White
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done", color = c.accent) } },
+        containerColor = c.surface,
+        titleContentColor = c.text,
+        textContentColor = c.text
     )
 }
 
@@ -6561,13 +6625,13 @@ fun shiftMonthYear(monthYear: String, amount: Int): String {
     return SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
 }
 
-fun budgetProgressColor(percent: Double): Color {
+fun budgetProgressColor(percent: Double, appColors: com.example.ui.theme.AppColors): Color {
     return when {
-        percent > 100.0 -> Color(0xFFF43F5E)
+        percent > 100.0 -> appColors.expense
         percent > 90.0 -> Color(0xFFFB923C)
         percent >= 60.0 -> Color(0xFFFACC15)
         percent >= 30.0 -> Color(0xFF4ADE80)
-        else -> Color(0xFF10B981)
+        else -> appColors.income
     }
 }
 

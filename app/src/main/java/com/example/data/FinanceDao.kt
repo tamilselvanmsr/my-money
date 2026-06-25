@@ -40,6 +40,9 @@ interface FinanceDao {
     @Query("SELECT * FROM budgets WHERE monthYear = :monthYear")
     fun getBudgetsForMonth(monthYear: String): Flow<List<BudgetEntry>>
 
+    @Query("SELECT * FROM budgets")
+    suspend fun getAllBudgetsOnce(): List<BudgetEntry>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBudget(budget: BudgetEntry)
 

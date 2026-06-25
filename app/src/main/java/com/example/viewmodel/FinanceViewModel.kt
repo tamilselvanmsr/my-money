@@ -113,6 +113,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         prefs.edit().putBoolean("enable_balance_sync", v).apply()
     }
 
+    // ── Light / Dark theme preference ─────────────────────────────────────────
+    private val _isDarkTheme = MutableStateFlow(prefs.getBoolean("is_dark_theme", true))
+    val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
+    fun setDarkTheme(dark: Boolean) {
+        _isDarkTheme.value = dark
+        prefs.edit().putBoolean("is_dark_theme", dark).apply()
+    }
+
     // ── Hidden wallets (display only) ─────────────────────────────────────────
     private val _hiddenAccountIds = MutableStateFlow(prefs.getStringSet("hidden_account_ids", emptySet())?.toSet() ?: emptySet())
     val hiddenAccountIds: StateFlow<Set<String>> = _hiddenAccountIds.asStateFlow()
@@ -1353,12 +1361,23 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     val accountName = tx.getAccountName().replace(",", ";")
                     sb.appendLine("${date},${title},${tx.amount},${tx.category},${tx.type},${accountName}")
                 }
+                sb.appendLine()
+
+                // ── BUDGETS section ───────────────────────────────
+                sb.appendLine("## BUDGETS")
+                sb.appendLine("Category,AmountLimit,MonthYear")
+                val budgets = repository.getAllBudgetsOnce()
+                for (b in budgets) {
+                    val cat = b.category.replace(",", ";")
+                    sb.appendLine("${cat},${b.amountLimit},${b.monthYear}")
+                }
 
                 context.contentResolver.openOutputStream(uri)?.use { stream ->
                     stream.write(sb.toString().toByteArray(Charsets.UTF_8))
                 }
                 val txCount = allTransactions.value.count { it.type != "BALANCE_UPDATE" }
-                _toastMessage.emit("Backup saved — ${allAccounts.value.size} accounts, $txCount transactions.")
+                val budgetCount = budgets.size
+                _toastMessage.emit("Backup saved — ${allAccounts.value.size} accounts, $txCount transactions, $budgetCount budgets.")
             } catch (e: Exception) {
                 Log.e(TAG, "Export backup failed: ${e.message}", e)
                 _toastMessage.emit("Export failed: ${e.message}")
@@ -1381,6 +1400,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 var section = ""
                 var accountsRestored = 0
                 var txRestored = 0
+                var budgetsRestored = 0
 
                 // Wipe existing data
                 repository.clearTransactions()
@@ -1394,7 +1414,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         trimmed.startsWith("## ") -> section = trimmed.removePrefix("## ")
                         trimmed.isBlank() ||
                         trimmed.startsWith("Name,") ||
-                        trimmed.startsWith("Date,") -> { /* header / blank – skip */ }
+                        trimmed.startsWith("Date,") ||
+                        trimmed.startsWith("Category,") -> { /* header / blank – skip */ }
                         section == "ACCOUNTS" -> {
                             val cols = trimmed.split(",")
                             if (cols.size >= 5) {
@@ -1430,9 +1451,23 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 txRestored++
                             }
                         }
+                        section == "BUDGETS" -> {
+                            val parts = trimmed.split(",", limit = 3)
+                            if (parts.size == 3) {
+                                repository.insertBudget(
+                                    BudgetEntry(
+                                        id = 0,
+                                        category = parts[0].trim(),
+                                        amountLimit = parts[1].trim().toDoubleOrNull() ?: 0.0,
+                                        monthYear = parts[2].trim()
+                                    )
+                                )
+                                budgetsRestored++
+                            }
+                        }
                     }
                 }
-                _toastMessage.emit("Restored $accountsRestored accounts and $txRestored transactions.")
+                _toastMessage.emit("Restored $accountsRestored accounts, $txRestored transactions and $budgetsRestored budgets.")
             } catch (e: Exception) {
                 Log.e(TAG, "Restore backup failed: ${e.message}", e)
                 _toastMessage.emit("Restore failed: ${e.message}")

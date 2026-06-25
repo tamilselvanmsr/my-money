@@ -18,7 +18,7 @@ enum class ExpenseCategory(
     // Legacy / original categories
     FOOD("Food & Dining", Icons.Default.Restaurant, Color(0xFFFF9800)),
     SHOPPING("Shopping", Icons.Default.ShoppingBag, Color(0xFFE91E63)),
-    TRANSPORT("Transport", Icons.Default.DirectionsCar, Color(0xFF03A9F4)),
+    TRANSPORT("Transport", Icons.Default.LocalTaxi, Color(0xFF03A9F4)),
     BILLS("Bills & Utilities", Icons.Default.ReceiptLong, Color(0xFF9C27B0)),
     ENTERTAINMENT("Entertainment", Icons.Default.LocalPlay, Color(0xFFFF5722)),
     HEALTHCARE("Healthcare", Icons.Default.MedicalServices, Color(0xFF4CAF50)),
@@ -52,6 +52,7 @@ enum class ExpenseCategory(
     COOKING("Cooking", Icons.Default.Kitchen, Color(0xFFFF7043)),
     OUTSIDE_FOOD("Outside Food", Icons.Default.Fastfood, Color(0xFFFFB300)),
     GROCERIES("Groceries", Icons.Default.ShoppingCart, Color(0xFF43A047)),
+    SOFT_HOT_DRINKS("Tea & Soft Drinks", Icons.Default.LocalCafe, Color(0xFF8D6E63)),
 
     // Newly requested Income categories
     CASHBACK("Cashback", Icons.Default.Redeem, Color(0xFF14B8A6), "INCOME"),
@@ -103,7 +104,7 @@ object CategoryResolver {
         return when (cleanName.lowercase()) {
             "restaurant" -> Icons.Default.Restaurant
             "shopping" -> Icons.Default.ShoppingBag
-            "transport" -> Icons.Default.DirectionsCar
+            "transport" -> Icons.Default.LocalTaxi
             "car" -> Icons.Default.DirectionsCar
             "bills" -> Icons.Default.ReceiptLong
             "entertainment" -> Icons.Default.LocalPlay
@@ -148,6 +149,7 @@ object CategoryResolver {
             "rent" -> Icons.Default.Home
             "cooking" -> Icons.Default.Kitchen
             "outside_food" -> Icons.Default.Fastfood
+            "soft_hot_drinks" -> Icons.Default.LocalCafe
             "groceries" -> Icons.Default.ShoppingCart
             else -> Icons.Default.Category
         }
@@ -206,9 +208,11 @@ object CategoryResolver {
     fun getAll(customList: List<CustomCategory>): List<DisplayCategory> {
         val list = mutableListOf<DisplayCategory>()
         val hiddenNames = customList.filter { it.iconName.startsWith("hidden:") || it.iconName == "hidden" }.map { it.name.lowercase() }
+        // OUTSIDE_FOOD and POCKET_MONEY are kept in enum for DB backward-compat but excluded from the picker
+        val builtinHidden = setOf("outside_food", "pocket_money")
 
         ExpenseCategory.entries.forEach { standard ->
-            if (!hiddenNames.contains(standard.name.lowercase())) {
+            if (!hiddenNames.contains(standard.name.lowercase()) && !builtinHidden.contains(standard.name.lowercase())) {
                 list.add(
                     DisplayCategory(
                         name = standard.name,

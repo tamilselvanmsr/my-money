@@ -97,6 +97,78 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         prefs.edit().putStringSet("blocked_sms_account_ids", updated).apply()
     }
 
+    // ── Merchant → Category Rules ──────────────────────────────────────────────
+    private fun loadMerchantCategoryRules(): List<Pair<String, String>> {
+        val json = prefs.getString("merchant_category_rules", "[]") ?: "[]"
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).map { i ->
+                val obj = arr.getJSONObject(i)
+                obj.getString("pattern") to obj.getString("category")
+            }
+        } catch (e: Exception) { emptyList() }
+    }
+
+    private fun saveMerchantCategoryRules(rules: List<Pair<String, String>>) {
+        val arr = org.json.JSONArray()
+        rules.forEach { (p, c) -> arr.put(org.json.JSONObject().put("pattern", p).put("category", c)) }
+        prefs.edit().putString("merchant_category_rules", arr.toString()).apply()
+    }
+
+    private val _merchantCategoryRules = MutableStateFlow(loadMerchantCategoryRules())
+    val merchantCategoryRules: StateFlow<List<Pair<String, String>>> = _merchantCategoryRules.asStateFlow()
+
+    fun addMerchantCategoryRule(pattern: String, category: String) {
+        val updated = _merchantCategoryRules.value.toMutableList()
+        updated.removeAll { it.first.equals(pattern.trim(), ignoreCase = true) }
+        updated.add(0, pattern.trim() to category.trim())
+        _merchantCategoryRules.value = updated
+        saveMerchantCategoryRules(updated)
+    }
+
+    fun removeMerchantCategoryRule(pattern: String) {
+        val updated = _merchantCategoryRules.value.filter { !it.first.equals(pattern.trim(), ignoreCase = true) }
+        _merchantCategoryRules.value = updated
+        saveMerchantCategoryRules(updated)
+    }
+
+    /** Wildcard matching: `zerodha*` = startsWith, `*paytm*` = contains, `*nova` = endsWith, else = contains */
+    private fun matchesMerchantPattern(title: String, pattern: String): Boolean {
+        val lower = title.lowercase().trim()
+        val p = pattern.lowercase().trim()
+        return when {
+            p.startsWith("*") && p.endsWith("*") && p.length > 2 -> lower.contains(p.substring(1, p.length - 1))
+            p.startsWith("*") -> lower.endsWith(p.substring(1))
+            p.endsWith("*") -> lower.startsWith(p.dropLast(1))
+            else -> lower.contains(p)
+        }
+    }
+
+    /** Returns overriding category name if any rule matches, else null. */
+    fun applyMerchantRulesToCategory(title: String): String? {
+        for ((pattern, category) in _merchantCategoryRules.value) {
+            if (matchesMerchantPattern(title, pattern)) return category
+        }
+        return null
+    }
+
+    fun reapplyMerchantRulesToExisting() {
+        viewModelScope.launch {
+            var updatedCount = 0
+            allTransactions.value.forEach { tx ->
+                val override = applyMerchantRulesToCategory(tx.title)
+                if (override != null && !override.equals(tx.category, ignoreCase = true)) {
+                    repository.updateTransaction(tx.copy(category = override))
+                    updatedCount++
+                }
+            }
+            _toastMessage.emit(
+                if (updatedCount > 0) "Re-categorized $updatedCount existing record(s) using merchant rules."
+                else "No existing records needed re-categorization."
+            )
+        }
+    }
+
     // Custom Categories
     val allCustomCategories: StateFlow<List<CustomCategory>> = repository.allCustomCategories
         .stateIn(
@@ -659,7 +731,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun scanDeviceSmsInbox(context: android.content.Context) {
+    fun scanDeviceSmsInbox(context: android.content.Context, monthsBack: Int = 3) {
         viewModelScope.launch {
             try {
                 val contentResolver = context.contentResolver
@@ -671,7 +743,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     "date DESC"
                 )
 
-                val threeMonthsAgo = System.currentTimeMillis() - 90L * 24 * 60 * 60 * 1000
+                val cal = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.DAY_OF_MONTH, 1)
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                    add(java.util.Calendar.MONTH, -(monthsBack - 1))
+                }
+                val cutoffTime = cal.timeInMillis
                 var matchedCount = 0
                 val projectedTransactions = allTransactions.value.toMutableList()
                 if (cursor != null) {
@@ -681,7 +761,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
                     while (cursor.moveToNext()) {
                         val smsDate = if (dateIndex != -1) cursor.getLong(dateIndex) else System.currentTimeMillis()
-                        if (smsDate < threeMonthsAgo) {
+                        if (smsDate < cutoffTime) {
                             break
                         }
 
@@ -719,10 +799,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 )
                             }
                             if (!duplicate) {
+                                val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
                                 val tx = TransactionEntry(
                                     title = parsed.title,
                                     amount = parsed.amount,
-                                    category = parsed.category.name,
+                                    category = finalCategory,
                                     type = parsed.type,
                                     smsSender = sender,
                                     smsBody = body,
@@ -837,7 +918,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun scanInboxWithCustomRules(
         context: android.content.Context,
         forcePatterns: List<String>,
-        customPatterns: List<String>
+        customPatterns: List<String>,
+        monthsBack: Int = 3
     ) {
         viewModelScope.launch {
             try {
@@ -848,7 +930,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     null, null, "date DESC"
                 )
 
-                val threeMonthsAgo = System.currentTimeMillis() - 90L * 24 * 60 * 60 * 1000
+                val cal = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.DAY_OF_MONTH, 1)
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                    add(java.util.Calendar.MONTH, -(monthsBack - 1))
+                }
+                val cutoffTime = cal.timeInMillis
                 var matchedCount = 0
                 val projectedTransactions = allTransactions.value.toMutableList()
                 val allPatterns = (forcePatterns + customPatterns).map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
@@ -860,7 +950,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
                     while (cursor.moveToNext()) {
                         val smsDate = if (dateIndex != -1) cursor.getLong(dateIndex) else System.currentTimeMillis()
-                        if (smsDate < threeMonthsAgo) break
+                        if (smsDate < cutoffTime) break
 
                         val body = cursor.getString(bodyIndex) ?: ""
                         val sender = cursor.getString(addressIndex) ?: "Unknown"
@@ -900,10 +990,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 isDuplicateImportedTransaction(existing, body, parsed.title, parsed.amount, parsed.type, targetTime, incomingRef, walletName)
                             }
                             if (!duplicate) {
+                                val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
                                 val tx = TransactionEntry(
                                     title = parsed.title,
                                     amount = parsed.amount,
-                                    category = parsed.category.name,
+                                    category = finalCategory,
                                     type = parsed.type,
                                     smsSender = sender,
                                     smsBody = body,

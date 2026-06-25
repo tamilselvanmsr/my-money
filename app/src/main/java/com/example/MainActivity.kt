@@ -1218,72 +1218,87 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Period navigation row (mirrors Records section)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text(
-                            text = "ANALYSIS HUB",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            letterSpacing = 1.sp,
-                            color = Color.White.copy(alpha = 0.6f)
-                        )
-                        Text(
-                            text = when (timeFilter) {
-                                "WEEKLY" -> "Weekly"
-                                "3M" -> "3 Months"
-                                "6M" -> "6 Months"
-                                "1Y" -> "1 Year"
-                                else -> "Monthly"
-                            },
-                            fontSize = 10.sp,
-                            color = Color(0xFF00E5FF),
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box {
-                            FilledTonalIconButton(
-                                onClick = { showPeriodMenu = true },
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = Color.White.copy(alpha = 0.08f),
-                                    contentColor = Color.White
-                                ),
+                    Surface(
+                        color = Color(0xFF131A26),
+                        shape = RoundedCornerShape(24.dp),
+                        border = BorderStroke(1.dp, Color(0xFF1D293B)),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            IconButton(
+                                onClick = { shiftAnalyticsPeriod(viewModel, rawMonthYear, timeFilter, -1) },
                                 modifier = Modifier.size(36.dp)
                             ) {
-                                Icon(Icons.Default.Menu, contentDescription = "Select time period", modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Period", tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
                             }
-                            DropdownMenu(
-                                expanded = showPeriodMenu,
-                                onDismissRequest = { showPeriodMenu = false },
-                                modifier = Modifier
-                                    .background(Color(0xFF0F172A))
-                                    .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
-                                    .width(180.dp)
+                            Text(
+                                text = formatAnalyticsPeriodLabel(rawMonthYear, timeFilter),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Color.White,
+                                modifier = Modifier.weight(1f),
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            IconButton(
+                                onClick = { shiftAnalyticsPeriod(viewModel, rawMonthYear, timeFilter, 1) },
+                                modifier = Modifier.size(36.dp)
                             ) {
+                                Icon(Icons.Default.ChevronRight, contentDescription = "Next Period", tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    }
+                    Box {
+                        FilledTonalIconButton(
+                            onClick = { showPeriodMenu = true },
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = Color.White.copy(alpha = 0.08f),
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.Menu, contentDescription = "Select time period", modifier = Modifier.size(20.dp))
+                        }
+                        DropdownMenu(
+                            expanded = showPeriodMenu,
+                            onDismissRequest = { showPeriodMenu = false },
+                            modifier = Modifier
+                                .background(Color(0xFF0F172A))
+                                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
+                                .width(180.dp)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("PERIOD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.45f)) },
+                                onClick = {},
+                                enabled = false
+                            )
+                            listOf("WEEKLY" to "Weekly", "MONTHLY" to "Monthly", "3M" to "3 Months", "6M" to "6 Months", "1Y" to "1 Year").forEach { (key, label) ->
                                 DropdownMenuItem(
-                                    text = { Text("PERIOD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.45f)) },
-                                    onClick = {},
-                                    enabled = false
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(label, color = if (timeFilter == key) Color(0xFF00E5FF) else Color.White, fontSize = 13.sp)
+                                            if (timeFilter == key) Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(16.dp))
+                                        }
+                                    },
+                                    onClick = { timeFilter = key; showPeriodMenu = false }
                                 )
-                                listOf("WEEKLY" to "Weekly", "MONTHLY" to "Monthly", "3M" to "3 Months", "6M" to "6 Months", "1Y" to "1 Year").forEach { (key, label) ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(label, color = if (timeFilter == key) Color(0xFF00E5FF) else Color.White, fontSize = 13.sp)
-                                                if (timeFilter == key) Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(16.dp))
-                                            }
-                                        },
-                                        onClick = { timeFilter = key; showPeriodMenu = false }
-                                    )
-                                }
                             }
                         }
                     }
@@ -1577,6 +1592,38 @@ private fun AnalyticsOverviewSection(
                                                     cx2, cy2 + 11.dp.toPx(), pctPaint
                                                 )
                                             }
+                                        }
+                                    } else {
+                                        // Nothing selected — show total label + amount
+                                        val cx2 = size.width / 2f
+                                        val cy2 = size.height / 2f
+                                        val innerRadius = (sizeMin - strokeWidthValue) / 2f - strokeWidthValue * 0.65f
+                                        val labelPaint = android.graphics.Paint().apply {
+                                            color = android.graphics.Color.WHITE
+                                            alpha = 160
+                                            textSize = 10.sp.toPx()
+                                            isAntiAlias = true
+                                            textAlign = android.graphics.Paint.Align.CENTER
+                                        }
+                                        val amtPaint = android.graphics.Paint().apply {
+                                            color = android.graphics.Color.WHITE
+                                            alpha = 230
+                                            textSize = 12.sp.toPx()
+                                            isAntiAlias = true
+                                            textAlign = android.graphics.Paint.Align.CENTER
+                                            typeface = android.graphics.Typeface.DEFAULT_BOLD
+                                        }
+                                        val rawAmtText = decFormat.format(totalAmount)
+                                        val amtText = if (amtPaint.measureText(rawAmtText) > innerRadius * 1.7f) {
+                                            when {
+                                                totalAmount >= 1_00_00_000.0 -> "₹${DecimalFormat("#.##").format(totalAmount / 1_00_00_000.0)}Cr"
+                                                totalAmount >= 1_00_000.0 -> "₹${DecimalFormat("#.##").format(totalAmount / 1_00_000.0)}L"
+                                                else -> "₹${DecimalFormat("#.##").format(totalAmount / 1_000.0)}K"
+                                            }
+                                        } else rawAmtText
+                                        drawIntoCanvas { canvas ->
+                                            canvas.nativeCanvas.drawText(totalLabel, cx2, cy2 - 6.dp.toPx(), labelPaint)
+                                            canvas.nativeCanvas.drawText(amtText, cx2, cy2 + 10.dp.toPx(), amtPaint)
                                         }
                                     }
                                 }
@@ -2193,23 +2240,33 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(stats.accountName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            stats.accountName,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f).padding(end = 10.dp)
+                        )
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Column(horizontalAlignment = Alignment.End) {
-                                Text("IN", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                                Text(compactCurrency(stats.income), color = Color(0xFF10B981), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                                Text("IN", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+                                Text(compactCurrency(stats.income), color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                             Column(horizontalAlignment = Alignment.End) {
-                                Text("OUT", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                                Text(compactCurrency(stats.expense), color = Color(0xFFF43F5E), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                                Text("OUT", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+                                Text(compactCurrency(stats.expense), color = Color(0xFFF43F5E), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                             Column(horizontalAlignment = Alignment.End) {
-                                Text("NET", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                                Text(compactCurrency(stats.net), color = if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                                Text("NET", color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+                                Text(compactCurrency(stats.net), color = if (stats.net >= 0) Color(0xFF00E5FF) else Color(0xFFFF7043), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                         }
                     }
@@ -3521,17 +3578,6 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                         fontSize = 15.sp,
                                         color = Color.White
                                     )
-                                    Text(
-                                        text = when(acc.type) {
-                                            "CASH" -> "On-Hand Liquidity"
-                                            "BANK" -> "Savings & Online Deposit"
-                                            "CREDIT_CARD" -> "Line of Credit Liability"
-                                            "SAVINGS" -> "Target Reserves Accumulator"
-                                            else -> "Custom Register"
-                                        },
-                                        fontSize = 11.sp,
-                                        color = Color.White.copy(alpha = 0.4f)
-                                    )
                                     if (smsTrackingBlocked) {
                                         Text(
                                             text = "SMS auto-tracking blocked",
@@ -3945,6 +3991,8 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
     }
     var selectedForcePatterns by remember { mutableStateOf(forcePatternOptions.toSet()) }
     var customPatterns by remember { mutableStateOf(emptyList<String>()) }
+    // 1 = this month only, 2 = last + this month, 3 = last 3 months (calendar start-of-month boundaries)
+    var smsScanMonthsBack by remember { mutableStateOf(1) }
     val isSmsParsing by viewModel.isSmsParsing.collectAsStateWithLifecycle()
     var hasReadSmsPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED)
@@ -3962,11 +4010,24 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
         if (hasReadSmsPermission) {
             Toast.makeText(context, "SMS access enabled. Importing inbox now.", Toast.LENGTH_SHORT).show()
-            viewModel.scanDeviceSmsInbox(context)
+            viewModel.scanDeviceSmsInbox(context, smsScanMonthsBack)
         } else {
             Toast.makeText(context, "SMS read permission is required for inbox import.", Toast.LENGTH_SHORT).show()
         }
     }
+    val merchantRules by viewModel.merchantCategoryRules.collectAsStateWithLifecycle()
+    val customCatsForMerchant by viewModel.allCustomCategories.collectAsStateWithLifecycle()
+    val allMerchantCategoryOptions = remember(customCatsForMerchant) {
+        (com.example.data.ExpenseCategory.entries
+            .filter { it.type == "EXPENSE" && it.name != "OUTSIDE_FOOD" && it.name != "POCKET_MONEY" }
+            .map { it.name to it.displayName } +
+        customCatsForMerchant.filter { !it.iconName.startsWith("hidden") && !it.iconName.equals("hidden") && it.iconName.split(":").getOrNull(1) != "INCOME" }
+            .map { it.name to it.name })
+        .sortedBy { it.second }
+    }
+    var merchantPatternInput by remember { mutableStateOf("") }
+    var merchantCategoryInput by remember { mutableStateOf("") }
+    var merchantCategoryDropdownExpanded by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -4030,10 +4091,37 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
+
+                    // Scan range selector
+                    Text("Scan Range", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val scanRangeOptions = listOf(1 to "This Month", 2 to "Last 2 Months", 3 to "Last 3 Months")
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        scanRangeOptions.forEach { (months, label) ->
+                            val selected = smsScanMonthsBack == months
+                            Surface(
+                                onClick = { smsScanMonthsBack = months },
+                                color = if (selected) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color(0xFF1E293B),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, if (selected) Color(0xFF00E5FF) else Color(0xFF2D3748)),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    label,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selected) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.6f),
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
                     Button(
                         onClick = {
                             if (hasReadSmsPermission) {
-                                viewModel.scanDeviceSmsInbox(context)
+                                viewModel.scanDeviceSmsInbox(context, smsScanMonthsBack)
                             } else {
                                 requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
                             }
@@ -4190,7 +4278,8 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                 viewModel.scanInboxWithCustomRules(
                                     context,
                                     selectedForcePatterns.toList(),
-                                    customPatterns
+                                    customPatterns,
+                                    smsScanMonthsBack
                                 )
                             } else {
                                 requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
@@ -4260,6 +4349,143 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             .testTag("analyze_pasted_sms_button")
                     ) {
                         Text(if (isSmsParsing) "Analyzing…" else "Analyze & Import Pasted SMS", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // ── Merchant → Category Mapping ───────────────────────────────────────
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF131A26)),
+                border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Category, contentDescription = null, tint = Color(0xFF7C4DFF), modifier = Modifier.size(20.dp))
+                        Text("Merchant → Category Rules", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                    }
+                    Text(
+                        "Map payee/merchant names to categories. Supports wildcards:\n" +
+                        "  zerodha*  →  starts with\n" +
+                        "  *paytm*   →  contains\n" +
+                        "  *nova     →  ends with\n" +
+                        "  (no *)    →  contains (same as *text*)\n" +
+                        "Rules here override built-in categorization.",
+                        fontSize = 10.sp, color = Color.White.copy(alpha = 0.5f), lineHeight = 16.sp
+                    )
+
+                    // Input row
+                    OutlinedTextField(
+                        value = merchantPatternInput,
+                        onValueChange = { merchantPatternInput = it },
+                        label = { Text("Merchant Pattern (e.g. zerodha*, *paytm*)") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF7C4DFF), unfocusedBorderColor = Color(0xFF2D3748),
+                            focusedLabelColor = Color(0xFF7C4DFF), unfocusedLabelColor = Color.White.copy(alpha = 0.4f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Category picker
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = merchantCategoryInput,
+                            onValueChange = { merchantCategoryInput = it },
+                            label = { Text("Target Category") },
+                            trailingIcon = {
+                                IconButton(onClick = { merchantCategoryDropdownExpanded = !merchantCategoryDropdownExpanded }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Color(0xFF7C4DFF))
+                                }
+                            },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF7C4DFF), unfocusedBorderColor = Color(0xFF2D3748),
+                                focusedLabelColor = Color(0xFF7C4DFF), unfocusedLabelColor = Color.White.copy(alpha = 0.4f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        DropdownMenu(
+                            expanded = merchantCategoryDropdownExpanded,
+                            onDismissRequest = { merchantCategoryDropdownExpanded = false },
+                            modifier = Modifier.background(Color(0xFF1E293B)).heightIn(max = 280.dp)
+                        ) {
+                            allMerchantCategoryOptions.forEach { (catName, catDisplay) ->
+                                DropdownMenuItem(
+                                    text = { Text(catDisplay, fontSize = 13.sp, color = Color.White) },
+                                    onClick = {
+                                        merchantCategoryInput = catName
+                                        merchantCategoryDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Add button
+                    Button(
+                        onClick = {
+                            if (merchantPatternInput.isNotBlank() && merchantCategoryInput.isNotBlank()) {
+                                viewModel.addMerchantCategoryRule(merchantPatternInput.trim(), merchantCategoryInput.trim())
+                                merchantPatternInput = ""
+                                merchantCategoryInput = ""
+                            }
+                        },
+                        enabled = merchantPatternInput.isNotBlank() && merchantCategoryInput.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF), contentColor = Color.White),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(44.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Add Rule", fontWeight = FontWeight.Bold)
+                    }
+
+                    // Existing rules list
+                    if (merchantRules.isNotEmpty()) {
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.07f))
+                        Text("Active Rules (${merchantRules.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.6f))
+                        merchantRules.forEach { (pattern, category) ->
+                            Surface(
+                                color = Color(0xFF0B0F19),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color(0xFF2D3748)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(pattern, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF00E5FF))
+                                        Text("→ $category", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
+                                    }
+                                    IconButton(
+                                        onClick = { viewModel.removeMerchantCategoryRule(pattern) },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color(0xFFF43F5E), modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        // Re-apply to existing records
+                        OutlinedButton(
+                            onClick = { viewModel.reapplyMerchantRulesToExisting() },
+                            border = BorderStroke(1.dp, Color(0xFFFF9800)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFFFF9800), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Re-apply Rules to All Existing Records", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF9800))
+                        }
                     }
                 }
             }
@@ -5686,6 +5912,43 @@ fun resolveBudgetCategoryName(category: DisplayCategory, editedName: String): St
         return trimmedName
     }
     return if (trimmedName.equals(category.displayName, ignoreCase = true)) category.name else trimmedName
+}
+
+fun shiftAnalyticsPeriod(viewModel: FinanceViewModel, monthYear: String, timeFilter: String, amount: Int) {
+    val sdf = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+    val cal = Calendar.getInstance().apply {
+        try { time = sdf.parse(monthYear) ?: Date() } catch (_: Exception) { time = Date() }
+        set(Calendar.DAY_OF_MONTH, 1)
+    }
+    when (timeFilter) {
+        "WEEKLY" -> cal.add(Calendar.DAY_OF_YEAR, amount * 7)
+        "MONTHLY" -> cal.add(Calendar.MONTH, amount)
+        "3M" -> cal.add(Calendar.MONTH, amount * 3)
+        "6M" -> cal.add(Calendar.MONTH, amount * 6)
+        "1Y" -> cal.add(Calendar.YEAR, amount)
+        else -> cal.add(Calendar.MONTH, amount)
+    }
+    viewModel.setAnchorDate(cal.timeInMillis)
+}
+
+fun formatAnalyticsPeriodLabel(monthYear: String, timeFilter: String): String {
+    val (startMs, endMs) = getAnalyticsRange(monthYear, timeFilter)
+    val startCal = Calendar.getInstance().apply { timeInMillis = startMs }
+    val endCal = Calendar.getInstance().apply { timeInMillis = endMs }
+    return when (timeFilter) {
+        "WEEKLY" -> {
+            val sdf = SimpleDateFormat("MMM d", Locale.getDefault())
+            val sdfY = SimpleDateFormat("yyyy", Locale.getDefault())
+            "${sdf.format(startCal.time)} – ${sdf.format(endCal.time)}, ${sdfY.format(endCal.time)}"
+        }
+        "MONTHLY" -> SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(endCal.time)
+        "3M", "6M" -> {
+            val sdf = SimpleDateFormat("MMM yyyy", Locale.getDefault())
+            "${sdf.format(startCal.time)} – ${sdf.format(endCal.time)}"
+        }
+        "1Y" -> SimpleDateFormat("yyyy", Locale.getDefault()).format(endCal.time)
+        else -> SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(endCal.time)
+    }
 }
 
 fun shiftPeriod(viewModel: FinanceViewModel, mode: DisplayMode, anchorTime: Long, amount: Int) {

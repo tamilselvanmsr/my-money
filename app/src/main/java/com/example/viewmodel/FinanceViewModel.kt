@@ -97,6 +97,70 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         prefs.edit().putStringSet("blocked_sms_account_ids", updated).apply()
     }
 
+    // ── Credit card detail display ─────────────────────────────────────────────
+    private val _showCreditCardDetails = MutableStateFlow(prefs.getBoolean("show_credit_card_details", false))
+    val showCreditCardDetails: StateFlow<Boolean> = _showCreditCardDetails.asStateFlow()
+    fun setShowCreditCardDetails(v: Boolean) {
+        _showCreditCardDetails.value = v
+        prefs.edit().putBoolean("show_credit_card_details", v).apply()
+    }
+
+    // ── Balance sync scan toggle ───────────────────────────────────────────────
+    private val _enableBalanceSync = MutableStateFlow(prefs.getBoolean("enable_balance_sync", true))
+    val enableBalanceSync: StateFlow<Boolean> = _enableBalanceSync.asStateFlow()
+    fun setEnableBalanceSync(v: Boolean) {
+        _enableBalanceSync.value = v
+        prefs.edit().putBoolean("enable_balance_sync", v).apply()
+    }
+
+    // ── Hidden wallets (display only) ─────────────────────────────────────────
+    private val _hiddenAccountIds = MutableStateFlow(prefs.getStringSet("hidden_account_ids", emptySet())?.toSet() ?: emptySet())
+    val hiddenAccountIds: StateFlow<Set<String>> = _hiddenAccountIds.asStateFlow()
+    fun setAccountHidden(accountId: String, hidden: Boolean) {
+        val updated = _hiddenAccountIds.value.toMutableSet()
+        if (hidden) updated.add(accountId) else updated.remove(accountId)
+        _hiddenAccountIds.value = updated
+        prefs.edit().putStringSet("hidden_account_ids", updated).apply()
+    }
+
+    // ── SMS import blocklist patterns (bank name / last-4 wildcards) ──────────
+    private val _smsBlocklistPatterns = MutableStateFlow(prefs.getStringSet("sms_blocklist_patterns", emptySet())?.toSet() ?: emptySet())
+    val smsBlocklistPatterns: StateFlow<Set<String>> = _smsBlocklistPatterns.asStateFlow()
+    fun addSmsBlocklistPattern(pattern: String) {
+        val updated = _smsBlocklistPatterns.value.toMutableSet().also { it.add(pattern.trim()) }
+        _smsBlocklistPatterns.value = updated
+        prefs.edit().putStringSet("sms_blocklist_patterns", updated).apply()
+    }
+    fun removeSmsBlocklistPattern(pattern: String) {
+        val updated = _smsBlocklistPatterns.value.toMutableSet().also { it.remove(pattern) }
+        _smsBlocklistPatterns.value = updated
+        prefs.edit().putStringSet("sms_blocklist_patterns", updated).apply()
+    }
+    fun matchesSmsBlocklistPattern(ref: String): Boolean {
+        val lower = ref.lowercase().trim()
+        return _smsBlocklistPatterns.value.any { pat ->
+            val p = pat.lowercase().trim()
+            when {
+                p.startsWith("*") && p.endsWith("*") && p.length > 2 -> lower.contains(p.substring(1, p.length - 1))
+                p.startsWith("*") -> lower.endsWith(p.substring(1))
+                p.endsWith("*") -> lower.startsWith(p.dropLast(1))
+                else -> lower.contains(p)
+            }
+        }
+    }
+    fun deleteTransactionsMatchingBlocklist() {
+        viewModelScope.launch {
+            var n = 0
+            allTransactions.value.forEach { tx ->
+                val ref = tx.note?.substringAfter("[Acc: ")?.substringBefore("]") ?: tx.smsSender ?: ""
+                if (matchesSmsBlocklistPattern(ref) || matchesSmsBlocklistPattern(tx.title)) {
+                    repository.deleteTransaction(tx.id); n++
+                }
+            }
+            _toastMessage.emit(if (n > 0) "Deleted $n transaction(s) matching blocklist." else "No matching transactions found.")
+        }
+    }
+
     // ── Merchant → Category Rules ──────────────────────────────────────────────
     private fun loadMerchantCategoryRules(): List<Pair<String, String>> {
         val json = prefs.getString("merchant_category_rules", "[]") ?: "[]"
@@ -639,6 +703,25 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Sets a balance snapshot for [accountName] at [targetBalance]. */
+    fun adjustAccountBalance(accountName: String, currentBalance: Double, targetBalance: Double) {
+        if (Math.abs(targetBalance - currentBalance) < 0.01) return
+        viewModelScope.launch {
+            // Store the absolute target as a BALANCE_UPDATE snapshot.
+            // computeWalletBalances will use this as the starting point going forward.
+            val tx = TransactionEntry(
+                title = "Balance Adjustment",
+                amount = targetBalance,
+                category = "ADJUST",
+                type = "BALANCE_UPDATE",
+                note = "Snapshot \u20b9${String.format("%.2f", targetBalance)} [Acc: $accountName]",
+                timestamp = System.currentTimeMillis()
+            )
+            repository.insertTransaction(tx)
+            _toastMessage.emit("Balance set to \u20b9${String.format("%.2f", targetBalance)} for $accountName")
+        }
+    }
+
     fun updateTransaction(tx: TransactionEntry) {
         viewModelScope.launch {
             repository.updateTransaction(tx)
@@ -772,6 +855,22 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         if (parsed != null) {
                             val targetTime = parsed.parsedTimestamp ?: smsDate
 
+                            // Handle bank available balance notification SMS
+                            if (parsed.isBalanceUpdate && parsed.availableBalance != null && enableBalanceSync.value) {
+                                val pairs = if (parsed.allBalancePairs.isNotEmpty()) parsed.allBalancePairs
+                                            else if (parsed.accountRef != null) listOf(parsed.accountRef to parsed.availableBalance!!)
+                                            else emptyList()
+                                for ((ref, bal) in pairs) {
+                                    val linkedAcc = repository.getAccountByRef(ref)
+                                    if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
+                                        if (createBalanceAdjustIfNeeded(linkedAcc, bal, targetTime, body, sender, projectedTransactions)) {
+                                            matchedCount++
+                                        }
+                                    }
+                                }
+                                continue
+                            }
+
                             val walletName = ensureAccountExists(parsed.accountRef, sender, body) ?: continue
                             val potentialDuplicates = repository.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
                             val incomingRef = com.example.utils.SmsParser.getReferenceNumber(body)
@@ -798,7 +897,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     incomingAccountName = walletName
                                 )
                             }
-                            if (!duplicate) {
+                            if (!duplicate && !matchesSmsBlocklistPattern(walletName) && !matchesSmsBlocklistPattern(sender)) {
                                 val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
                                 val tx = TransactionEntry(
                                     title = parsed.title,
@@ -842,6 +941,43 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     // SMS Simulation Engine
     private val _isSmsParsing = MutableStateFlow(false)
     val isSmsParsing: StateFlow<Boolean> = _isSmsParsing.asStateFlow()
+
+    /**
+     * Creates an ADJUST income/expense transaction if the reported balance differs from current computed balance.
+     * Returns true if a transaction was created.
+     */
+    private suspend fun createBalanceAdjustIfNeeded(
+        account: Account,
+        reportedBalance: Double,
+        timestamp: Long,
+        smsBody: String,
+        sender: String,
+        projectedTransactions: MutableList<TransactionEntry>
+    ): Boolean {
+        // Dedup: skip if we already have a BALANCE_UPDATE snapshot for this account at this exact SMS timestamp
+        if (projectedTransactions.any {
+            it.type == "BALANCE_UPDATE" &&
+            it.getAccountName() == account.name &&
+            it.timestamp == timestamp
+        }) return false
+
+        // Store the ABSOLUTE reported balance as a point-in-time snapshot.
+        // computeWalletBalances will use this as the starting balance and only apply
+        // transactions that arrived AFTER this timestamp — no diff calculation needed.
+        val tx = TransactionEntry(
+            title = "Balance Sync",
+            amount = reportedBalance,
+            category = "ADJUST",
+            type = "BALANCE_UPDATE",
+            smsSender = sender,
+            smsBody = smsBody,
+            timestamp = timestamp,
+            note = "$smsBody [Acc: ${account.name}]"
+        )
+        repository.insertTransaction(tx)
+        projectedTransactions.add(tx)
+        return true
+    }
 
     fun analyzePastedSms(
         smsBody: String,
@@ -941,7 +1077,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val cutoffTime = cal.timeInMillis
                 var matchedCount = 0
                 val projectedTransactions = allTransactions.value.toMutableList()
-                val allPatterns = (forcePatterns + customPatterns).map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
+                // Separate inclusion patterns from exclusion patterns (prefix '!')
+                val positiveCustom = customPatterns.filter { !it.trimStart().startsWith("!") }
+                val negativePatterns = customPatterns
+                    .filter { it.trimStart().startsWith("!") }
+                    .map { it.trimStart().removePrefix("!").trim().removeSurrounding("(", ")").trim().lowercase() }
+                    .filter { it.isNotBlank() }
+                val allPatterns = (forcePatterns + positiveCustom).map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
 
                 if (cursor != null) {
                     val bodyIndex = cursor.getColumnIndex("body")
@@ -954,6 +1096,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
                         val body = cursor.getString(bodyIndex) ?: ""
                         val sender = cursor.getString(addressIndex) ?: "Unknown"
+
+                        // Skip if body matches any exclusion pattern (custom pattern starting with !)
+                        if (negativePatterns.isNotEmpty()) {
+                            val lb = body.lowercase()
+                            val isExcluded = negativePatterns.any { pattern ->
+                                runCatching { Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(body) }
+                                    .getOrDefault(lb.contains(pattern))
+                            }
+                            if (isExcluded) continue
+                        }
 
                         // 1. Standard parse
                         var parsed = com.example.utils.SmsParser.parseOffline(body, sender, smsDate, false)
@@ -981,6 +1133,23 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
                         if (parsed != null) {
                             val targetTime = parsed.parsedTimestamp ?: smsDate
+
+                            // Handle bank available balance notification SMS (before ensureAccountExists to avoid creating phantom accounts)
+                            if (parsed.isBalanceUpdate && parsed.availableBalance != null && enableBalanceSync.value) {
+                                val pairs = if (parsed.allBalancePairs.isNotEmpty()) parsed.allBalancePairs
+                                            else if (parsed.accountRef != null) listOf(parsed.accountRef to parsed.availableBalance!!)
+                                            else emptyList()
+                                for ((ref, bal) in pairs) {
+                                    val linkedAcc = repository.getAccountByRef(ref)
+                                    if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
+                                        if (createBalanceAdjustIfNeeded(linkedAcc, bal, targetTime, body, sender, projectedTransactions)) {
+                                            matchedCount++
+                                        }
+                                    }
+                                }
+                                continue
+                            }
+
                             val walletName = ensureAccountExists(parsed.accountRef, sender, body) ?: continue
                             val potentialDuplicates = repository.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
                             val incomingRef = com.example.utils.SmsParser.getReferenceNumber(body)
@@ -989,7 +1158,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             } || potentialDuplicates.any { existing ->
                                 isDuplicateImportedTransaction(existing, body, parsed.title, parsed.amount, parsed.type, targetTime, incomingRef, walletName)
                             }
-                            if (!duplicate) {
+                            if (!duplicate && !matchesSmsBlocklistPattern(walletName) && !matchesSmsBlocklistPattern(sender)) {
                                 val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
                                 val tx = TransactionEntry(
                                     title = parsed.title,
@@ -1003,11 +1172,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 )
                                 repository.insertTransaction(tx)
                                 projectedTransactions.add(tx)
-                                maybeNotifyBudgetAlert(tx, projectedTransactions)
-                                if (parsed.availableLimit != null && parsed.accountRef != null) {
-                                    val linkedAccount = repository.getAccountByLastFour(parsed.accountRef)
-                                    if (linkedAccount != null) repository.updateAccountAvailableLimit(linkedAccount.id, parsed.availableLimit)
-                                }
                                 matchedCount++
                             }
                         }

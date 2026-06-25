@@ -51,6 +51,50 @@ class SmsReceiver : BroadcastReceiver() {
 
                         val targetTime = parsed.parsedTimestamp ?: sms.timestampMillis
 
+                        // --- Handle balance-snapshot SMS (available balance notification) ---
+                        if (parsed.isBalanceUpdate && parsed.availableBalance != null) {
+                            // Build pairs list: use allBalancePairs if multi-account, else single ref
+                            val pairs: List<Pair<String, Double>> = if (parsed.allBalancePairs.isNotEmpty()) {
+                                parsed.allBalancePairs
+                            } else if (parsed.accountRef != null) {
+                                val hyphen = parsed.accountRef.indexOf('-')
+                                val digits = if (hyphen != -1) parsed.accountRef.substring(hyphen + 1) else parsed.accountRef
+                                listOf(digits to parsed.availableBalance)
+                            } else emptyList()
+
+                            val allTx = dao.getAllTransactions().first()
+                            for ((refDigits, bal) in pairs) {
+                                // Only update if account already exists — ignore unknown account refs
+                                val linkedAcc = dao.getAccountByLastFour(refDigits)
+                                    ?: if (refDigits.length == 3) dao.getAccountByLastFourSuffix(refDigits) else null
+                                if (linkedAcc != null) {
+                                    val isDup = allTx.any {
+                                        it.type == "BALANCE_UPDATE" &&
+                                        it.timestamp == targetTime &&
+                                        it.note?.contains("[Acc: ${linkedAcc.name}]") == true
+                                    }
+                                    if (!isDup) {
+                                        val snapTx = TransactionEntry(
+                                            title = "Balance Sync",
+                                            amount = bal,
+                                            category = "ADJUST",
+                                            type = "BALANCE_UPDATE",
+                                            smsSender = sender,
+                                            smsBody = body,
+                                            timestamp = targetTime,
+                                            note = "$body [Acc: ${linkedAcc.name}]"
+                                        )
+                                        dao.insertTransaction(snapTx)
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(context, "MyMoney: Balance updated to \u20b9${String.format("%.2f", bal)} for ${linkedAcc.name}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
+                            }
+                            return@launch  // Don't also create a regular transaction
+                        }
+
+                        // --- Regular expense / income transaction ---
                         val walletName = ensureAccountExists(context, dao, parsed.accountRef, sender, body) ?: return@launch
                         val potentialDuplicates = dao.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
                         val incomingRef = com.example.utils.SmsParser.getReferenceNumber(body)

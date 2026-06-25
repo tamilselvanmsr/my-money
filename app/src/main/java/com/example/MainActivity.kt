@@ -80,7 +80,7 @@ enum class AppTab(val label: String, val icon: androidx.compose.ui.graphics.vect
     ANALYTICS("Analysis", Icons.Default.DonutLarge),
     BUDGETS("Budgets", Icons.Default.Calculate),
     ACCOUNT("Accounts", Icons.Default.AccountBalanceWallet),
-    AUTO_SCAN("Auto-Scan Hub", Icons.Default.Security)
+    AUTO_SCAN("SMS Scan", Icons.Default.Security)
 }
 
 // Pseudo accounts parsing extension helpers
@@ -112,7 +112,7 @@ fun TransactionEntry.getAccountName(consolidate: Boolean = false): String {
         lower.contains("card") || lower.contains("credit") -> "Credit Card"
         lower.contains("bank") || lower.contains("sbi") || lower.contains("hdfc") || lower.contains("icici") || lower.contains("axis") || lower.contains("pnb") -> "Bank Account"
         lower.contains("cash") -> "Cash Wallet"
-        lower.contains("savings") -> "Savings Goal"
+        lower.contains("wallet") -> "Digital Wallet"
         else -> "Bank Account"
     }
 }
@@ -130,38 +130,61 @@ fun computeWalletBalances(
     consolidate: Boolean = false
 ): Map<String, Double> {
     val balances = mutableMapOf<String, Double>()
+
+    // Step 1 — find the latest BALANCE_UPDATE snapshot per actual account name.
+    // Always use consolidate=false so we key by real account name, not generic type.
+    val latestSnap = mutableMapOf<String, Pair<Long, Double>>()  // actualName -> (timestamp, absoluteBalance)
+    for (tx in transactions) {
+        if (tx.type != "BALANCE_UPDATE") continue
+        val actualName = tx.getAccountName(consolidate = false)
+        val prev = latestSnap[actualName]
+        if (prev == null || tx.timestamp > prev.first) {
+            latestSnap[actualName] = Pair(tx.timestamp, tx.amount)
+        }
+    }
+
+    // Step 2 — initialise each balance bucket from snapshot (if present) else account.balance.
     if (accountsList.isEmpty()) {
         balances["Cash Wallet"] = 0.0
         balances["Bank Account"] = 0.0
         balances["Credit Card"] = 0.0
-        balances["Savings Goal"] = 0.0
+        balances["Digital Wallet"] = 0.0
     } else {
         if (consolidate) {
             balances["Cash Wallet"] = 0.0
             balances["Bank Account"] = 0.0
             balances["Credit Card"] = 0.0
-            balances["Savings Goal"] = 0.0
+            balances["Digital Wallet"] = 0.0
             for (acc in accountsList) {
                 val genericName = when (acc.type) {
                     "CASH" -> "Cash Wallet"
                     "BANK" -> "Bank Account"
                     "CREDIT_CARD" -> "Credit Card"
-                    "SAVINGS" -> "Savings Goal"
+                    "WALLET" -> "Digital Wallet"
                     else -> "Bank Account"
                 }
-                balances[genericName] = (balances[genericName] ?: 0.0) + (if (carryOverPreviousAmount) acc.balance else 0.0)
+                val snap = latestSnap[acc.name]
+                val startBal = snap?.second ?: (if (carryOverPreviousAmount) acc.balance else 0.0)
+                balances[genericName] = (balances[genericName] ?: 0.0) + startBal
             }
         } else {
             for (acc in accountsList) {
-                balances[acc.name] = if (carryOverPreviousAmount) acc.balance else 0.0
+                val snap = latestSnap[acc.name]
+                balances[acc.name] = snap?.second ?: (if (carryOverPreviousAmount) acc.balance else 0.0)
             }
         }
     }
+
+    // Step 3 — apply regular transactions that occurred AFTER the snapshot.
+    // Pre-snapshot transactions are already baked into the snapshot amount.
     for (tx in transactions) {
-        if (tx.type == "DUPLICATE") continue
-        val account = tx.getAccountName(consolidate)
+        if (tx.type == "DUPLICATE" || tx.type == "BALANCE_UPDATE") continue
+        val actualName = tx.getAccountName(consolidate = false)
+        val snap = latestSnap[actualName]
+        if (snap != null && tx.timestamp <= snap.first) continue  // pre-snapshot — already accounted for
+        val accountKey = tx.getAccountName(consolidate)
         val change = if (tx.type == "INCOME") tx.amount else -tx.amount
-        balances[account] = (balances[account] ?: 0.0) + change
+        balances[accountKey] = (balances[accountKey] ?: 0.0) + change
     }
     return balances
 }
@@ -820,7 +843,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     val walletList = if (accounts.isEmpty()) {
-                        listOf("All", "Cash Wallet", "Bank Account", "Credit Card", "Savings Goal")
+                        listOf("All", "Cash Wallet", "Bank Account", "Credit Card", "Digital Wallet")
                     } else {
                         listOf("All") + accounts.map { it.name }
                     }
@@ -851,14 +874,14 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                         name == "Cash Wallet" -> Icons.Default.Money
                                         name == "Bank Account" -> Icons.Default.AccountBalance
                                         name == "Credit Card" -> Icons.Default.CreditCard
-                                        name == "Savings Goal" -> Icons.Default.Savings
+                                        name == "Digital Wallet" -> Icons.Default.AccountBalanceWallet
                                         else -> {
                                             val acType = accounts.find { it.name == name }?.type ?: ""
                                             when(acType) {
                                                 "CASH" -> Icons.Default.Money
                                                 "BANK" -> Icons.Default.AccountBalance
                                                 "CREDIT_CARD" -> Icons.Default.CreditCard
-                                                "SAVINGS" -> Icons.Default.Savings
+                                                "WALLET" -> Icons.Default.AccountBalanceWallet
                                                 else -> Icons.Default.AllInclusive
                                             }
                                         }
@@ -997,7 +1020,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             color = Color(0xFF00E5FF)
                         )
                         
-                        val dateNet = txList.filter { it.type != "DUPLICATE" }.sumOf { if (it.type == "INCOME") it.amount else -it.amount }
+                        val dateNet = txList.filter { it.type != "DUPLICATE" && it.type != "BALANCE_UPDATE" }.sumOf { if (it.type == "INCOME") it.amount else -it.amount }
                         Text(
                             text = (if (dateNet >= 0) "+" else "") + decFormat.format(dateNet),
                             fontSize = 11.sp,
@@ -1009,11 +1032,12 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
 
                 items(txList) { tx ->
                     val resolvedCat = CategoryResolver.resolve(tx.category, customCats)
+                    val isAdjust = tx.category.equals("ADJUST", ignoreCase = true)
                     
                     Surface(
-                        color = Color(0xFF131A26),
+                        color = if (isAdjust) Color(0xFF00E5FF).copy(alpha = 0.06f) else Color(0xFF131A26),
                         shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                        border = BorderStroke(1.dp, if (isAdjust) Color(0xFF00E5FF).copy(alpha = 0.45f) else Color(0xFF1E293B)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
@@ -1075,6 +1099,14 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                     text = when (tx.type) {
                                         "INCOME" -> "+" + decFormat.format(tx.amount)
                                         "DUPLICATE" -> "DUP"
+                                        "BALANCE_UPDATE" -> {
+                                            val a = tx.amount
+                                            when {
+                                                a >= 1_000_000 -> "\u20b9${String.format("%.1f", a / 1_000_000)}M"
+                                                a >= 1_000 -> "\u20b9${String.format("%.1f", a / 1_000)}K"
+                                                else -> "\u20b9${a.toInt()}"
+                                            }
+                                        }
                                         else -> "-" + decFormat.format(tx.amount)
                                     },
                                     fontWeight = FontWeight.ExtraBold,
@@ -1082,6 +1114,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                     color = when (tx.type) {
                                         "INCOME" -> Color(0xFF10B981)
                                         "DUPLICATE" -> Color.White.copy(alpha = 0.35f)
+                                        "BALANCE_UPDATE" -> Color.White.copy(alpha = 0.35f)
                                         else -> Color(0xFFF43F5E)
                                     }
                                 )
@@ -1177,13 +1210,14 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
 fun AnalyticsScreen(viewModel: FinanceViewModel) {
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
     val rawMonthYear by viewModel.selectedMonthYear.collectAsStateWithLifecycle()
+    val anchorTime by viewModel.anchorDate.collectAsStateWithLifecycle()
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
 
     var timeFilter by remember { mutableStateOf("MONTHLY") }
     var selectedMode by remember { mutableStateOf(AnalyticsMode.EXPENSE_OVERVIEW) }
     var showModeMenu by remember { mutableStateOf(false) }
     var showPeriodMenu by remember { mutableStateOf(false) }
-    val (analysisStart, analysisEnd) = getAnalyticsRange(rawMonthYear, timeFilter)
+    val (analysisStart, analysisEnd) = getAnalyticsRange(rawMonthYear, timeFilter, anchorTime)
 
     val filteredTransactions = txs.filter { tx ->
         tx.timestamp in analysisStart..analysisEnd
@@ -1238,13 +1272,13 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             IconButton(
-                                onClick = { shiftAnalyticsPeriod(viewModel, rawMonthYear, timeFilter, -1) },
+                                onClick = { shiftAnalyticsPeriod(viewModel, rawMonthYear, timeFilter, -1, anchorTime) },
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Period", tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
                             }
                             Text(
-                                text = formatAnalyticsPeriodLabel(rawMonthYear, timeFilter),
+                                text = formatAnalyticsPeriodLabel(rawMonthYear, timeFilter, anchorTime),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = Color.White,
@@ -1254,7 +1288,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                 overflow = TextOverflow.Ellipsis
                             )
                             IconButton(
-                                onClick = { shiftAnalyticsPeriod(viewModel, rawMonthYear, timeFilter, 1) },
+                                onClick = { shiftAnalyticsPeriod(viewModel, rawMonthYear, timeFilter, 1, anchorTime) },
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Icon(Icons.Default.ChevronRight, contentDescription = "Next Period", tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
@@ -2501,13 +2535,6 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
         // Upper Title HUD
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = if (activeCategoryTypeTab == "EXPENSE") "Expense Budgets" else "Income Categories",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = Color.White
-                )
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2610,74 +2637,103 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
         }
 
         // Aggregate Overarching Budget Status card
-        val globalBudgetLimit = activeBudgets.sumOf { it.amountLimit }
+        val allCats = CategoryResolver.getAll(customCats)
+        val expenseCatNames = allCats.filter { it.type == "EXPENSE" }.map { it.name.lowercase() }.toSet()
+        val incomeCatNames = allCats.filter { it.type == "INCOME" }.map { it.name.lowercase() }.toSet()
+        val globalBudgetLimit = activeBudgets
+            .filter { expenseCatNames.contains(it.category.lowercase()) }
+            .sumOf { it.amountLimit }
         val globalBudgetSpend = monthExpenses.sumOf { it.amount }
         
         if (activeCategoryTypeTab == "EXPENSE") {
             item {
-                Surface(
-                    color = Color(0xFF131A26),
-                    shape = RoundedCornerShape(24.dp),
-                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Text(
-                            text = "TOTAL BUDGET PROGRESS",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            letterSpacing = 1.sp,
-                            color = Color.White.copy(alpha = 0.5f)
+                val percent = if (globalBudgetLimit > 0) (globalBudgetSpend / globalBudgetLimit * 100) else 0.0
+                val progressFraction = if (globalBudgetLimit > 0) (globalBudgetSpend / globalBudgetLimit).toFloat().coerceIn(0f, 1f) else 0f
+                val overBudget = globalBudgetLimit > 0 && globalBudgetSpend > globalBudgetLimit
+                val accentColor = if (overBudget) Color(0xFFF43F5E) else budgetProgressColor(percent)
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    accentColor.copy(alpha = 0.18f),
+                                    Color(0xFF131A26)
+                                )
+                            )
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        
+                        .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Bottom
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
                                 Text(
+                                    text = "MONTHLY BUDGET",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.2.sp,
+                                    color = Color.White.copy(alpha = 0.45f)
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
                                     text = decFormat.format(globalBudgetSpend),
                                     fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 28.sp,
-                                    color = if (globalBudgetSpend > globalBudgetLimit && globalBudgetLimit > 0) Color(0xFFF43F5E) else Color.White
-                                )
-                                Text(
-                                    "of ${decFormat.format(globalBudgetLimit)}",
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.White.copy(alpha = 0.55f)
+                                    fontSize = 26.sp,
+                                    color = accentColor
                                 )
                             }
-                            
-                            if (globalBudgetLimit > 0) {
-                                val percent = globalBudgetSpend / globalBudgetLimit * 100
-                                val progressColor = budgetProgressColor(percent)
+                            Column(horizontalAlignment = Alignment.End) {
+                                if (globalBudgetLimit > 0) {
+                                    Text(
+                                        text = "${String.format(Locale.getDefault(), "%.0f", percent)}%",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 22.sp,
+                                        color = accentColor
+                                    )
+                                }
                                 Text(
-                                    text = "${String.format(Locale.getDefault(), "%.1f", percent)}%",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 20.sp,
-                                    color = progressColor
+                                    text = "of ${decFormat.format(globalBudgetLimit)}",
+                                    fontSize = 12.sp,
+                                    color = Color.White.copy(alpha = 0.5f)
                                 )
                             }
                         }
-                        
                         if (globalBudgetLimit > 0) {
-                            Spacer(modifier = Modifier.height(14.dp))
-                            val actualPercent = globalBudgetSpend / globalBudgetLimit * 100
-                            val progressFraction = (globalBudgetSpend / globalBudgetLimit).toFloat().coerceIn(0f, 1f)
-                            val barColor = budgetProgressColor(actualPercent)
-                            
-                            LinearProgressIndicator(
-                                progress = progressFraction,
-                                color = barColor,
-                                trackColor = Color.White.copy(alpha = 0.05f),
+                            Spacer(Modifier.height(12.dp))
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(8.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                            )
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(Color.White.copy(alpha = 0.08f))
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(progressFraction)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                listOf(accentColor.copy(0.7f), accentColor)
+                                            )
+                                        )
+                                )
+                            }
+                            if (overBudget) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    text = "Over by ${decFormat.format(globalBudgetSpend - globalBudgetLimit)}",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFF43F5E),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
                 }
@@ -2685,63 +2741,96 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
         }
 
         if (activeCategoryTypeTab == "INCOME") {
-            val incomeExpectedTotal = activeBudgets.filter { budget ->
-                baseCategories.any { it.name.equals(budget.category, ignoreCase = true) }
-            }.sumOf { it.amountLimit }
+            val incomeExpectedTotal = activeBudgets
+                .filter { incomeCatNames.contains(it.category.lowercase()) }
+                .sumOf { it.amountLimit }
             val incomeReceivedTotal = txs.filter {
                 val txMonth = sdfMonth.format(Date(it.timestamp))
                 txMonth == rawMonthYear && it.type == "INCOME"
             }.sumOf { it.amount }
             if (incomeExpectedTotal > 0) {
                 item {
-                    Surface(
-                        color = Color(0xFF131A26),
-                        shape = RoundedCornerShape(24.dp),
-                        border = BorderStroke(1.dp, Color(0xFF1E293B)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(20.dp)) {
-                            Text(
-                                text = "INCOME OVERVIEW",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                letterSpacing = 1.sp,
-                                color = Color.White.copy(alpha = 0.5f)
+                    val incPct = if (incomeExpectedTotal > 0) (incomeReceivedTotal / incomeExpectedTotal * 100) else 0.0
+                    val incFraction = if (incomeExpectedTotal > 0) (incomeReceivedTotal / incomeExpectedTotal).toFloat().coerceIn(0f, 1f) else 0f
+                    val overTarget = incomeReceivedTotal >= incomeExpectedTotal
+                    val incColor = if (overTarget) Color(0xFF10B981) else Color(0xFF00E5FF)
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(incColor.copy(alpha = 0.18f), Color(0xFF131A26))
+                                )
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            .border(1.dp, incColor.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column {
-                                    Text("EXPECTED", fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.8.sp, color = Color.White.copy(alpha = 0.45f))
                                     Text(
-                                        text = decFormat.format(incomeExpectedTotal),
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 22.sp,
-                                        color = Color.White
+                                        text = "MONTHLY INCOME",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 1.2.sp,
+                                        color = Color.White.copy(alpha = 0.45f)
                                     )
-                                }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text("RECEIVED", fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.8.sp, color = Color.White.copy(alpha = 0.45f))
+                                    Spacer(Modifier.height(2.dp))
                                     Text(
                                         text = decFormat.format(incomeReceivedTotal),
                                         fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 26.sp,
+                                        color = incColor
+                                    )
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "${String.format(Locale.getDefault(), "%.0f", incPct)}%",
+                                        fontWeight = FontWeight.ExtraBold,
                                         fontSize = 22.sp,
-                                        color = Color(0xFF10B981)
+                                        color = incColor
+                                    )
+                                    Text(
+                                        text = "of ${decFormat.format(incomeExpectedTotal)}",
+                                        fontSize = 12.sp,
+                                        color = Color.White.copy(alpha = 0.5f)
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Spacer(modifier = Modifier.height(10.dp))
-                            LinearProgressIndicator(
-                                progress = (incomeReceivedTotal / incomeExpectedTotal).toFloat().coerceIn(0f, 1f),
-                                color = Color(0xFF10B981),
-                                trackColor = Color.White.copy(alpha = 0.05f),
-                                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
-                            )
+                            Spacer(Modifier.height(12.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(Color.White.copy(alpha = 0.08f))
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(incFraction)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                listOf(incColor.copy(0.7f), incColor)
+                                            )
+                                        )
+                                )
+                            }
+                            if (overTarget) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    text = "Target reached! +${decFormat.format(incomeReceivedTotal - incomeExpectedTotal)} extra",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF10B981),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
                 }
@@ -3373,15 +3462,19 @@ fun AccountScreen(viewModel: FinanceViewModel) {
     val carryOverPreviousAmount by viewModel.carryOverPreviousAmount.collectAsStateWithLifecycle()
     val showTotal by viewModel.showTotal.collectAsStateWithLifecycle()
     val blockedSmsAccountIds by viewModel.blockedSmsAccountIds.collectAsStateWithLifecycle()
+    val showCreditCardDetails by viewModel.showCreditCardDetails.collectAsStateWithLifecycle()
+    val hiddenAccountIds by viewModel.hiddenAccountIds.collectAsStateWithLifecycle()
+    val smsBlocklistPatterns by viewModel.smsBlocklistPatterns.collectAsStateWithLifecycle()
     val walletsBalances = computeWalletBalances(txs, accounts, carryOverPreviousAmount)
-    
+
     var showTransferDialog by remember { mutableStateOf(false) }
     var showAddAccountDialog by remember { mutableStateOf(false) }
     var selectedAccountForEdit by remember { mutableStateOf<Account?>(null) }
+    var showAccountCenterSettings by remember { mutableStateOf(false) }
 
     val decFormat = DecimalFormat("₹#,##0.00")
 
-    val activeAccounts = accounts
+    val activeAccounts = accounts.filter { !hiddenAccountIds.contains(it.id) }
     val orderedAccounts = activeAccounts
 
     val totalAllAccounts = activeAccounts.sumOf { walletsBalances[it.name] ?: 0.0 }
@@ -3397,12 +3490,31 @@ fun AccountScreen(viewModel: FinanceViewModel) {
     ) {
         // Upper balance HUD
         item {
-            Text(
-                text = "Accounts Center",
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                color = Color.White
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Accounts Center",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = Color.White
+                )
+                IconButton(onClick = { showAccountCenterSettings = true }) {
+                    Icon(Icons.Default.Menu, contentDescription = "Account Settings", tint = Color.White)
+                }
+            }
+            if (showAccountCenterSettings) {
+                AccountCenterSettingsDialog(
+                    viewModel = viewModel,
+                    accounts = accounts,
+                    hiddenAccountIds = hiddenAccountIds,
+                    showCreditCardDetails = showCreditCardDetails,
+                    smsBlocklistPatterns = smsBlocklistPatterns,
+                    onDismiss = { showAccountCenterSettings = false }
+                )
+            }
         }
 
         // Net Wealth Overview Card
@@ -3540,7 +3652,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                             "CASH" -> Color(0xFF10B981)
                             "BANK" -> Color(0xFF00E5FF)
                             "CREDIT_CARD" -> Color(0xFFF43F5E)
-                            "SAVINGS" -> Color(0xFFE91E63)
+                            "WALLET" -> Color(0xFFFF9800)
                             else -> Color(0xFF94A3B8)
                         }
 
@@ -3561,7 +3673,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                         "CASH" -> Icons.Default.Money
                                         "BANK" -> Icons.Default.AccountBalance
                                         "CREDIT_CARD" -> Icons.Default.CreditCard
-                                        "SAVINGS" -> Icons.Default.Savings
+                                        "WALLET" -> Icons.Default.AccountBalanceWallet
                                         else -> Icons.Default.AllInclusive
                                     },
                                     contentDescription = acc.type,
@@ -3595,7 +3707,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                         fontSize = 16.sp,
                                         color = if (bal >= 0) Color(0xFF10B981) else Color(0xFFF43F5E)
                                     )
-                                    if (acc.type == "CREDIT_CARD" && acc.availableLimit > 0) {
+                                    if (acc.type == "CREDIT_CARD" && showCreditCardDetails && acc.availableLimit > 0) {
                                         Text(
                                             text = "Avail: ${decFormat.format(acc.availableLimit)}",
                                             fontSize = 11.sp,
@@ -3734,7 +3846,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
         var last4Input by remember { mutableStateOf("") }
         var openingBalanceTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
 
-        val types = listOf("CASH", "BANK", "CREDIT_CARD", "SAVINGS")
+        val types = listOf("CASH", "BANK", "CREDIT_CARD", "WALLET")
 
         AlertDialog(
             onDismissRequest = { showAddAccountDialog = false },
@@ -3822,21 +3934,38 @@ fun AccountScreen(viewModel: FinanceViewModel) {
 
     // Dialog: Adjust / Edit / Delete Account Dialog
     selectedAccountForEdit?.let { acc ->
+        val computedBal = walletsBalances[acc.name] ?: acc.balance
         var editName by remember(acc) { mutableStateOf(acc.name) }
-        var editBalanceInput by remember(acc) { mutableStateOf(acc.balance.toString()) }
+        var editBalanceInput by remember(acc) { mutableStateOf(String.format("%.2f", computedBal)) }
         var editType by remember(acc) { mutableStateOf(acc.type) }
         var editLast4 by remember(acc) { mutableStateOf(acc.lastFour ?: "") }
         var editCreditLimit by remember(acc) { mutableStateOf(if (acc.creditLimit > 0) acc.creditLimit.toString() else "") }
-        var smsTrackingEnabled by remember(acc, blockedSmsAccountIds) { mutableStateOf(!blockedSmsAccountIds.contains(acc.id)) }
 
-        val types = listOf("CASH", "BANK", "CREDIT_CARD", "SAVINGS")
+        val types = listOf("CASH", "BANK", "CREDIT_CARD", "WALLET")
 
         AlertDialog(
             onDismissRequest = { selectedAccountForEdit = null },
-            title = { Text("Fine-Tune Wallet Ledger", fontWeight = FontWeight.Bold, color = Color.White) },
+            title = { Text("Edit Wallet", fontWeight = FontWeight.Bold, color = Color.White) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("Directly correct or override this active wallet balance. You may also update metadata properties safely.", fontSize = 11.sp, color = Color.White.copy(alpha = 0.6f))
+                    Surface(
+                        color = Color(0xFF00E5FF).copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.3f))
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Current Balance", fontSize = 12.sp, color = Color.White.copy(0.6f))
+                            Text(
+                                text = "₹${String.format("%.2f", computedBal)}",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF00E5FF)
+                            )
+                        }
+                    }
 
                     OutlinedTextField(
                         value = editName,
@@ -3849,7 +3978,8 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                     OutlinedTextField(
                         value = editBalanceInput,
                         onValueChange = { editBalanceInput = it },
-                        label = { Text("Target Base Balance (₹)") },
+                        label = { Text("Set New Balance (₹)") },
+                        placeholder = { Text("e.g. 25000", color = Color.White.copy(0.4f)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF)),
                         modifier = Modifier.fillMaxWidth()
@@ -3874,36 +4004,6 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Track this wallet from SMS",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
-                            Text(
-                                text = "Turn this off to block future inbox and real-time auto imports for this account.",
-                                color = Color.White.copy(alpha = 0.55f),
-                                fontSize = 11.sp
-                            )
-                        }
-                        Switch(
-                            checked = smsTrackingEnabled,
-                            onCheckedChange = { smsTrackingEnabled = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF00E5FF),
-                                checkedTrackColor = Color(0xFF00E5FF).copy(alpha = 0.45f),
-                                uncheckedThumbColor = Color.White,
-                                uncheckedTrackColor = Color.White.copy(alpha = 0.2f)
-                            )
-                        )
-                    }
-
                     Column {
                         Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
                         Spacer(modifier = Modifier.height(4.dp))
@@ -3940,22 +4040,23 @@ fun AccountScreen(viewModel: FinanceViewModel) {
 
                     Button(
                         onClick = {
-                            val targetBal = editBalanceInput.toDoubleOrNull() ?: 0.0
+                            val targetBal = editBalanceInput.toDoubleOrNull() ?: computedBal
                             val oldName = acc.name
-                            val txOffset = txs.filter { it.getAccountName() == oldName && it.type != "DUPLICATE" }
-                                .sumOf { if (it.type == "INCOME") it.amount else -it.amount }
-                            val adjustedBase = targetBal - txOffset
 
+                            // Create Adjust transaction if balance changed
+                            if (Math.abs(targetBal - computedBal) >= 0.01) {
+                                viewModel.adjustAccountBalance(oldName, computedBal, targetBal)
+                            }
+
+                            // Update account metadata only (not balance — the Adjust tx handles it)
                             viewModel.updateAccount(
                                 acc.copy(
                                     name = editName,
-                                    balance = adjustedBase,
                                     type = editType,
                                     lastFour = if (editLast4.isBlank()) null else editLast4,
                                     creditLimit = editCreditLimit.toDoubleOrNull() ?: acc.creditLimit
                                 )
                             )
-                            viewModel.setAccountSmsTrackingBlocked(acc, blocked = !smsTrackingEnabled)
 
                             if (oldName != editName) {
                                 viewModel.renameAccountTransactions(oldName, editName)
@@ -3994,6 +4095,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
     // 1 = this month only, 2 = last + this month, 3 = last 3 months (calendar start-of-month boundaries)
     var smsScanMonthsBack by remember { mutableStateOf(1) }
     val isSmsParsing by viewModel.isSmsParsing.collectAsStateWithLifecycle()
+    val enableBalanceSync by viewModel.enableBalanceSync.collectAsStateWithLifecycle()
     var hasReadSmsPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED)
     }
@@ -4118,22 +4220,50 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            if (hasReadSmsPermission) {
-                                viewModel.scanDeviceSmsInbox(context, smsScanMonthsBack)
-                            } else {
-                                requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19)),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("scan_device_sms_button")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(if (hasReadSmsPermission) "Scan Device SMS Inbox Now" else "Enable SMS Auto-Import", fontWeight = FontWeight.Bold)
+                        Button(
+                            onClick = {
+                                if (hasReadSmsPermission) {
+                                    viewModel.scanDeviceSmsInbox(context, smsScanMonthsBack)
+                                } else {
+                                    requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19)),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("scan_device_sms_button")
+                        ) {
+                            Text(if (hasReadSmsPermission) "Scan Inbox" else "Enable Auto-Import", fontWeight = FontWeight.Bold)
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                "Bal\nSync",
+                                fontSize = 10.sp,
+                                lineHeight = 13.sp,
+                                color = Color.White.copy(alpha = 0.6f),
+                                textAlign = TextAlign.End
+                            )
+                            Switch(
+                                checked = enableBalanceSync,
+                                onCheckedChange = { viewModel.setEnableBalanceSync(it) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color(0xFF00E5FF),
+                                    checkedTrackColor = Color(0xFF00E5FF).copy(alpha = 0.35f),
+                                    uncheckedThumbColor = Color.White.copy(alpha = 0.5f),
+                                    uncheckedTrackColor = Color.White.copy(alpha = 0.1f)
+                                )
+                            )
+                        }
                     }
                 }
             }
@@ -4145,7 +4275,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                 border = BorderStroke(1.dp, Color(0xFF1E293B)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(18.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     Text(
                         "PARSER KEY RULES",
                         fontWeight = FontWeight.Bold,
@@ -4153,14 +4283,14 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         letterSpacing = 1.sp,
                         color = Color.White.copy(alpha = 0.5f)
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Select core keys and/or add custom patterns. Hit \"Scan Inbox\" to apply these rules globally across your SMS inbox. You can also paste a single SMS below to test.",
+                        "Select core keys and/or add custom patterns. Prefix with ! to exclude — e.g. !(emi Balance) skips any SMS containing that text. Hit \"Scan Inbox\" to apply globally.",
                         fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.6f)
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
                         "Parser keys (must contain at least one)",
@@ -4169,17 +4299,17 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         color = Color.White.copy(alpha = 0.55f)
                     )
                     if (suggestedForcePatterns.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             "Suggested from pasted SMS: ${suggestedForcePatterns.joinToString(", ")}",
                             fontSize = 10.sp,
                             color = Color(0xFF00E5FF)
                         )
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(0.dp)
                     ) {
                         forcePatternOptions.forEach { pattern ->
                             FilterChip(
@@ -4214,7 +4344,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -4225,7 +4355,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             value = customPatternInput,
                             onValueChange = { customPatternInput = it },
                             label = { Text("Add Custom Pattern") },
-                            placeholder = { Text("credited Rs.|Card 4656") },
+                            placeholder = { Text("salary  |  !(emi Balance)") },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF), focusedLabelColor = Color(0xFF00E5FF)
                             ),
@@ -4593,7 +4723,7 @@ fun AddTransactionDialog(
     val allCategories = CategoryResolver.getAll(customCats)
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
     val selectablesWallets = if (accounts.isEmpty()) {
-        listOf("Cash Wallet", "Bank Account", "Credit Card", "Savings Goal")
+        listOf("Cash Wallet", "Bank Account", "Credit Card", "Digital Wallet")
     } else {
         accounts.map { it.name }
     }
@@ -4822,7 +4952,7 @@ fun EditTransactionDialog(
     val allCategories = CategoryResolver.getAll(customCats)
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
     val selectablesWallets = if (accounts.isEmpty()) {
-        listOf("Cash Wallet", "Bank Account", "Credit Card", "Savings Goal")
+        listOf("Cash Wallet", "Bank Account", "Credit Card", "Digital Wallet")
     } else {
         accounts.map { it.name }
     }
@@ -4856,7 +4986,7 @@ fun EditTransactionDialog(
                     Text("TRANSACTION TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("EXPENSE", "INCOME", "DUPLICATE").forEach { t ->
+                        listOf("EXPENSE", "INCOME", "DUPLICATE", "BALANCE_UPDATE").forEach { t ->
                             val sel = editType == t
                             Box(
                                 modifier = Modifier
@@ -4868,7 +4998,8 @@ fun EditTransactionDialog(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    t, fontSize = 9.sp,
+                                    text = if (t == "BALANCE_UPDATE") "BAL_UPDATE" else t,
+                                    fontSize = 9.sp,
                                     color = if (sel) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.6f),
                                     fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center
@@ -5248,7 +5379,7 @@ private fun walletIconFor(name: String, type: String?): androidx.compose.ui.grap
         type == "CASH" || name.contains("cash", ignoreCase = true) -> Icons.Default.Money
         type == "BANK" || name.contains("bank", ignoreCase = true) -> Icons.Default.AccountBalance
         type == "CREDIT_CARD" || name.contains("card", ignoreCase = true) -> Icons.Default.CreditCard
-        type == "SAVINGS" || name.contains("saving", ignoreCase = true) -> Icons.Default.Savings
+        type == "WALLET" || name.contains("wallet", ignoreCase = true) -> Icons.Default.AccountBalanceWallet
         else -> Icons.Default.AccountBalanceWallet
     }
 }
@@ -5263,7 +5394,7 @@ private fun QuickAddAccountDialog(
     var type by remember { mutableStateOf("BANK") }
     var lastFour by remember { mutableStateOf("") }
     var openingBalanceTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
-    val types = listOf("CASH", "BANK", "CREDIT_CARD", "SAVINGS")
+    val types = listOf("CASH", "BANK", "CREDIT_CARD", "WALLET")
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -5834,7 +5965,156 @@ fun getPeriodRange(mode: DisplayMode, anchorTime: Long): Pair<Long, Long> {
     }
 }
 
-fun getAnalyticsRange(monthYear: String, filter: String): Pair<Long, Long> {
+@Composable
+fun AccountCenterSettingsDialog(
+    viewModel: FinanceViewModel,
+    accounts: List<Account>,
+    hiddenAccountIds: Set<String>,
+    showCreditCardDetails: Boolean,
+    smsBlocklistPatterns: Set<String>,
+    onDismiss: () -> Unit
+) {
+    var patternInput by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Account Center Settings", fontWeight = FontWeight.Bold, color = Color.White) },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // CC Details toggle
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Show Credit Card Details", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Display available limit & due amount on cards", color = Color.White.copy(0.5f), fontSize = 11.sp)
+                        }
+                        Switch(
+                            checked = showCreditCardDetails,
+                            onCheckedChange = { viewModel.setShowCreditCardDetails(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF00E5FF),
+                                checkedTrackColor = Color(0xFF00E5FF).copy(alpha = 0.45f),
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = Color.White.copy(alpha = 0.2f)
+                            )
+                        )
+                    }
+                }
+                // Wallet visibility section header
+                item {
+                    Text(
+                        "WALLET VISIBILITY",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White.copy(0.5f),
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                items(accounts) { acc ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(acc.name, color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = !hiddenAccountIds.contains(acc.id),
+                            onCheckedChange = { visible -> viewModel.setAccountHidden(acc.id, !visible) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF00E5FF),
+                                checkedTrackColor = Color(0xFF00E5FF).copy(alpha = 0.45f),
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = Color.White.copy(alpha = 0.2f)
+                            )
+                        )
+                    }
+                }
+                // SMS Blocklist section
+                item {
+                    Column(modifier = Modifier.padding(top = 8.dp)) {
+                        Text(
+                            "SMS IMPORT BLOCKLIST",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White.copy(0.5f),
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            "Block SMS imports by wallet name or sender. Wildcards: HDFC*, *1234, *paytm*",
+                            color = Color.White.copy(0.5f),
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = patternInput,
+                                onValueChange = { patternInput = it },
+                                placeholder = { Text("e.g. HDFC*, *paytm*", color = Color.White.copy(0.4f), fontSize = 12.sp) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color(0xFF00E5FF),
+                                    unfocusedBorderColor = Color.White.copy(0.3f),
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                ),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
+                            )
+                            IconButton(onClick = {
+                                if (patternInput.isNotBlank()) {
+                                    viewModel.addSmsBlocklistPattern(patternInput.trim())
+                                    patternInput = ""
+                                }
+                            }) {
+                                Icon(Icons.Default.Add, contentDescription = "Add pattern", tint = Color(0xFF00E5FF))
+                            }
+                        }
+                    }
+                }
+                items(smsBlocklistPatterns.toList()) { pattern ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(pattern, color = Color(0xFFF43F5E), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { viewModel.removeSmsBlocklistPattern(pattern) }) {
+                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color(0xFFF43F5E))
+                        }
+                    }
+                }
+                if (smsBlocklistPatterns.isNotEmpty()) {
+                    item {
+                        OutlinedButton(
+                            onClick = { viewModel.deleteTransactionsMatchingBlocklist() },
+                            border = BorderStroke(1.dp, Color(0xFFF43F5E)),
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF43F5E))
+                        ) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFF43F5E))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Delete Matching Transactions", color = Color(0xFFF43F5E), fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done", color = Color(0xFF00E5FF)) } },
+        containerColor = Color(0xFF131A26),
+        titleContentColor = Color.White,
+        textContentColor = Color.White
+    )
+}
+
+fun getAnalyticsRange(monthYear: String, filter: String, anchorTimeMs: Long = -1L): Pair<Long, Long> {
     val baseCalendar = Calendar.getInstance().apply {
         try {
             time = SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(monthYear) ?: Date()
@@ -5857,14 +6137,19 @@ fun getAnalyticsRange(monthYear: String, filter: String): Pair<Long, Long> {
     }
 
     if (filter == "WEEKLY") {
-        val start = (periodEnd.clone() as Calendar).apply {
+        val endCal = if (anchorTimeMs > 0) {
+            Calendar.getInstance().apply {
+                timeInMillis = anchorTimeMs
+                set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59)
+                set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999)
+            }
+        } else periodEnd
+        val start = (endCal.clone() as Calendar).apply {
             add(Calendar.DAY_OF_MONTH, -6)
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }.timeInMillis
-        return start to periodEnd.timeInMillis
+        return start to endCal.timeInMillis
     }
 
     val start = (baseCalendar.clone() as Calendar).apply {
@@ -5914,11 +6199,15 @@ fun resolveBudgetCategoryName(category: DisplayCategory, editedName: String): St
     return if (trimmedName.equals(category.displayName, ignoreCase = true)) category.name else trimmedName
 }
 
-fun shiftAnalyticsPeriod(viewModel: FinanceViewModel, monthYear: String, timeFilter: String, amount: Int) {
+fun shiftAnalyticsPeriod(viewModel: FinanceViewModel, monthYear: String, timeFilter: String, amount: Int, anchorTimeMs: Long = -1L) {
     val sdf = SimpleDateFormat("yyyy-MM", Locale.getDefault())
-    val cal = Calendar.getInstance().apply {
-        try { time = sdf.parse(monthYear) ?: Date() } catch (_: Exception) { time = Date() }
-        set(Calendar.DAY_OF_MONTH, 1)
+    val cal = if (timeFilter == "WEEKLY" && anchorTimeMs > 0) {
+        Calendar.getInstance().apply { timeInMillis = anchorTimeMs }
+    } else {
+        Calendar.getInstance().apply {
+            try { time = sdf.parse(monthYear) ?: Date() } catch (_: Exception) { time = Date() }
+            set(Calendar.DAY_OF_MONTH, 1)
+        }
     }
     when (timeFilter) {
         "WEEKLY" -> cal.add(Calendar.DAY_OF_YEAR, amount * 7)
@@ -5931,8 +6220,8 @@ fun shiftAnalyticsPeriod(viewModel: FinanceViewModel, monthYear: String, timeFil
     viewModel.setAnchorDate(cal.timeInMillis)
 }
 
-fun formatAnalyticsPeriodLabel(monthYear: String, timeFilter: String): String {
-    val (startMs, endMs) = getAnalyticsRange(monthYear, timeFilter)
+fun formatAnalyticsPeriodLabel(monthYear: String, timeFilter: String, anchorTimeMs: Long = -1L): String {
+    val (startMs, endMs) = getAnalyticsRange(monthYear, timeFilter, anchorTimeMs)
     val startCal = Calendar.getInstance().apply { timeInMillis = startMs }
     val endCal = Calendar.getInstance().apply { timeInMillis = endMs }
     return when (timeFilter) {

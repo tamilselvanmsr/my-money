@@ -24,7 +24,10 @@ data class SmsParsingResult(
     val sender: String? = null,     // Source of transfer
     val receiver: String? = null,    // Destination of transfer
     val parsedTimestamp: Long? = null,
-    val availableLimit: Double? = null // Parsed available credit limit from CC SMS
+    val availableLimit: Double? = null, // Parsed available credit limit from CC SMS
+    val isBalanceUpdate: Boolean = false, // True when SMS is a bank balance notification
+    val availableBalance: Double? = null,  // Parsed actual account balance from bank balance SMS
+    val allBalancePairs: List<Pair<String, Double>> = emptyList() // All (accountRef-digits, balance) pairs for multi-account balance SMS
 )
 
 object SmsParser {
@@ -36,6 +39,12 @@ object SmsParser {
         val lowerBody = cleanBody.lowercase()
 
         Log.d(TAG, "Parsing text: '$cleanBody' from sender: '$senderId'")
+
+        // 0a. Detect bank available balance / balance notification SMS
+        //     e.g. "Avail Bal in A/c xxx300: Rs.3393.08 CR -SBI"
+        //          "Your Balance in account no. ending with 9553 is Rs. 0.12 -HDFC BANK"
+        val balanceUpdateResult = tryParseBalanceUpdate(cleanBody, lowerBody, senderId, smsTimestamp)
+        if (balanceUpdateResult != null) return balanceUpdateResult
 
         // 0. Use the dedicated strict regex filtering utility (bypassed for manual paste with custom patterns)
         if (!bypassExclusionFilter && !SmsFilterUtility.isValidTransactionSms(body)) {
@@ -243,7 +252,7 @@ object SmsParser {
             return SmsParsingResult(
                 title = "Credit Card Payment",
                 amount = amount,
-                category = ExpenseCategory.DEBT,
+                category = ExpenseCategory.CC_SETTLEMENT,
                 type = "INCOME",
                 isGeminiParsed = false,
                 accountRef = last4Digits,
@@ -340,7 +349,7 @@ object SmsParser {
                     val lowerTitleText = titleText.lowercase()
                     when {
                         lowerTitleText.contains("cashback") || lowerBody.contains("cashback") -> ExpenseCategory.CASHBACK
-                        lowerTitleText.contains("upi") || lowerBody.contains("upi") -> ExpenseCategory.UPI
+                        lowerBody.contains("upi") || lowerBody.contains("by upi") || lowerBody.contains("via upi") || lowerTitleText.contains("upi") -> ExpenseCategory.UPI
                         lowerTitleText.contains("pocket money") || lowerTitleText.contains("allowance") -> ExpenseCategory.POCKET_MONEY_INC
                         else -> ExpenseCategory.SALARY
                     }
@@ -388,7 +397,7 @@ object SmsParser {
                         lowerTitleText.contains("movie") || lowerTitleText.contains("cinema") || lowerTitleText.contains("steam") ||
                         lowerTitleText.contains("spotify") || lowerTitleText.contains("pub") || lowerTitleText.contains("bar") ||
                         lowerTitleText.contains("concert") || lowerTitleText.contains("game") ||
-                        lowerTitleText.contains("playstore") || lowerTitleText.contains("play store") ||
+                        lowerTitleText.contains("playstore") || lowerTitleText.contains("play store") || lowerTitleText.contains("mall") ||
                         lowerTitleText.contains("theatre") -> ExpenseCategory.ENTERTAINMENT
 
                         lowerTitleText.contains("hospital") || lowerTitleText.contains("pharmacy") || lowerTitleText.contains("medical") ||
@@ -401,7 +410,7 @@ object SmsParser {
 
                         lowerTitleText.contains("iccl") -> ExpenseCategory.MUTUAL_FUND
 
-                        lowerTitleText.contains("technologies") -> ExpenseCategory.ELECTRONICS
+                        lowerTitleText.contains("techno") -> ExpenseCategory.ELECTRONICS
 
                         lowerTitleText.contains("redbus") -> ExpenseCategory.TRAVEL
 
@@ -410,11 +419,11 @@ object SmsParser {
 
                         lowerTitleText.contains("gym") || lowerTitleText.contains("fitness") || lowerTitleText.contains("workout") -> ExpenseCategory.GYM
 
-                        lowerTitleText.contains("fruits") || lowerTitleText.contains("fruit") || lowerTitleText.contains("mango") ||
+                        lowerTitleText.contains("fruit") || lowerTitleText.contains("fruit") || lowerTitleText.contains("market") ||
                         lowerTitleText.contains("apple") || lowerTitleText.contains("banana") -> ExpenseCategory.FRUITS
 
                         lowerTitleText.contains("bike") || lowerTitleText.contains("motorcycle") || lowerTitleText.contains("two wheeler") ||
-                        lowerTitleText.contains("royal enfield") || lowerTitleText.contains("honda bike") -> ExpenseCategory.BIKE
+                        lowerTitleText.contains("royal enfield") || lowerTitleText.contains("RE bike") -> ExpenseCategory.BIKE
 
                         lowerTitleText.contains("gift") || lowerTitleText.contains("gifting") || lowerTitleText.contains("friend") ||
                         lowerTitleText.contains("shagun") || lowerTitleText.contains("giftcard") -> ExpenseCategory.GIFTING_FRIENDS
@@ -642,5 +651,71 @@ object SmsParser {
             }
         }
         return null
+    }
+
+    /**
+     * Detects bank available balance / balance notification SMS messages.
+     * Patterns:
+     *   "Avail Bal in A/c xxx300: Rs.3393.08 CR -SBI"
+     *   "Your Balance in account no. ending with 9553 is Rs. 0.12 -HDFC BANK"
+     */
+    private fun tryParseBalanceUpdate(cleanBody: String, lowerBody: String, senderId: String?, smsTimestamp: Long?): SmsParsingResult? {
+        val isBalanceSms = (lowerBody.contains("avail bal") || lowerBody.contains("avail. bal") ||
+            lowerBody.contains("available balance") ||
+            (lowerBody.contains("balance") && (lowerBody.contains("a/c") || lowerBody.contains("account no") ||
+            lowerBody.contains("account number") || lowerBody.contains("ending with"))))
+        if (!isBalanceSms) return null
+
+        val allPairs = mutableListOf<Pair<String, Double>>()
+
+        // Multi-account format: "XXXXXX2045 INR 2204.092Cr, XXXXXXX8660 INR 100Cr"
+        val multiAccPattern = Pattern.compile(
+            "[xX*]{2,}(\\d{3,4})\\s+(?:inr|rs\\.?|₹)\\s*([0-9,]+(?:\\.[0-9]{1,3})?)",
+            Pattern.CASE_INSENSITIVE
+        )
+        val multiMatcher = multiAccPattern.matcher(cleanBody)
+        while (multiMatcher.find()) {
+            val ref = multiMatcher.group(1) ?: continue
+            val bal = multiMatcher.group(2)?.replace(",", "")?.toDoubleOrNull() ?: continue
+            allPairs.add(ref to bal)
+        }
+
+        // Standard single-account format: "a/c xxx300: Rs.3393.08" / "ending with 9553 is Rs. 0.12"
+        if (allPairs.isEmpty()) {
+            val amtPattern = Pattern.compile(
+                "(?:rs\\.?|inr|₹)\\s*([0-9,]+(?:\\.[0-9]{1,3})?)",
+                Pattern.CASE_INSENSITIVE
+            )
+            val amtMatcher = amtPattern.matcher(cleanBody)
+            val balance = if (amtMatcher.find()) amtMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
+            if (balance == null) return null
+
+            val refPattern = Pattern.compile(
+                "(?:a/c|acc|account|ending\\s*with|no\\.?\\s*ending|ending)\\s*[xXx*\\s-]*([0-9]{3,4})\\b",
+                Pattern.CASE_INSENSITIVE
+            )
+            val refMatcher = refPattern.matcher(cleanBody)
+            val accountRef = if (refMatcher.find()) refMatcher.group(1)?.replace("[^0-9]".toRegex(), "") else null
+            if (accountRef == null) return null
+            allPairs.add(accountRef to balance)
+        }
+
+        if (allPairs.isEmpty()) return null
+
+        val (firstRef, firstBal) = allPairs.first()
+        val parsedTime = extractTimestampFromSms(cleanBody, smsTimestamp)
+
+        return SmsParsingResult(
+            title = "Balance Update",
+            amount = firstBal,
+            category = ExpenseCategory.ADJUST,
+            type = "INCOME",
+            isGeminiParsed = false,
+            accountRef = firstRef,
+            parsedTimestamp = parsedTime,
+            isBalanceUpdate = true,
+            availableBalance = firstBal,
+            allBalancePairs = allPairs
+        )
     }
 }

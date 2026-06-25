@@ -116,6 +116,11 @@ class FinanceRepository(private val financeDao: FinanceDao) {
         return financeDao.getAccountByLastFour(lastFour)
     }
 
+    suspend fun getAccountByRef(ref: String): Account? {
+        return financeDao.getAccountByLastFour(ref)
+            ?: if (ref.length == 3) financeDao.getAccountByLastFourSuffix(ref) else null
+    }
+
     suspend fun getAccountByName(name: String): Account? {
         return financeDao.getAccountByName(name)
     }

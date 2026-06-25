@@ -65,7 +65,9 @@ enum class ExpenseCategory(
     REWARDS("Rewards", Icons.Default.MilitaryTech, Color(0xFF76FF03), "INCOME"),
     COINS("Coins", Icons.Default.Savings, Color(0xFFFBC02D), "INCOME"),
     UPI("UPI", Icons.Default.QrCode, Color(0xFF0EA5E9), "INCOME"),
-    POCKET_MONEY_INC("Pocket Money (Received)", Icons.Default.Savings, Color(0xFF2E7D32), "INCOME");
+    POCKET_MONEY_INC("Pocket Money (Received)", Icons.Default.Savings, Color(0xFF2E7D32), "INCOME"),
+    CC_SETTLEMENT("CC Settlement", Icons.Default.Payment, Color(0xFF00E676), "INCOME"),
+    ADJUST("Balance Adjust", Icons.Default.SwapVert, Color(0xFF00E5FF), "INCOME");
 
     companion object {
         fun fromString(name: String): ExpenseCategory {
@@ -150,6 +152,7 @@ object CategoryResolver {
             "cooking" -> Icons.Default.Kitchen
             "outside_food" -> Icons.Default.Fastfood
             "soft_hot_drinks" -> Icons.Default.LocalCafe
+            "adjust" -> Icons.Default.SwapVert
             "groceries" -> Icons.Default.ShoppingCart
             else -> Icons.Default.Category
         }

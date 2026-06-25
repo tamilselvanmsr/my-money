@@ -103,6 +103,9 @@ interface FinanceDao {
     @Query("SELECT * FROM accounts WHERE lastFour = :lastFour LIMIT 1")
     suspend fun getAccountByLastFour(lastFour: String): Account?
 
+    @Query("SELECT * FROM accounts WHERE lastFour LIKE '%' || :suffix LIMIT 1")
+    suspend fun getAccountByLastFourSuffix(suffix: String): Account?
+
     @Query("SELECT * FROM accounts WHERE name = :name LIMIT 1")
     suspend fun getAccountByName(name: String): Account?
 

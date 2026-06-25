@@ -518,8 +518,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun deleteAccount(accountId: String) {
         viewModelScope.launch(Dispatchers.IO) {
+            createdAccountsCache.clear() // prevent stale cache from blocking account recreation
             repository.deleteAccount(accountId)
-            _toastMessage.emit("Account deleted successfully.")
+            _toastMessage.emit("Account and its records deleted.")
         }
     }
 
@@ -565,6 +566,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
 
         val bodyLower = smsBody.lowercase()
+        // Guard: never create a new account from a due-notice / reminder SMS
+        val isDueOrReminder = bodyLower.contains("is due") || bodyLower.contains("due on") ||
+            bodyLower.contains("due by") || bodyLower.contains("emi due") ||
+            (bodyLower.contains("emi") && !bodyLower.contains("credited") && !bodyLower.contains("debited")) ||
+            (bodyLower.contains("due") && (bodyLower.contains("bill") || bodyLower.contains("loan")))
+        if (isDueOrReminder) {
+            Log.d(TAG, "ensureAccountExists: skipping account creation for due/reminder SMS.")
+            return null
+        }
         val isCreditCard = bodyLower.contains("card") || 
                            bodyLower.contains("credit card") || 
                            bodyLower.contains("card limit") || 
@@ -587,6 +597,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
          }
  
          val startBal = 0.0
+         // Guard: do NOT create account if name or sender is in the SMS Import Blocklist
+         if (matchesSmsBlocklistPattern(nameLabel) || matchesSmsBlocklistPattern(senderHeader ?: "")) {
+             Log.d(TAG, "ensureAccountExists: blocked account creation by blocklist — $nameLabel")
+             return null
+         }
          val newAcObj = Account(name = nameLabel, balance = startBal, type = acType, lastFour = actualLast4)
          repository.insertAccount(newAcObj)
          Log.d(TAG, "Created account dynamically from parsed SMS: $nameLabel")
@@ -837,36 +852,39 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val cutoffTime = cal.timeInMillis
                 var matchedCount = 0
                 val projectedTransactions = allTransactions.value.toMutableList()
+                // Bug 2: clear stale cache so deleted accounts can be recreated
+                createdAccountsCache.clear()
                 if (cursor != null) {
                     val bodyIndex = cursor.getColumnIndex("body")
                     val addressIndex = cursor.getColumnIndex("address")
                     val dateIndex = cursor.getColumnIndex("date")
 
+                    // Collect all SMS into memory first (enables two-pass processing)
+                    // Bug 3: SMS are ordered DATE DESC, so balance-update SMS arrive before the
+                    // account-creating regular-transaction SMS. Collect all, then:
+                    //   Pass 1 → regular txns (creates accounts)
+                    //   Pass 2 → balance updates (accounts now exist in DB)
+                    val allRawSms = mutableListOf<Triple<String, String, Long>>() // body, sender, smsDate
                     while (cursor.moveToNext()) {
                         val smsDate = if (dateIndex != -1) cursor.getLong(dateIndex) else System.currentTimeMillis()
-                        if (smsDate < cutoffTime) {
-                            break
-                        }
-
+                        if (smsDate < cutoffTime) break
                         val body = cursor.getString(bodyIndex) ?: ""
                         val sender = cursor.getString(addressIndex) ?: "Unknown"
+                        allRawSms.add(Triple(body, sender, smsDate))
+                    }
+                    cursor.close()
 
+                    // ── PASS 1: regular income/expense (creates accounts) ─────────────────
+                    val deferredBalanceSms = mutableListOf<Triple<String, String, Long>>()
+                    for ((body, sender, smsDate) in allRawSms) {
                         val parsed = SmsParser.parseOffline(body, sender, smsDate)
                         if (parsed != null) {
                             val targetTime = parsed.parsedTimestamp ?: smsDate
 
-                            // Handle bank available balance notification SMS
-                            if (parsed.isBalanceUpdate && parsed.availableBalance != null && enableBalanceSync.value) {
-                                val pairs = if (parsed.allBalancePairs.isNotEmpty()) parsed.allBalancePairs
-                                            else if (parsed.accountRef != null) listOf(parsed.accountRef to parsed.availableBalance!!)
-                                            else emptyList()
-                                for ((ref, bal) in pairs) {
-                                    val linkedAcc = repository.getAccountByRef(ref)
-                                    if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
-                                        if (createBalanceAdjustIfNeeded(linkedAcc, bal, targetTime, body, sender, projectedTransactions)) {
-                                            matchedCount++
-                                        }
-                                    }
+                            if (parsed.isBalanceUpdate && parsed.availableBalance != null) {
+                                // Always skip from regular txn flow; only queue for Pass 2 if Bal Sync enabled
+                                if (enableBalanceSync.value) {
+                                    deferredBalanceSms.add(Triple(body, sender, smsDate))
                                 }
                                 continue
                             }
@@ -912,7 +930,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 repository.insertTransaction(tx)
                                 projectedTransactions.add(tx)
                                 maybeNotifyBudgetAlert(tx, projectedTransactions)
-                                // Update available credit limit if parsed from CC payment SMS
                                 if (parsed.availableLimit != null && parsed.accountRef != null) {
                                     val linkedAccount = repository.getAccountByLastFour(parsed.accountRef)
                                     if (linkedAccount != null) {
@@ -923,7 +940,23 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             }
                         }
                     }
-                    cursor.close()
+
+                    // ── PASS 2: balance updates (all accounts now in DB) ───────────────────
+                    for ((body, sender, smsDate) in deferredBalanceSms) {
+                        val parsed = SmsParser.parseOffline(body, sender, smsDate) ?: continue
+                        val targetTime = parsed.parsedTimestamp ?: smsDate
+                        val pairs = if (parsed.allBalancePairs.isNotEmpty()) parsed.allBalancePairs
+                                    else if (parsed.accountRef != null) listOf(parsed.accountRef to parsed.availableBalance!!)
+                                    else emptyList()
+                        for ((ref, bal) in pairs) {
+                            val linkedAcc = repository.getAccountByRef(ref)
+                            if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
+                                if (createBalanceAdjustIfNeeded(linkedAcc, bal, targetTime, body, sender, projectedTransactions)) {
+                                    matchedCount++
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if (matchedCount > 0) {
@@ -1077,6 +1110,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val cutoffTime = cal.timeInMillis
                 var matchedCount = 0
                 val projectedTransactions = allTransactions.value.toMutableList()
+                // Bug 2: clear stale cache so deleted accounts can be recreated on rescan
+                createdAccountsCache.clear()
                 // Separate inclusion patterns from exclusion patterns (prefix '!')
                 val positiveCustom = customPatterns.filter { !it.trimStart().startsWith("!") }
                 val negativePatterns = customPatterns
@@ -1135,15 +1170,18 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             val targetTime = parsed.parsedTimestamp ?: smsDate
 
                             // Handle bank available balance notification SMS (before ensureAccountExists to avoid creating phantom accounts)
-                            if (parsed.isBalanceUpdate && parsed.availableBalance != null && enableBalanceSync.value) {
-                                val pairs = if (parsed.allBalancePairs.isNotEmpty()) parsed.allBalancePairs
-                                            else if (parsed.accountRef != null) listOf(parsed.accountRef to parsed.availableBalance!!)
-                                            else emptyList()
-                                for ((ref, bal) in pairs) {
-                                    val linkedAcc = repository.getAccountByRef(ref)
-                                    if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
-                                        if (createBalanceAdjustIfNeeded(linkedAcc, bal, targetTime, body, sender, projectedTransactions)) {
-                                            matchedCount++
+                            if (parsed.isBalanceUpdate && parsed.availableBalance != null) {
+                                // Always skip from regular txn flow; only process if Bal Sync enabled
+                                if (enableBalanceSync.value) {
+                                    val pairs = if (parsed.allBalancePairs.isNotEmpty()) parsed.allBalancePairs
+                                                else if (parsed.accountRef != null) listOf(parsed.accountRef to parsed.availableBalance!!)
+                                                else emptyList()
+                                    for ((ref, bal) in pairs) {
+                                        val linkedAcc = repository.getAccountByRef(ref)
+                                        if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
+                                            if (createBalanceAdjustIfNeeded(linkedAcc, bal, targetTime, body, sender, projectedTransactions)) {
+                                                matchedCount++
+                                            }
                                         }
                                     }
                                 }
@@ -1280,7 +1318,122 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Cryptographic Secure Local Backup
+    // ── CSV Backup / Restore ──────────────────────────────────────────────────
+
+    /** Writes accounts + transactions as a plain CSV to the URI chosen by the user (SAF CreateDocument). */
+    fun exportBackupToUri(context: android.content.Context, uri: android.net.Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                val sb = StringBuilder()
+
+                // ── ACCOUNTS section ─────────────────────────────
+                sb.appendLine("## ACCOUNTS")
+                sb.appendLine("Name,Type,LastFour,CreditLimit,Balance")
+                for (acc in allAccounts.value) {
+                    val name = acc.name.replace(",", ";")
+                    sb.appendLine("${name},${acc.type},${acc.lastFour ?: ""},${acc.creditLimit},${acc.balance}")
+                }
+                sb.appendLine()
+
+                // ── TRANSACTIONS section ──────────────────────────
+                sb.appendLine("## TRANSACTIONS")
+                sb.appendLine("Date,Title,Amount,Category,Type,Account")
+                for (tx in allTransactions.value) {
+                    if (tx.type == "BALANCE_UPDATE") continue // skip internal Balance Sync rows
+                    val date = dateFormat.format(Date(tx.timestamp))
+                    val title = tx.title.replace(",", ";").replace("\"", "")
+                    val accountName = tx.getAccountName().replace(",", ";")
+                    sb.appendLine("${date},${title},${tx.amount},${tx.category},${tx.type},${accountName}")
+                }
+
+                context.contentResolver.openOutputStream(uri)?.use { stream ->
+                    stream.write(sb.toString().toByteArray(Charsets.UTF_8))
+                }
+                val txCount = allTransactions.value.count { it.type != "BALANCE_UPDATE" }
+                _toastMessage.emit("Backup saved — ${allAccounts.value.size} accounts, $txCount transactions.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Export backup failed: ${e.message}", e)
+                _toastMessage.emit("Export failed: ${e.message}")
+            }
+        }
+    }
+
+    /** Reads a CSV backup (created by exportBackupToUri) and fully restores accounts + transactions. */
+    fun restoreFromBackupUri(context: android.content.Context, uri: android.net.Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val lines = context.contentResolver.openInputStream(uri)?.use { stream ->
+                    stream.bufferedReader().readLines()
+                } ?: run {
+                    _toastMessage.emit("Could not open backup file.")
+                    return@launch
+                }
+
+                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                var section = ""
+                var accountsRestored = 0
+                var txRestored = 0
+
+                // Wipe existing data
+                repository.clearTransactions()
+                repository.clearBudgets()
+                repository.clearAccounts()
+                createdAccountsCache.clear()
+
+                for (line in lines) {
+                    val trimmed = line.trim()
+                    when {
+                        trimmed.startsWith("## ") -> section = trimmed.removePrefix("## ")
+                        trimmed.isBlank() ||
+                        trimmed.startsWith("Name,") ||
+                        trimmed.startsWith("Date,") -> { /* header / blank – skip */ }
+                        section == "ACCOUNTS" -> {
+                            val cols = trimmed.split(",")
+                            if (cols.size >= 5) {
+                                repository.insertAccount(
+                                    Account(
+                                        name = cols[0].trim(),
+                                        type = cols[1].trim(),
+                                        lastFour = cols[2].trim().ifBlank { null },
+                                        creditLimit = cols[3].trim().toDoubleOrNull() ?: 0.0,
+                                        balance = cols[4].trim().toDoubleOrNull() ?: 0.0
+                                    )
+                                )
+                                accountsRestored++
+                            }
+                        }
+                        section == "TRANSACTIONS" -> {
+                            // Date,Title,Amount,Category,Type,Account — split on first 5 commas only
+                            val parts = trimmed.split(",", limit = 6)
+                            if (parts.size == 6) {
+                                val timestamp = try {
+                                    dateFormat.parse(parts[0].trim())?.time ?: System.currentTimeMillis()
+                                } catch (e: Exception) { System.currentTimeMillis() }
+                                repository.insertTransaction(
+                                    TransactionEntry(
+                                        title = parts[1].trim(),
+                                        amount = parts[2].trim().toDoubleOrNull() ?: 0.0,
+                                        category = parts[3].trim(),
+                                        type = parts[4].trim(),
+                                        timestamp = timestamp,
+                                        note = "[Acc: ${parts[5].trim()}]"
+                                    )
+                                )
+                                txRestored++
+                            }
+                        }
+                    }
+                }
+                _toastMessage.emit("Restored $accountsRestored accounts and $txRestored transactions.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Restore backup failed: ${e.message}", e)
+                _toastMessage.emit("Restore failed: ${e.message}")
+            }
+        }
+    }
+
+    // Cryptographic Secure Local Backup (legacy — retained for reference)
     fun createSecureBackup(password: String): String? {
         if (password.length < 4) {
             viewModelScope.launch { _toastMessage.emit("Password must be at least 4 characters") }

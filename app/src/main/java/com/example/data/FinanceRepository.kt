@@ -105,6 +105,11 @@ class FinanceRepository(private val financeDao: FinanceDao) {
     }
 
     suspend fun deleteAccount(id: String) {
+        // Cascade-delete all transactions linked to this account via note "[Acc: name]"
+        val account = financeDao.getAccountById(id)
+        if (account != null) {
+            financeDao.deleteTransactionsByNotePattern("%[Acc: ${account.name}]%")
+        }
         financeDao.deleteAccountById(id)
     }
 

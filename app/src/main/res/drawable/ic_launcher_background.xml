@@ -4,10 +4,20 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Rich dark teal base -->
-    <path android:fillColor="#00695C" android:pathData="M0,0H108V108H0Z"/>
-    <!-- Top-left light sweep -->
-    <path android:fillColor="#00897B" android:pathData="M0,0 L108,0 L108,46 Q54,68 0,46 Z"/>
-    <!-- Bottom-right dark vignette -->
-    <path android:fillColor="#004D40" android:pathData="M108,108 L0,108 L0,64 Q54,42 108,64 Z"/>
+    <!-- Deep indigo base -->
+    <path
+        android:fillColor="#1A237E"
+        android:pathData="M0,0H108V108H0Z"/>
+    <!-- Radial centre glow -->
+    <path
+        android:fillColor="#283593"
+        android:pathData="M54,54 m-50,0 a50,50 0,1 0,100 0 a50,50 0,1 0,-100 0"/>
+    <!-- Top-right corner accent -->
+    <path
+        android:fillColor="#3949AB"
+        android:pathData="M108,0 L108,56 Q76,28 54,0 Z"/>
+    <!-- Bottom-left subtle shadow -->
+    <path
+        android:fillColor="#0D1463"
+        android:pathData="M0,108 L0,52 Q32,80 54,108 Z"/>
 </vector>

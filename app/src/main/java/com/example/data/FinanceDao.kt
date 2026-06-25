@@ -97,6 +97,9 @@ interface FinanceDao {
     @Query("DELETE FROM accounts WHERE id = :id")
     suspend fun deleteAccountById(id: String)
 
+    @Query("DELETE FROM transactions WHERE note LIKE :pattern")
+    suspend fun deleteTransactionsByNotePattern(pattern: String)
+
     @Query("SELECT * FROM accounts WHERE id = :id LIMIT 1")
     suspend fun getAccountById(id: String): Account?
 

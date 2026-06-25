@@ -3773,7 +3773,13 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                         .padding(8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(w.substringBefore(" Ending"), fontSize = 10.sp, color = if (sel) Color(0xFF00E5FF) else Color.White, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = w,
+                                        fontSize = 11.sp,
+                                        color = if (sel) Color(0xFF00E5FF) else Color.White,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 2
+                                    )
                                 }
                             }
                         }
@@ -3795,7 +3801,13 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                         .padding(8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(w.substringBefore(" Ending"), fontSize = 10.sp, color = if (sel) Color(0xFF00E5FF) else Color.White, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = w,
+                                        fontSize = 11.sp,
+                                        color = if (sel) Color(0xFF00E5FF) else Color.White,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 2
+                                    )
                                 }
                             }
                         }
@@ -3938,7 +3950,6 @@ fun AccountScreen(viewModel: FinanceViewModel) {
         var editName by remember(acc) { mutableStateOf(acc.name) }
         var editBalanceInput by remember(acc) { mutableStateOf(String.format("%.2f", computedBal)) }
         var editType by remember(acc) { mutableStateOf(acc.type) }
-        var editLast4 by remember(acc) { mutableStateOf(acc.lastFour ?: "") }
         var editCreditLimit by remember(acc) { mutableStateOf(if (acc.creditLimit > 0) acc.creditLimit.toString() else "") }
 
         val types = listOf("CASH", "BANK", "CREDIT_CARD", "WALLET")
@@ -3980,15 +3991,6 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         onValueChange = { editBalanceInput = it },
                         label = { Text("Set New Balance (₹)") },
                         placeholder = { Text("e.g. 25000", color = Color.White.copy(0.4f)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF)),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = editLast4,
-                        onValueChange = { editLast4 = it },
-                        label = { Text("Last 4 digits") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, focusedBorderColor = Color(0xFF00E5FF)),
                         modifier = Modifier.fillMaxWidth()
@@ -4053,7 +4055,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                 acc.copy(
                                     name = editName,
                                     type = editType,
-                                    lastFour = if (editLast4.isBlank()) null else editLast4,
+                                    lastFour = editName.filter { it.isDigit() }.takeLast(4).ifBlank { null },
                                     creditLimit = editCreditLimit.toDoubleOrNull() ?: acc.creditLimit
                                 )
                             )
@@ -4090,7 +4092,9 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
         val lowerBody = manualSmsBody.lowercase()
         forcePatternOptions.filter { lowerBody.contains(it) }
     }
-    var selectedForcePatterns by remember { mutableStateOf(forcePatternOptions.toSet()) }
+    // Default: only strict transactional verbs. "upi" and "card" are opt-in (too broad on their own).
+    val defaultSelectedPatterns = setOf("txn", "debited", "credited", "spent", "paid", "received", "account", "salary")
+    var selectedForcePatterns by remember { mutableStateOf(defaultSelectedPatterns) }
     var customPatterns by remember { mutableStateOf(emptyList<String>()) }
     // 1 = this month only, 2 = last + this month, 3 = last 3 months (calendar start-of-month boundaries)
     var smsScanMonthsBack by remember { mutableStateOf(1) }
@@ -4285,7 +4289,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Select core keys and/or add custom patterns. Prefix with ! to exclude — e.g. !(emi Balance) skips any SMS containing that text. Hit \"Scan Inbox\" to apply globally.",
+                        "Select core keys and/or add custom patterns. Prefix with ! to exclude — e.g. !(emi Balance) skips any SMS containing that text. Hit \"Scan Inbox\" to apply globally. ",
                         fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.6f)
                     )
@@ -5392,7 +5396,6 @@ private fun QuickAddAccountDialog(
     var name by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("BANK") }
-    var lastFour by remember { mutableStateOf("") }
     var openingBalanceTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
     val types = listOf("CASH", "BANK", "CREDIT_CARD", "WALLET")
 
@@ -5429,18 +5432,6 @@ private fun QuickAddAccountDialog(
                     onTimestampChange = { openingBalanceTimestamp = it },
                     label = "Opening Balance Date & Time"
                 )
-                OutlinedTextField(
-                    value = lastFour,
-                    onValueChange = { lastFour = it },
-                    label = { Text("Last 4 digits (optional ID)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF00E5FF),
-                        focusedLabelColor = Color(0xFF00E5FF)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
                 Column {
                     Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
                     Spacer(modifier = Modifier.height(4.dp))
@@ -5466,7 +5457,7 @@ private fun QuickAddAccountDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    onAdd(name, amount.toDoubleOrNull() ?: 0.0, type, lastFour.ifBlank { null }, openingBalanceTimestamp)
+                    onAdd(name, amount.toDoubleOrNull() ?: 0.0, type, name.filter { it.isDigit() }.takeLast(4).ifBlank { null }, openingBalanceTimestamp)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF0B0F19))
             ) {
@@ -5697,93 +5688,172 @@ fun BackupDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    var password by remember { mutableStateOf("") }
-    val backupString by viewModel.backupString.collectAsStateWithLifecycle()
+    var exported by remember { mutableStateOf(false) }
+
+    val createDocLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportBackupToUri(context, uri)
+            exported = true
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Secure Backup", fontWeight = FontWeight.Bold, color = Color.White) },
+        title = null,
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // ── Icon header ────────────────────────────────────────────
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(Color(0xFF10B981).copy(alpha = 0.15f), CircleShape)
+                        .border(1.5.dp, Color(0xFF10B981).copy(alpha = 0.4f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Backup,
+                        contentDescription = null,
+                        tint = Color(0xFF10B981),
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
                 Text(
-                    "Creates an AES-encrypted backup of your transactions and budgets. Copy and store the backup string safely.",
+                    "Export Backup",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    "Save all your data as a CSV file",
                     fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.7f)
+                    color = Color.White.copy(0.5f),
+                    modifier = Modifier.padding(top = 2.dp)
                 )
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Backup Passphrase (min 4 chars)") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF00E5FF),
-                        focusedLabelColor = Color(0xFF00E5FF)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+
+                Spacer(Modifier.height(20.dp))
+                HorizontalDivider(color = Color.White.copy(0.08f))
+                Spacer(Modifier.height(16.dp))
+
+                // ── What's included ───────────────────────────────────────
+                Text(
+                    "WHAT'S INCLUDED",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(0.4f),
+                    modifier = Modifier.align(Alignment.Start)
                 )
-                if (backupString != null) {
-                    Surface(
-                        color = Color(0xFF10B981).copy(alpha = 0.08f),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.35f))
+                Spacer(Modifier.height(10.dp))
+                listOf(
+                    Triple(Icons.Default.AccountBalanceWallet, "All Accounts",       "Name, type, balance, last 4 digits"),
+                    Triple(Icons.Default.ReceiptLong,          "All Transactions",   "Date, title, amount, category, type"),
+                    Triple(Icons.Default.Category,             "Account Links",       "Each transaction linked to its account")
+                ).forEach { (icon, title, sub) ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 5.dp)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(Color(0xFF10B981).copy(0.12f), RoundedCornerShape(8.dp)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                "Backup generated! Copy and store securely:",
-                                fontSize = 11.sp,
-                                color = Color(0xFF10B981),
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = backupString!!.take(80) + if (backupString!!.length > 80) "\u2026" else "",
-                                fontSize = 9.sp,
-                                color = Color.White.copy(alpha = 0.55f),
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                            )
-                            Button(
-                                onClick = {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(
-                                        android.content.ClipData.newPlainText("mymoney_backup", backupString)
-                                    )
-                                    Toast.makeText(context, "Backup string copied to clipboard!", Toast.LENGTH_SHORT).show()
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF10B981),
-                                    contentColor = Color.White
-                                ),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Copy Full Backup String", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
+                            Icon(icon, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
                         }
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                            Text(sub,   fontSize = 11.sp, color = Color.White.copy(0.45f))
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                // ── Info note ─────────────────────────────────────────────
+                Surface(
+                    color = Color(0xFF00E5FF).copy(0.06f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(0.2f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(15.dp))
+                        Text(
+                            "Opens in Excel & Google Sheets. Balance Sync entries are excluded.",
+                            fontSize = 11.sp,
+                            color = Color(0xFF00E5FF).copy(0.85f)
+                        )
+                    }
+                }
+
+                // ── Success banner ────────────────────────────────────────
+                if (exported) {
+                    Spacer(Modifier.height(10.dp))
+                    Surface(
+                        color = Color(0xFF10B981).copy(0.12f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                            Text("Backup saved successfully!", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+                HorizontalDivider(color = Color.White.copy(0.08f))
+                Spacer(Modifier.height(14.dp))
+
+                // ── Action buttons ────────────────────────────────────────
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White.copy(0.7f)),
+                        border = BorderStroke(1.dp, Color.White.copy(0.15f))
+                    ) { Text("Close") }
+
+                    Button(
+                        onClick = {
+                            val date = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date())
+                            createDocLauncher.launch("mymoney_backup_$date.csv")
+                        },
+                        modifier = Modifier.weight(2f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981), contentColor = Color.White),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Save CSV Backup", fontWeight = FontWeight.Bold)
                     }
                 }
             }
         },
-        confirmButton = {
-            Button(
-                onClick = { viewModel.createSecureBackup(password) },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF00E5FF),
-                    contentColor = Color(0xFF0B0F19)
-                ),
-                enabled = password.length >= 4
-            ) {
-                Text("Generate Backup", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close", color = Color.White) }
-        },
-        containerColor = Color(0xFF131A26)
+        confirmButton = {},
+        containerColor = Color(0xFF131A26),
+        shape = RoundedCornerShape(20.dp)
     )
 }
 
@@ -5792,73 +5862,194 @@ fun RestoreBackupDialog(
     viewModel: FinanceViewModel,
     onDismiss: () -> Unit
 ) {
-    var backupStr by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    var confirmed by remember { mutableStateOf(false) }
+
+    val openDocLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.restoreFromBackupUri(context, uri)
+            onDismiss()
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Restore Backup", fontWeight = FontWeight.Bold, color = Color.White) },
+        title = null,
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Surface(
-                    color = Color(0xFFF43F5E).copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color(0xFFF43F5E).copy(alpha = 0.3f))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // ── Icon header ────────────────────────────────────────────
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(Color(0xFFF43F5E).copy(alpha = 0.15f), CircleShape)
+                        .border(1.5.dp, Color(0xFFF43F5E).copy(alpha = 0.4f), CircleShape),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        "\u26a0 Restoring will replace ALL existing transactions and budgets. This cannot be undone.",
-                        fontSize = 11.sp,
-                        color = Color(0xFFF43F5E),
-                        modifier = Modifier.padding(10.dp)
+                    Icon(
+                        Icons.Default.Restore,
+                        contentDescription = null,
+                        tint = Color(0xFFF43F5E),
+                        modifier = Modifier.size(32.dp)
                     )
                 }
-                OutlinedTextField(
-                    value = backupStr,
-                    onValueChange = { backupStr = it },
-                    label = { Text("Paste Backup String") },
-                    minLines = 3,
-                    maxLines = 5,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFFF43F5E),
-                        focusedLabelColor = Color(0xFFF43F5E)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Import Backup",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
                 )
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Backup Passphrase") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFFF43F5E),
-                        focusedLabelColor = Color(0xFFF43F5E)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+                Text(
+                    "Restore from a CSV backup file",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(0.5f),
+                    modifier = Modifier.padding(top = 2.dp)
                 )
+
+                Spacer(Modifier.height(16.dp))
+
+                // ── Warning banner ────────────────────────────────────────
+                Surface(
+                    color = Color(0xFFF43F5E).copy(0.08f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFFF43F5E).copy(0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFF43F5E), modifier = Modifier.size(18.dp).padding(top = 1.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("Destructive Action", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF43F5E))
+                            Text(
+                                "This will permanently replace ALL existing accounts and transactions with the backup contents.",
+                                fontSize = 11.sp,
+                                color = Color(0xFFF43F5E).copy(0.85f)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = Color.White.copy(0.08f))
+                Spacer(Modifier.height(14.dp))
+
+                // ── What gets restored ─────────────────────────────────────
+                Text(
+                    "WHAT GETS RESTORED",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(0.4f),
+                    modifier = Modifier.align(Alignment.Start)
+                )
+                Spacer(Modifier.height(10.dp))
+                listOf(
+                    Triple(Icons.Default.AccountBalanceWallet, "Accounts",        "All wallets recreated with their types"),
+                    Triple(Icons.Default.ReceiptLong,          "Transactions",    "All records with date, amount, category"),
+                    Triple(Icons.Default.LinkOff,              "Existing Data",   "Cleared first — cannot be recovered")
+                ).forEachIndexed { idx, (icon, title, sub) ->
+                    val tint = if (idx == 2) Color(0xFFF43F5E) else Color(0xFF00E5FF)
+                    val bg   = if (idx == 2) Color(0xFFF43F5E).copy(0.1f) else Color(0xFF00E5FF).copy(0.08f)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 5.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(bg, RoundedCornerShape(8.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                            Text(sub,   fontSize = 11.sp, color = Color.White.copy(0.45f))
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+                HorizontalDivider(color = Color.White.copy(0.08f))
+                Spacer(Modifier.height(12.dp))
+
+                // ── Confirmation toggle ───────────────────────────────────
+                Surface(
+                    color = if (confirmed) Color(0xFFF43F5E).copy(0.08f) else Color.White.copy(0.04f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, if (confirmed) Color(0xFFF43F5E).copy(0.4f) else Color.White.copy(0.1f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { confirmed = !confirmed }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Checkbox(
+                            checked = confirmed,
+                            onCheckedChange = { confirmed = it },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = Color(0xFFF43F5E),
+                                uncheckedColor = Color.White.copy(0.3f)
+                            )
+                        )
+                        Text(
+                            "I understand this will overwrite all my existing data",
+                            fontSize = 12.sp,
+                            fontWeight = if (confirmed) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (confirmed) Color.White else Color.White.copy(0.6f)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // ── Action buttons ────────────────────────────────────────
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White.copy(0.7f)),
+                        border = BorderStroke(1.dp, Color.White.copy(0.15f))
+                    ) { Text("Cancel") }
+
+                    Button(
+                        onClick = { openDocLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "*/*")) },
+                        modifier = Modifier.weight(2f),
+                        enabled = confirmed,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFF43F5E),
+                            contentColor = Color.White,
+                            disabledContainerColor = Color(0xFFF43F5E).copy(0.3f),
+                            disabledContentColor = Color.White.copy(0.4f)
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Browse Backup File", fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         },
-        confirmButton = {
-            Button(
-                onClick = {
-                    viewModel.restoreFromSecureBackup(backupStr.trim(), password)
-                    onDismiss()
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFF43F5E),
-                    contentColor = Color.White
-                ),
-                enabled = backupStr.isNotBlank() && password.isNotEmpty()
-            ) {
-                Text("Restore Data", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.White) }
-        },
-        containerColor = Color(0xFF131A26)
+        confirmButton = {},
+        containerColor = Color(0xFF131A26),
+        shape = RoundedCornerShape(20.dp)
     )
 }
 

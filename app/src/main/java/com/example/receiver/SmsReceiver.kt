@@ -52,6 +52,9 @@ class SmsReceiver : BroadcastReceiver() {
                         val targetTime = parsed.parsedTimestamp ?: sms.timestampMillis
 
                         // --- Handle balance-snapshot SMS (available balance notification) ---
+                        val balanceSyncEnabled = context.getSharedPreferences("finance_settings", Context.MODE_PRIVATE)
+                            .getBoolean("enable_balance_sync", true)
+                        if (parsed.isBalanceUpdate && parsed.availableBalance != null && !balanceSyncEnabled) return@launch
                         if (parsed.isBalanceUpdate && parsed.availableBalance != null) {
                             // Build pairs list: use allBalancePairs if multi-account, else single ref
                             val pairs: List<Pair<String, Double>> = if (parsed.allBalancePairs.isNotEmpty()) {
@@ -187,6 +190,12 @@ class SmsReceiver : BroadcastReceiver() {
         }
 
         val bodyLower = smsBody.lowercase()
+        // Guard: never create a new account from a due-notice / reminder SMS
+        val isDueOrReminder = bodyLower.contains("is due") || bodyLower.contains("due on") ||
+            bodyLower.contains("due by") || bodyLower.contains("emi due") ||
+            (bodyLower.contains("emi") && !bodyLower.contains("credited") && !bodyLower.contains("debited")) ||
+            (bodyLower.contains("due") && (bodyLower.contains("bill") || bodyLower.contains("loan")))
+        if (isDueOrReminder) return null
         val isCreditCard = bodyLower.contains("card") || 
                            bodyLower.contains("credit card") || 
                            bodyLower.contains("card limit") || 
@@ -209,6 +218,21 @@ class SmsReceiver : BroadcastReceiver() {
         }
 
         val startBal = 0.0
+        // Guard: do NOT create account if name or sender is in the SMS Import Blocklist
+        val blocklistPatterns = context.getSharedPreferences("finance_settings", Context.MODE_PRIVATE)
+            .getStringSet("sms_blocklist_patterns", emptySet()) ?: emptySet()
+        val isNameBlocklisted = blocklistPatterns.any { pat ->
+            val p = pat.lowercase().trim()
+            listOf(nameLabel.lowercase(), (senderHeader ?: "").lowercase()).any { ref ->
+                when {
+                    p.startsWith("*") && p.endsWith("*") && p.length > 2 -> ref.contains(p.substring(1, p.length - 1))
+                    p.startsWith("*") -> ref.endsWith(p.substring(1))
+                    p.endsWith("*") -> ref.startsWith(p.dropLast(1))
+                    else -> ref.contains(p)
+                }
+            }
+        }
+        if (isNameBlocklisted) return null
         val newAcObj = Account(name = nameLabel, balance = startBal, type = acType, lastFour = actualLast4)
         dao.insertAccount(newAcObj)
         return nameLabel

@@ -46,6 +46,19 @@ object SmsParser {
         val balanceUpdateResult = tryParseBalanceUpdate(cleanBody, lowerBody, senderId, smsTimestamp)
         if (balanceUpdateResult != null) return balanceUpdateResult
 
+        // 0b. HARD EXCLUSIONS — never bypassed, even by custom-pattern scan.
+        //     Bill-due reminders and payment-request CTAs must never create transactions/accounts.
+        val isHardExcluded = lowerBody.contains("is due on") ||
+            (lowerBody.contains("due on") && !lowerBody.contains("credited") && !lowerBody.contains("debited") && !lowerBody.contains("received")) ||
+            (lowerBody.contains("due by") && !lowerBody.contains("credited") && !lowerBody.contains("debited")) ||
+            lowerBody.contains("has requested you") ||
+            lowerBody.contains("requesting money") ||
+            lowerBody.contains("collect request")
+        if (isHardExcluded) {
+            Log.d(TAG, "Hard-excluded: due notice / payment request SMS.")
+            return null
+        }
+
         // 0. Use the dedicated strict regex filtering utility (bypassed for manual paste with custom patterns)
         if (!bypassExclusionFilter && !SmsFilterUtility.isValidTransactionSms(body)) {
             Log.d(TAG, "Excluded: Failed validation check in SmsFilterUtility.")
@@ -188,8 +201,9 @@ object SmsParser {
         }
 
         // 5. EXTRACT ACCOUNT DETAILS (Card/Account references - ending in 3 or 4 numbers)
+        // NOTE: bare "-" removed from prefix list — it matched date separators like "22-May-2026" → year 2026
         val last4Pattern = Pattern.compile(
-            "(?i)(?:a/c|acct|acc|account|card|ending in|ending with|ending|ended with|ended|vpa|xx|\\*+|-|no\\.?)\\s*(?:no\\.?\\s*)?([xX*]*\\d{3,4})\\b"
+            "(?i)(?:a/c|acct|acc|account|card|ending in|ending with|ending|ended with|ended|vpa|xx|\\*+|no\\.?)\\s*(?:no\\.?\\s*)?([xX*]*\\d{3,4})\\b"
         )
         val last4Matcher = last4Pattern.matcher(lowerBody)
         var last4Digits: String? = null
@@ -264,8 +278,8 @@ object SmsParser {
         }
         var titleText = ""
         
-        // Exact high-priority VPA / UPI ID lookup
-        val upiVpaPattern = Pattern.compile("\\b([a-zA-Z0-9.\\-_]+@[a-zA-Z0-9]{3,})\\b")
+        // Exact high-priority VPA / UPI ID lookup — allow 2-char handles (e.g. @pz, @ok)
+        val upiVpaPattern = Pattern.compile("\\b([a-zA-Z0-9.\\-_]+@[a-zA-Z0-9]{2,})\\b")
         val upiVpaMatcher = upiVpaPattern.matcher(cleanBody)
         if (upiVpaMatcher.find()) {
             titleText = upiVpaMatcher.group(1) ?: ""
@@ -660,6 +674,10 @@ object SmsParser {
      *   "Your Balance in account no. ending with 9553 is Rs. 0.12 -HDFC BANK"
      */
     private fun tryParseBalanceUpdate(cleanBody: String, lowerBody: String, senderId: String?, smsTimestamp: Long?): SmsParsingResult? {
+        // Reject wallet-expiry notifications that contain "balance" + "ending with" for mobile numbers
+        // e.g. "Rs. 5.20 added to Zomato Money (on mobile ending with *5452). This balance expires on 15 Jul 2026."
+        if (lowerBody.contains("balance expire")) return null
+
         val isBalanceSms = (lowerBody.contains("avail bal") || lowerBody.contains("avail. bal") ||
             lowerBody.contains("available balance") ||
             (lowerBody.contains("balance") && (lowerBody.contains("a/c") || lowerBody.contains("account no") ||

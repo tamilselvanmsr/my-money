@@ -210,7 +210,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     // Bottom Sheet & Dialog control states
     var showAddDialog by remember { mutableStateOf(false) }
     var showCsvDialog by remember { mutableStateOf(false) }
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    var showAppMenu by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
     
@@ -239,175 +239,12 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     val darkBg = Color(0xFF0B0F19)
     val cardSurface = Color(0xFF131A26)
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet(
-                modifier = Modifier.width(300.dp),
-                windowInsets = WindowInsets(0),
-                drawerContainerColor = Color(0xFF131A26),
-            ) {
-                // ── App branding header ──────────────────────────────────────
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0B0F19))
-                        .padding(24.dp)
-                ) {
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Surface(
-                                color = Color(0xFF00E5FF).copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.size(48.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        Icons.Default.AccountBalanceWallet,
-                                        contentDescription = null,
-                                        tint = Color(0xFF00E5FF),
-                                        modifier = Modifier.size(26.dp)
-                                    )
-                                }
-                            }
-                            Column {
-                                Text(
-                                    "MyMoney",
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 22.sp,
-                                    color = Color.White
-                                )
-                                Text(
-                                    "v${BuildConfig.VERSION_NAME}",
-                                    fontSize = 11.sp,
-                                    color = Color.White.copy(alpha = 0.4f)
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(14.dp))
-                        Surface(
-                            color = Color(0xFF00E5FF).copy(alpha = 0.08f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.Person,
-                                    contentDescription = null,
-                                    tint = Color(0xFF00E5FF),
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Text(
-                                    "Designed by Ananta Raha",
-                                    fontSize = 11.sp,
-                                    color = Color.White.copy(alpha = 0.6f)
-                                )
-                            }
-                        }
-                    }
-                }
-                HorizontalDivider(color = Color.White.copy(alpha = 0.07f))
-                Spacer(Modifier.height(8.dp))
-
-                // ── Data section ─────────────────────────────────────────────
-                Text(
-                    "DATA",
-                    modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 4.dp),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    color = Color.White.copy(alpha = 0.35f)
-                )
-                NavigationDrawerItem(
-                    label = { Text("Export Records", color = Color.White, fontSize = 14.sp) },
-                    icon = { Icon(Icons.Default.Share, contentDescription = null, tint = Color(0xFF00E5FF)) },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() }; showCsvDialog = true },
-                    colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
-                    label = { Text("Backup Data", color = Color.White, fontSize = 14.sp) },
-                    icon = { Icon(Icons.Default.Backup, contentDescription = null, tint = Color(0xFF10B981)) },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() }; showBackupDialog = true },
-                    colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
-                    label = { Text("Restore Backup", color = Color.White, fontSize = 14.sp) },
-                    icon = { Icon(Icons.Default.Restore, contentDescription = null, tint = Color(0xFFFFC107)) },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() }; showRestoreDialog = true },
-                    colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-
-                HorizontalDivider(
-                    color = Color.White.copy(alpha = 0.07f),
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-
-                // ── App section ───────────────────────────────────────────────
-                Text(
-                    "APP",
-                    modifier = Modifier.padding(start = 20.dp, top = 4.dp, bottom = 4.dp),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    color = Color.White.copy(alpha = 0.35f)
-                )
-                NavigationDrawerItem(
-                    label = { Text("Help & FAQ", color = Color.White, fontSize = 14.sp) },
-                    icon = { Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF94A3B8)) },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() } },
-                    colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
-                    label = { Text("Send Feedback", color = Color.White, fontSize = 14.sp) },
-                    icon = { Icon(Icons.Default.Email, contentDescription = null, tint = Color(0xFF94A3B8)) },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() } },
-                    colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
-                    label = { Text("Rate the App ★", color = Color(0xFFFFC107), fontSize = 14.sp) },
-                    icon = { Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFC107)) },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() } },
-                    colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-            }
-        }
-    ) {
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
             .testTag("main_scaffold"),
         topBar = {
             TopAppBar(
-                navigationIcon = {
-                    IconButton(
-                        onClick = { scope.launch { drawerState.open() } },
-                        modifier = Modifier.testTag("app_overflow_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Menu,
-                            contentDescription = "Open menu",
-                            tint = Color(0xFF00E5FF)
-                        )
-                    }
-                },
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -435,6 +272,55 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             letterSpacing = 0.5.sp,
                             color = Color.White
                         )
+                    }
+                },
+                actions = {
+                    Box {
+                        IconButton(
+                            onClick = { showAppMenu = true },
+                            modifier = Modifier.testTag("app_overflow_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Menu,
+                                contentDescription = "App menu",
+                                tint = Color(0xFF00E5FF)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showAppMenu,
+                            onDismissRequest = { showAppMenu = false },
+                            modifier = Modifier
+                                .background(Color(0xFF131A26))
+                                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(12.dp))
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Share, contentDescription = "Export", tint = Color(0xFF00E5FF))
+                                        Text("Export", color = Color.White)
+                                    }
+                                },
+                                onClick = { showAppMenu = false; showCsvDialog = true }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Backup, contentDescription = "Backup", tint = Color(0xFF10B981))
+                                        Text("Backup", color = Color.White)
+                                    }
+                                },
+                                onClick = { showAppMenu = false; showBackupDialog = true }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Restore, contentDescription = "Restore", tint = Color(0xFFFFC107))
+                                        Text("Restore", color = Color.White)
+                                    }
+                                },
+                                onClick = { showAppMenu = false; showRestoreDialog = true }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -514,7 +400,6 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             }
         }
     }
-    } // end ModalNavigationDrawer
 
     // Modal Dialog: Manual Add Transaction
     if (showAddDialog) {
@@ -1173,99 +1058,97 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     }
                 }
 
-                items(txList) { tx ->
-                    val resolvedCat = CategoryResolver.resolve(tx.category, customCats)
-                    val isAdjust = tx.category.equals("ADJUST", ignoreCase = true)
-                    
-                    Surface(
-                        color = if (isAdjust) Color(0xFF00E5FF).copy(alpha = 0.06f) else Color(0xFF131A26),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, if (isAdjust) Color(0xFF00E5FF).copy(alpha = 0.45f) else Color(0xFF1E293B)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clickable { selectedTxForEdit = tx }
-                            .testTag("transaction_item_${tx.id}")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Round category leading circle matching design
-                            Surface(
-                                shape = CircleShape,
-                                color = resolvedCat.color.copy(alpha = 0.15f),
-                                modifier = Modifier.size(44.dp)
+                item {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        txList.forEachIndexed { txIdx, tx ->
+                            val resolvedCat = CategoryResolver.resolve(tx.category, customCats)
+                            val isAdjust = tx.category.equals("ADJUST", ignoreCase = true)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(if (isAdjust) Color(0xFF00E5FF).copy(alpha = 0.05f) else Color.Transparent)
+                                    .clickable { selectedTxForEdit = tx }
+                                    .testTag("transaction_item_${tx.id}")
+                                    .padding(horizontal = 4.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = resolvedCat.icon,
-                                        contentDescription = resolvedCat.displayName,
-                                        tint = resolvedCat.color,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                            
-                            Spacer(modifier = Modifier.width(12.dp))
-                            
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = tx.title,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = Color.White,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Surface(
-                                        color = Color.White.copy(alpha = 0.06f),
-                                        shape = RoundedCornerShape(4.dp)
-                                    ) {
-                                        Text(
-                                            text = tx.getAccountName(),
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFF00E5FF),
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                Surface(
+                                    shape = CircleShape,
+                                    color = resolvedCat.color.copy(alpha = 0.15f),
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = resolvedCat.icon,
+                                            contentDescription = resolvedCat.displayName,
+                                            tint = resolvedCat.color,
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
                                 }
-                            }
-                            
-                            Spacer(modifier = Modifier.width(8.dp))
-                            
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = when (tx.type) {
-                                        "INCOME" -> "+" + decFormat.format(tx.amount)
-                                        "DUPLICATE" -> "DUP"
-                                        "BALANCE_UPDATE" -> {
-                                            val a = tx.amount
-                                            when {
-                                                a >= 1_000_000 -> "\u20b9${String.format("%.1f", a / 1_000_000)}M"
-                                                a >= 1_000 -> "\u20b9${String.format("%.1f", a / 1_000)}K"
-                                                else -> "\u20b9${a.toInt()}"
-                                            }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = tx.title,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(
+                                            color = Color.White.copy(alpha = 0.06f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = tx.getAccountName(),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color(0xFF00E5FF),
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
                                         }
-                                        else -> "-" + decFormat.format(tx.amount)
-                                    },
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 15.sp,
-                                    color = when (tx.type) {
-                                        "INCOME" -> Color(0xFF10B981)
-                                        "DUPLICATE" -> Color.White.copy(alpha = 0.35f)
-                                        "BALANCE_UPDATE" -> Color.White.copy(alpha = 0.35f)
-                                        else -> Color(0xFFF43F5E)
                                     }
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
-                                    fontSize = 10.sp,
-                                    color = Color.White.copy(alpha = 0.3f)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = when (tx.type) {
+                                            "INCOME" -> "+" + decFormat.format(tx.amount)
+                                            "DUPLICATE" -> "DUP"
+                                            "BALANCE_UPDATE" -> {
+                                                val a = tx.amount
+                                                when {
+                                                    a >= 1_000_000 -> "\u20b9${String.format("%.1f", a / 1_000_000)}M"
+                                                    a >= 1_000 -> "\u20b9${String.format("%.1f", a / 1_000)}K"
+                                                    else -> "\u20b9${a.toInt()}"
+                                                }
+                                            }
+                                            else -> "-" + decFormat.format(tx.amount)
+                                        },
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 15.sp,
+                                        color = when (tx.type) {
+                                            "INCOME" -> Color(0xFF10B981)
+                                            "DUPLICATE" -> Color.White.copy(alpha = 0.35f)
+                                            "BALANCE_UPDATE" -> Color.White.copy(alpha = 0.35f)
+                                            else -> Color(0xFFF43F5E)
+                                        }
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
+                                        fontSize = 10.sp,
+                                        color = Color.White.copy(alpha = 0.3f)
+                                    )
+                                }
+                            }
+                            if (txIdx < txList.size - 1) {
+                                HorizontalDivider(
+                                    color = Color.White.copy(alpha = 0.07f),
+                                    modifier = Modifier.padding(start = 56.dp)
                                 )
                             }
                         }

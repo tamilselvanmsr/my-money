@@ -210,7 +210,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     // Bottom Sheet & Dialog control states
     var showAddDialog by remember { mutableStateOf(false) }
     var showCsvDialog by remember { mutableStateOf(false) }
-    var showAppMenu by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
     var showBackupDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
     
@@ -239,12 +239,175 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     val darkBg = Color(0xFF0B0F19)
     val cardSurface = Color(0xFF131A26)
 
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                modifier = Modifier.width(300.dp),
+                windowInsets = WindowInsets(0),
+                drawerContainerColor = Color(0xFF131A26),
+            ) {
+                // ── App branding header ──────────────────────────────────────
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0B0F19))
+                        .padding(24.dp)
+                ) {
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Surface(
+                                color = Color(0xFF00E5FF).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.AccountBalanceWallet,
+                                        contentDescription = null,
+                                        tint = Color(0xFF00E5FF),
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                            }
+                            Column {
+                                Text(
+                                    "MyMoney",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 22.sp,
+                                    color = Color.White
+                                )
+                                Text(
+                                    "v${BuildConfig.VERSION_NAME}",
+                                    fontSize = 11.sp,
+                                    color = Color.White.copy(alpha = 0.4f)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Surface(
+                            color = Color(0xFF00E5FF).copy(alpha = 0.08f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = Color(0xFF00E5FF),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    "Designed by Ananta Raha",
+                                    fontSize = 11.sp,
+                                    color = Color.White.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider(color = Color.White.copy(alpha = 0.07f))
+                Spacer(Modifier.height(8.dp))
+
+                // ── Data section ─────────────────────────────────────────────
+                Text(
+                    "DATA",
+                    modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 4.dp),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    color = Color.White.copy(alpha = 0.35f)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Export Records", color = Color.White, fontSize = 14.sp) },
+                    icon = { Icon(Icons.Default.Share, contentDescription = null, tint = Color(0xFF00E5FF)) },
+                    selected = false,
+                    onClick = { scope.launch { drawerState.close() }; showCsvDialog = true },
+                    colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Backup Data", color = Color.White, fontSize = 14.sp) },
+                    icon = { Icon(Icons.Default.Backup, contentDescription = null, tint = Color(0xFF10B981)) },
+                    selected = false,
+                    onClick = { scope.launch { drawerState.close() }; showBackupDialog = true },
+                    colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Restore Backup", color = Color.White, fontSize = 14.sp) },
+                    icon = { Icon(Icons.Default.Restore, contentDescription = null, tint = Color(0xFFFFC107)) },
+                    selected = false,
+                    onClick = { scope.launch { drawerState.close() }; showRestoreDialog = true },
+                    colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+
+                HorizontalDivider(
+                    color = Color.White.copy(alpha = 0.07f),
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+
+                // ── App section ───────────────────────────────────────────────
+                Text(
+                    "APP",
+                    modifier = Modifier.padding(start = 20.dp, top = 4.dp, bottom = 4.dp),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    color = Color.White.copy(alpha = 0.35f)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Help & FAQ", color = Color.White, fontSize = 14.sp) },
+                    icon = { Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF94A3B8)) },
+                    selected = false,
+                    onClick = { scope.launch { drawerState.close() } },
+                    colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Send Feedback", color = Color.White, fontSize = 14.sp) },
+                    icon = { Icon(Icons.Default.Email, contentDescription = null, tint = Color(0xFF94A3B8)) },
+                    selected = false,
+                    onClick = { scope.launch { drawerState.close() } },
+                    colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Rate the App ★", color = Color(0xFFFFC107), fontSize = 14.sp) },
+                    icon = { Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFC107)) },
+                    selected = false,
+                    onClick = { scope.launch { drawerState.close() } },
+                    colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+            }
+        }
+    ) {
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
             .testTag("main_scaffold"),
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    IconButton(
+                        onClick = { scope.launch { drawerState.open() } },
+                        modifier = Modifier.testTag("app_overflow_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = "Open menu",
+                            tint = Color(0xFF00E5FF)
+                        )
+                    }
+                },
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -272,76 +435,6 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             letterSpacing = 0.5.sp,
                             color = Color.White
                         )
-                    }
-                },
-                actions = {
-                    Box {
-                        IconButton(
-                            onClick = { showAppMenu = true },
-                            modifier = Modifier.testTag("app_overflow_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Menu,
-                                contentDescription = "App menu",
-                                tint = Color(0xFF00E5FF)
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = showAppMenu,
-                            onDismissRequest = { showAppMenu = false },
-                            modifier = Modifier
-                                .background(Color(0xFF131A26))
-                                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(12.dp))
-                        ) {
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text("MyMoney v${BuildConfig.VERSION_NAME}", color = Color.White, fontWeight = FontWeight.Bold)
-                                        Text("App version", color = Color.White.copy(alpha = 0.45f), fontSize = 11.sp)
-                                    }
-                                },
-                                onClick = {},
-                                enabled = false
-                            )
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-                            DropdownMenuItem(
-                                text = {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Share, contentDescription = "Export", tint = Color(0xFF00E5FF))
-                                        Text("Export", color = Color.White)
-                                    }
-                                },
-                                onClick = {
-                                    showAppMenu = false
-                                    showCsvDialog = true
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Backup, contentDescription = "Backup", tint = Color(0xFF10B981))
-                                        Text("Backup", color = Color.White)
-                                    }
-                                },
-                                onClick = {
-                                    showAppMenu = false
-                                    showBackupDialog = true
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Restore, contentDescription = "Restore", tint = Color(0xFFFFC107))
-                                        Text("Restore", color = Color.White)
-                                    }
-                                },
-                                onClick = {
-                                    showAppMenu = false
-                                    showRestoreDialog = true
-                                }
-                            )
-                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -421,6 +514,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             }
         }
     }
+    } // end ModalNavigationDrawer
 
     // Modal Dialog: Manual Add Transaction
     if (showAddDialog) {
@@ -458,7 +552,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
 }
 
 // 1. RECORDS / DASHBOARD SCREEN
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(viewModel: FinanceViewModel) {
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
@@ -475,8 +569,12 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
     var selectedWallet by remember { mutableStateOf("All") }
     var selectedTxForEdit by remember { mutableStateOf<TransactionEntry?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+    var searchFilter by remember { mutableStateOf("All") }
     var isSearchExpanded by remember { mutableStateOf(false) }
-    var showDeletePeriodDialog by remember { mutableStateOf(false) }
+    var showDeleteOptionsSheet by remember { mutableStateOf(false) }
+    var deleteConfirmMode by remember { mutableStateOf("") }
+    var selectedDeleteCategory by remember { mutableStateOf("") }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     
     val (periodStart, periodEnd) = getPeriodRange(activeMode, anchorTime)
     
@@ -507,12 +605,21 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
             true
         } else {
             val query = searchQuery.trim()
-            val noteText = tx.note?.substringBefore(" [Acc:")?.trim().orEmpty()
             val displayCategory = CategoryResolver.resolve(tx.category, customCats).displayName
-            tx.title.contains(query, ignoreCase = true) ||
-                tx.category.contains(query, ignoreCase = true) ||
-                displayCategory.contains(query, ignoreCase = true) ||
-                noteText.contains(query, ignoreCase = true)
+            when (searchFilter) {
+                "Title"    -> tx.title.contains(query, ignoreCase = true)
+                "Category" -> tx.category.contains(query, ignoreCase = true) || displayCategory.contains(query, ignoreCase = true)
+                "Account"  -> tx.getAccountName(consolidateAccounts).contains(query, ignoreCase = true)
+                "Type"     -> tx.type.contains(query, ignoreCase = true)
+                else       -> {
+                    val noteText = tx.note?.substringBefore(" [Acc:")?.trim().orEmpty()
+                    tx.title.contains(query, ignoreCase = true) ||
+                        tx.category.contains(query, ignoreCase = true) ||
+                        displayCategory.contains(query, ignoreCase = true) ||
+                        noteText.contains(query, ignoreCase = true) ||
+                        tx.getAccountName(consolidateAccounts).contains(query, ignoreCase = true)
+                }
+            }
         }
     }
     
@@ -527,7 +634,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
             .fillMaxSize()
             .testTag("dashboard_scroll_column"),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // Active Month/Period Navigation Selector Header
         item {
@@ -576,7 +683,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                     FilledTonalIconButton(
                         onClick = {
                             isSearchExpanded = !isSearchExpanded
-                            if (!isSearchExpanded) searchQuery = ""
+                            if (!isSearchExpanded) { searchQuery = ""; searchFilter = "All" }
                         },
                         colors = IconButtonDefaults.filledTonalIconButtonColors(
                             containerColor = if (isSearchExpanded || searchQuery.isNotBlank()) Color(0xFF00E5FF).copy(alpha = 0.18f) else Color.White.copy(alpha = 0.08f),
@@ -587,17 +694,15 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         Icon(Icons.Default.Search, contentDescription = "Toggle search")
                     }
 
-                    if (activeMode == DisplayMode.MONTHLY) {
-                        FilledTonalIconButton(
-                            onClick = { showDeletePeriodDialog = true },
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = Color(0xFFF43F5E).copy(alpha = 0.18f),
-                                contentColor = Color(0xFFF43F5E)
-                            ),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(Icons.Default.DeleteSweep, contentDescription = "Delete month")
-                        }
+                    FilledTonalIconButton(
+                        onClick = { showDeleteOptionsSheet = true },
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = Color(0xFFF43F5E).copy(alpha = 0.18f),
+                            contentColor = Color(0xFFF43F5E)
+                        ),
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = "Delete options")
                     }
 
                     Box {
@@ -721,6 +826,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
         }
         }
 
+        if (!isSearchExpanded) {
         // Net Balance Glow Card
         item {
             Surface(
@@ -914,35 +1020,72 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                 }
             }
         }
+        } // end if (!isSearchExpanded)
 
         if (isSearchExpanded) {
             item {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White.copy(alpha = 0.6f))
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotBlank()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Color.White.copy(alpha = 0.6f))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        leadingIcon = {
+                            Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White.copy(alpha = 0.6f))
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotBlank()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Color.White.copy(alpha = 0.6f))
+                                }
                             }
-                        }
-                    },
-                    label = { Text("Search records") },
-                    placeholder = { Text("Merchant, category, or notes") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF00E5FF),
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                        focusedLabelColor = Color(0xFF00E5FF),
-                        unfocusedLabelColor = Color.White.copy(alpha = 0.5f)
+                        },
+                        label = { Text("Search records") },
+                        placeholder = {
+                            Text(when (searchFilter) {
+                                "Title"    -> "Search by merchant / title…"
+                                "Category" -> "Search by category…"
+                                "Account"  -> "Search by account / wallet…"
+                                "Type"     -> "INCOME or EXPENSE…"
+                                else       -> "Search all fields…"
+                            })
+                        },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF00E5FF),
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                            focusedLabelColor = Color(0xFF00E5FF),
+                            unfocusedLabelColor = Color.White.copy(alpha = 0.5f)
+                        )
                     )
-                )
+                    // Filter chips — narrow the search to a specific field
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val filters = listOf("All", "Title", "Category", "Account", "Type")
+                        items(filters.size) { i ->
+                            val f = filters[i]
+                            val sel = searchFilter == f
+                            FilterChip(
+                                selected = sel,
+                                onClick = { searchFilter = f },
+                                label = { Text(f, fontSize = 11.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal) },
+                                leadingIcon = if (sel) {{ Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }} else null,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFF00E5FF).copy(0.15f),
+                                    selectedLabelColor = Color(0xFF00E5FF),
+                                    containerColor = Color.White.copy(0.05f),
+                                    labelColor = Color.White.copy(0.6f)
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = sel,
+                                    selectedBorderColor = Color(0xFF00E5FF).copy(0.5f),
+                                    borderColor = Color.White.copy(0.1f)
+                                )
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -1132,21 +1275,182 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
         }
     }
 
-    if (showDeletePeriodDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeletePeriodDialog = false },
-            title = { Text("Delete Month Transactions", color = Color.White) },
-            text = {
+    // ── Delete options bottom sheet ──────────────────────────────────────
+    if (showDeleteOptionsSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val periodCategories = remember(monthTransactions, customCats) {
+            monthTransactions
+                .filter { it.type != "BALANCE_UPDATE" }
+                .map { CategoryResolver.resolve(it.category, customCats).displayName }
+                .distinct()
+                .sorted()
+        }
+        var showCategoryPicker by remember { mutableStateOf(false) }
+
+        ModalBottomSheet(
+            onDismissRequest = { showDeleteOptionsSheet = false },
+            sheetState = sheetState,
+            containerColor = Color(0xFF131A26),
+            tonalElevation = 4.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 32.dp)
+            ) {
                 Text(
-                    "Delete every transaction in ${formatPeriodLabel(activeMode, anchorTime)}? This cannot be undone.",
-                    color = Color.White.copy(alpha = 0.75f)
+                    "Delete Records",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = Color.White,
+                    modifier = Modifier.padding(bottom = 16.dp)
                 )
-            },
+
+                // Option 1: Delete All Records
+                Surface(
+                    onClick = { deleteConfirmMode = "all"; showDeleteConfirmDialog = true },
+                    color = Color(0xFFF43F5E).copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.DeleteForever, contentDescription = null, tint = Color(0xFFF43F5E))
+                        Column {
+                            Text("Delete All Records", color = Color.White, fontWeight = FontWeight.SemiBold)
+                            Text("Permanently removes every transaction", color = Color.White.copy(0.5f), fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                // Option 2: Delete This Period's Records
+                Surface(
+                    onClick = { deleteConfirmMode = "period"; showDeleteConfirmDialog = true },
+                    color = Color(0xFFFFC107).copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFFFC107))
+                        Column {
+                            Text(
+                                "Delete ${formatPeriodLabel(activeMode, anchorTime)}",
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text("Remove all transactions in the current period", color = Color.White.copy(0.5f), fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                // Option 3: Delete by Category
+                Surface(
+                    onClick = { showCategoryPicker = true },
+                    color = Color(0xFF00E5FF).copy(alpha = 0.06f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.FilterList, contentDescription = null, tint = Color(0xFF00E5FF))
+                        Column {
+                            Text("Delete by Category", color = Color.White, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (periodCategories.isEmpty()) "No categories in this period"
+                                else "Choose a category from the current period",
+                                color = Color.White.copy(0.5f),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Category picker dialog
+            if (showCategoryPicker) {
+                AlertDialog(
+                    onDismissRequest = { showCategoryPicker = false },
+                    title = { Text("Choose Category", color = Color.White) },
+                    text = {
+                        if (periodCategories.isEmpty()) {
+                            Text("No categories found in this period.", color = Color.White.copy(0.6f))
+                        } else {
+                            LazyColumn {
+                                items(periodCategories.size) { i ->
+                                    val cat = periodCategories[i]
+                                    TextButton(
+                                        onClick = {
+                                            selectedDeleteCategory = cat
+                                            showCategoryPicker = false
+                                            deleteConfirmMode = "category"
+                                            showDeleteConfirmDialog = true
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            cat,
+                                            color = Color(0xFF00E5FF),
+                                            textAlign = TextAlign.Start,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showCategoryPicker = false }) {
+                            Text("Cancel", color = Color.White)
+                        }
+                    },
+                    containerColor = Color(0xFF1E293B)
+                )
+            }
+        }
+    }
+
+    // ── Delete confirmation dialog ────────────────────────────────────────
+    if (showDeleteConfirmDialog) {
+        val confirmText = when (deleteConfirmMode) {
+            "all"      -> "Delete ALL transactions permanently? This cannot be undone."
+            "period"   -> "Delete every transaction in ${formatPeriodLabel(activeMode, anchorTime)}? This cannot be undone."
+            "category" -> "Delete all '$selectedDeleteCategory' transactions in ${formatPeriodLabel(activeMode, anchorTime)}? This cannot be undone."
+            else       -> ""
+        }
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = { Text("Confirm Delete", color = Color.White) },
+            text = { Text(confirmText, color = Color.White.copy(alpha = 0.75f)) },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deleteTransactionsInRange(periodStart, periodEnd, formatPeriodLabel(activeMode, anchorTime))
-                        showDeletePeriodDialog = false
+                        when (deleteConfirmMode) {
+                            "all"      -> viewModel.clearAllData()
+                            "period"   -> viewModel.deleteTransactionsInRange(periodStart, periodEnd, formatPeriodLabel(activeMode, anchorTime))
+                            "category" -> {
+                                val rawCat = monthTransactions
+                                    .firstOrNull { CategoryResolver.resolve(it.category, customCats).displayName == selectedDeleteCategory }
+                                    ?.category ?: selectedDeleteCategory
+                                viewModel.deleteTransactionsByCategoryInRange(rawCat, periodStart, periodEnd)
+                            }
+                        }
+                        showDeleteConfirmDialog = false
+                        showDeleteOptionsSheet = false
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFF43F5E))
                 ) {
@@ -1154,7 +1458,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeletePeriodDialog = false }) {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
                     Text("Cancel", color = Color.White)
                 }
             },
@@ -1718,6 +2022,7 @@ private fun AnalyticsOverviewSection(
         }
 
         if (categoryTotals.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = breakdownLabel,
                 fontWeight = FontWeight.Bold,
@@ -1796,6 +2101,7 @@ private fun AnalyticsOverviewSection(
                     }
                 }
             }
+            } // end breakdown Column
         }
     }
 }
@@ -3643,7 +3949,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
             item {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     orderedAccounts.forEach { acc ->
                         val bal = walletsBalances[acc.name] ?: 0.0
@@ -5724,7 +6030,7 @@ fun BackupDialog(
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Export Backup",
+                    "Export Backup ",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White

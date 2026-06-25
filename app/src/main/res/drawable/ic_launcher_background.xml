@@ -4,20 +4,21 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Deep indigo base -->
+    <!-- Dark navy base matching app theme (#0B0F19) -->
     <path
-        android:fillColor="#1A237E"
+        android:fillColor="#0B0F19"
         android:pathData="M0,0H108V108H0Z"/>
-    <!-- Radial centre glow -->
+    <!-- Subtle teal glow top-right accent -->
     <path
-        android:fillColor="#283593"
-        android:pathData="M54,54 m-50,0 a50,50 0,1 0,100 0 a50,50 0,1 0,-100 0"/>
-    <!-- Top-right corner accent -->
+        android:fillColor="#00E5FF"
+        android:fillAlpha="0.07"
+        android:pathData="M108,0 L108,62 Q66,20 54,0 Z"/>
+    <!-- Centre radial card surface glow -->
     <path
-        android:fillColor="#3949AB"
-        android:pathData="M108,0 L108,56 Q76,28 54,0 Z"/>
-    <!-- Bottom-left subtle shadow -->
+        android:fillColor="#131A26"
+        android:pathData="M54,54 m -38,0 a 38,38 0,1 0,76 0 a 38,38 0,1 0,-76 0"/>
+    <!-- Bottom-left dim accent -->
     <path
-        android:fillColor="#0D1463"
-        android:pathData="M0,108 L0,52 Q32,80 54,108 Z"/>
+        android:fillColor="#0D1220"
+        android:pathData="M0,108 L0,46 Q42,82 54,108 Z"/>
 </vector>

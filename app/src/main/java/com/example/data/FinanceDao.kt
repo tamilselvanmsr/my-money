@@ -24,6 +24,9 @@ interface FinanceDao {
     @Query("DELETE FROM transactions WHERE timestamp BETWEEN :startTime AND :endTime")
     suspend fun deleteTransactionsInRange(startTime: Long, endTime: Long)
 
+    @Query("DELETE FROM transactions WHERE category = :category AND timestamp BETWEEN :startTime AND :endTime")
+    suspend fun deleteTransactionsByCategoryInRange(category: String, startTime: Long, endTime: Long)
+
     @Query("SELECT COUNT(*) FROM transactions WHERE smsBody = :smsBody")
     suspend fun countTransactionsWithSmsBody(smsBody: String): Int
 

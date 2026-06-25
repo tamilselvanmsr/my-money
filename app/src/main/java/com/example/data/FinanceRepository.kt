@@ -37,6 +37,10 @@ class FinanceRepository(private val financeDao: FinanceDao) {
         financeDao.deleteTransactionsInRange(startTime, endTime)
     }
 
+    suspend fun deleteTransactionsByCategoryInRange(category: String, startTime: Long, endTime: Long) {
+        financeDao.deleteTransactionsByCategoryInRange(category, startTime, endTime)
+    }
+
     // Budgets
     suspend fun insertBudget(budget: BudgetEntry) {
         financeDao.insertBudget(budget)

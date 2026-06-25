@@ -316,7 +316,7 @@ object PdfExporter {
 
     private fun paint(size: Float, color: Int, bold: Boolean = false): Paint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = size * 2.0f   // pts → px approximation for A4 at 72dpi
+            textSize = size * 1.3f   // pts → px for A4 at 72dpi (reduced from 2.0 to stop cell overflow)
             this.color = color
             isFakeBoldText = bold
         }

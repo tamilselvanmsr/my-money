@@ -55,12 +55,12 @@ object ExcelExporter {
             // ─── STYLES ───────────────────────────────────────────────────────────
             append("<Styles>")
             append(style("Default",  font("Calibri", 10, color = "#1E293B"), align = "Center"))
-            // Title block
-            append(style("title",    font("Calibri", 18, bold = true, color = "#FFFFFF"), bg = "#0F172A"))
-            append(style("subtitle", font("Calibri", 10, italic = true, color = "#94A3B8"), bg = "#0F172A"))
+            // Title block — use rich blue, not near-black
+            append(style("title",    font("Calibri", 16, bold = true, color = "#FFFFFF"), bg = "#1E40AF"))
+            append(style("subtitle", font("Calibri", 10, italic = true, color = "#BFDBFE"), bg = "#1E3A8A"))
             // Column headers
             append(style("hdrBlue",  font("Calibri", 10, bold = true, color = "#FFFFFF"), bg = "#0369A1", borders = true))
-            append(style("hdrNavy",  font("Calibri", 10, bold = true, color = "#FFFFFF"), bg = "#0F172A", borders = true))
+            append(style("hdrNavy",  font("Calibri", 10, bold = true, color = "#FFFFFF"), bg = "#1E3A8A", borders = true))
             append(style("hdrTeal",  font("Calibri", 10, bold = true, color = "#FFFFFF"), bg = "#0F766E", borders = true))
             append(style("hdrPurp",  font("Calibri", 10, bold = true, color = "#FFFFFF"), bg = "#6D28D9", borders = true))
             // Data rows – plain
@@ -86,15 +86,15 @@ object ExcelExporter {
             append(style("totValExp", font("Calibri", 11, bold = true, color = "#BE123C"), bg = "#FFE4E6", borders = true, numFmt = "₹#,##0.00"))
             // Percentage
             append(style("pct", font("Calibri", 10, color = "#475569"), bg = "#F8FAFC", borders = true))
-            // Dynamic category colors
+            // Dynamic category colors — colored TEXT on light background (avoids dark/black cells)
             sections.flatMap { it.breakdown }.map { it.colorHex }.distinct().forEach { hex ->
                 val id = "c${hex.removePrefix("#").uppercase()}"
                 append("<Style ss:ID=\"$id\">")
-                append("<Font ss:FontName=\"Calibri\" ss:Size=\"10\" ss:Bold=\"1\" ss:Color=\"#FFFFFF\"/>")
-                append("<Interior ss:Color=\"$hex\" ss:Pattern=\"Solid\"/>")
+                append("<Font ss:FontName=\"Calibri\" ss:Size=\"10\" ss:Bold=\"1\" ss:Color=\"$hex\"/>")
+                append("<Interior ss:Color=\"#F8FAFC\" ss:Pattern=\"Solid\"/>")
                 append("<Borders>")
                 listOf("Bottom", "Left", "Right", "Top").forEach { pos ->
-                    append("<Border ss:Position=\"$pos\" ss:LineStyle=\"Continuous\" ss:Weight=\"1\" ss:Color=\"#FFFFFF\"/>")
+                    append("<Border ss:Position=\"$pos\" ss:LineStyle=\"Continuous\" ss:Weight=\"1\" ss:Color=\"#CBD5E1\"/>")
                 }
                 append("</Borders>")
                 append("</Style>")
@@ -111,8 +111,8 @@ object ExcelExporter {
             append("<Column ss:Width=\"115\"/>") // Net
             append("<Column ss:Width=\"120\"/>") // Grand Total
 
-            append(row(tc("MyMoney Financial Report", "title"), ec(), ec(), ec(), ec(), ec()))
-            append(row(tc("Generated: $generatedAt", "subtitle"), ec(), ec(), ec(), ec(), ec()))
+            append(mergeRow("MyMoney Financial Report", "title", 5))
+            append(mergeRow("Generated: $generatedAt", "subtitle", 5))
             append(row(ec()))
             append(row(
                 tc("Month", "hdrNavy"), tc("Carry Over", "hdrBlue"),
@@ -124,7 +124,7 @@ object ExcelExporter {
                 val netStyle = if (s.net >= 0) "amtInc" else "amtExp"
                 val closingStyle = if (s.closingBalance >= 0) "amtBlue" else "amtNeg"
                 append(row(
-                    tc(s.monthKey, "hdrNavy"),
+                    tc(s.monthKey, "totLbl"),
                     nc(s.openingBalance, "amtBlue"),
                     nc(s.income, "amtInc"),
                     nc(s.expense, "amtExp"),
@@ -148,7 +148,7 @@ object ExcelExporter {
 
             // Category breakdown embedded
             sections.sortedByDescending { it.monthKey }.forEach { s ->
-                append(row(tc("${s.monthKey} — Category Breakdown", "hdrNavy"), ec(), ec()))
+                append(mergeRow("${s.monthKey} — Category Breakdown", "hdrBlue", 2))
                 append(row(tc("Category", "hdrBlue"), tc("Share %", "hdrBlue"), tc("Amount", "hdrBlue")))
                 s.breakdown.forEach { entry ->
                     val id = "c${entry.colorHex.removePrefix("#").uppercase()}"
@@ -174,8 +174,8 @@ object ExcelExporter {
             append("<Column ss:Width=\"120\"/>")
             append("<Column ss:Width=\"80\"/>")
 
-            append(row(tc("Account Activity Summary", "title"), ec(), ec(), ec(), ec()))
-            append(row(tc("Generated: $generatedAt", "subtitle"), ec(), ec(), ec(), ec()))
+            append(mergeRow("Account Activity Summary", "title", 4))
+            append(mergeRow("Generated: $generatedAt", "subtitle", 4))
             append(row(ec()))
             append(row(
                 tc("Account / Wallet", "hdrNavy"),
@@ -221,7 +221,7 @@ object ExcelExporter {
                 append("<Column ss:Width=\"105\"/>") // Amount
                 append("<Column ss:Width=\"70\"/>")  // Type
 
-                append(row(tc("${s.monthKey} Transactions", "title"), ec(), ec(), ec(), ec(), ec(), ec()))
+                append(mergeRow("${s.monthKey} Transactions", "title", 6))
                 append(row(
                     tc("Income", "hdrTeal"), nc(s.income, "amtInc"),
                     tc("Expense", "hdrPurp"), nc(s.expense, "amtExp"),
@@ -329,6 +329,9 @@ object ExcelExporter {
     // ─── Cell / row helpers ──────────────────────────────────────────────────
 
     private fun row(vararg cells: String): String = "<Row>${cells.joinToString("")}</Row>"
+    /** Outputs a full-width merged header row spanning (mergeAcross+1) columns. */
+    private fun mergeRow(text: String, styleId: String, mergeAcross: Int): String =
+        "<Row><Cell ss:StyleID=\"$styleId\" ss:MergeAcross=\"$mergeAcross\"><Data ss:Type=\"String\">${escapeXml(text)}</Data></Cell></Row>"
     private fun tc(text: String, styleId: String): String =
         "<Cell ss:StyleID=\"$styleId\"><Data ss:Type=\"String\">${escapeXml(text)}</Data></Cell>"
     private fun nc(amount: Double, styleId: String): String =

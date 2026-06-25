@@ -763,6 +763,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun deleteTransactionsByCategoryInRange(category: String, startTime: Long, endTime: Long) {
+        viewModelScope.launch {
+            repository.deleteTransactionsByCategoryInRange(category, startTime, endTime)
+            _toastMessage.emit("Deleted '$category' transactions for this period")
+        }
+    }
+
     fun clearAllData() {
         viewModelScope.launch {
             repository.clearTransactions()

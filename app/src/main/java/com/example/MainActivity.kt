@@ -928,11 +928,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    val walletList = if (accounts.isEmpty()) {
-                        listOf("All", "Cash Wallet", "Bank Account", "Credit Card", "Digital Wallet")
-                    } else {
-                        listOf("All") + accounts.map { it.name }
-                    }
+                    val walletList = listOf("All") + accounts.map { it.name }
                     items(walletList) { name ->
                         val isSelected = selectedWallet == name
                         
@@ -5116,7 +5112,7 @@ fun AddTransactionDialog(
     var amountStr by remember { mutableStateOf("") }
     var transactionType by remember { mutableStateOf("EXPENSE") } // EXPENSE, INCOME
     var categorySelection by remember { mutableStateOf("FOOD") }
-    var accountSelection by remember { mutableStateOf("Cash Wallet") }
+    var accountSelection by remember { mutableStateOf("") }
     var notesStr by remember { mutableStateOf("") }
     var selectedTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
     var showWalletPicker by remember { mutableStateOf(false) }
@@ -5127,10 +5123,12 @@ fun AddTransactionDialog(
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
     val allCategories = CategoryResolver.getAll(customCats)
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
-    val selectablesWallets = if (accounts.isEmpty()) {
-        listOf("Cash Wallet", "Bank Account", "Credit Card", "Digital Wallet")
-    } else {
-        accounts.map { it.name }
+    val selectablesWallets = accounts.map { it.name }
+    // Auto-select first real account once accounts load
+    LaunchedEffect(accounts) {
+        if (accounts.isNotEmpty() && !accounts.any { it.name == accountSelection }) {
+            accountSelection = accounts.first().name
+        }
     }
     val filteredCats = if (transactionType == "EXPENSE") {
         allCategories.filter { it.type == "EXPENSE" }
@@ -5357,11 +5355,7 @@ fun EditTransactionDialog(
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
     val allCategories = CategoryResolver.getAll(customCats)
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
-    val selectablesWallets = if (accounts.isEmpty()) {
-        listOf("Cash Wallet", "Bank Account", "Credit Card", "Digital Wallet")
-    } else {
-        accounts.map { it.name }
-    }
+    val selectablesWallets = accounts.map { it.name }
     val filteredCats = when (editType) {
         "INCOME" -> allCategories.filter { it.type == "INCOME" }
         else -> allCategories.filter { it.type == "EXPENSE" }
@@ -6593,7 +6587,7 @@ fun AccountCenterSettingsDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Show Credit Card Details", color = c.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Show Credit Card Details", color = c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             Text("Display available limit & due amount on cards", color = c.textSecondary, fontSize = 11.sp)
                         }
                         Switch(
@@ -6621,14 +6615,15 @@ fun AccountCenterSettingsDialog(
                 }
                 items(accounts) { acc ->
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().height(40.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(acc.name, color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        Text(acc.name, color = c.text, fontSize = 12.sp, modifier = Modifier.weight(1f))
                         Switch(
                             checked = !hiddenAccountIds.contains(acc.id),
                             onCheckedChange = { visible -> viewModel.setAccountHidden(acc.id, !visible) },
+                            modifier = Modifier.scale(0.75f),
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = c.accent,
                                 checkedTrackColor = c.accent.copy(alpha = 0.45f),

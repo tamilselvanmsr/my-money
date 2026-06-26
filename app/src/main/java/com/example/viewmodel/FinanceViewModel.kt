@@ -284,6 +284,20 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         _selectedMonthYear.value = current
         createBudgetAlertChannel()
         checkAndLogRecurringTransactions()
+        seedDefaultAccountsIfNeeded()
+    }
+
+    private fun seedDefaultAccountsIfNeeded() {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (repository.allAccounts.first().isEmpty()) {
+                listOf(
+                    Account(name = "Cash Wallet",    type = "CASH",        balance = 0.0),
+                    Account(name = "Savings Account", type = "BANK",        balance = 0.0),
+                    Account(name = "Credit Card",     type = "CREDIT_CARD", balance = 0.0),
+                    Account(name = "Digital Wallet",  type = "WALLET",      balance = 0.0)
+                ).forEach { repository.insertAccount(it) }
+            }
+        }
     }
 
     private fun createBudgetAlertChannel() {
@@ -972,11 +986,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         if (parsed != null) {
                             val targetTime = parsed.parsedTimestamp ?: smsDate
 
-                            if (parsed.isBalanceUpdate && parsed.availableBalance != null) {
-                                // Always skip from regular txn flow; only queue for Pass 2 if Bal Sync enabled
-                                if (enableBalanceSync.value) {
-                                    deferredBalanceSms.add(Triple(body, sender, smsDate))
-                                }
+                            if (parsed.isBalanceUpdate) {
+                                // Defer ALL balance/CC-summary SMS to Pass 2
+                                // (CC Summary has availableBalance=null — only updates credit limits)
+                                deferredBalanceSms.add(Triple(body, sender, smsDate))
                                 continue
                             }
 
@@ -1045,18 +1058,22 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     for ((body, sender, smsDate) in deferredBalanceSms) {
                         val parsed = SmsParser.parseOffline(body, sender, smsDate) ?: continue
                         val targetTime = parsed.parsedTimestamp ?: smsDate
-                        val pairs = if (parsed.allBalancePairs.isNotEmpty()) parsed.allBalancePairs
-                                    else if (parsed.accountRef != null) listOf(parsed.accountRef to parsed.availableBalance!!)
-                                    else emptyList()
-                        for ((ref, bal) in pairs) {
-                            val linkedAcc = repository.getAccountByRef(ref)
-                            if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
-                                if (createBalanceAdjustIfNeeded(linkedAcc, bal, targetTime, body, sender, projectedTransactions)) {
-                                    matchedCount++
+                        // Balance snapshot: only when Bal Sync ON and an actual balance was parsed
+                        // CC Summary has availableBalance=null so it never creates a BALANCE_UPDATE tx
+                        if (enableBalanceSync.value && parsed.availableBalance != null) {
+                            val pairs = if (parsed.allBalancePairs.isNotEmpty()) parsed.allBalancePairs
+                                        else if (parsed.accountRef != null) listOf(parsed.accountRef to parsed.availableBalance)
+                                        else emptyList()
+                            for ((ref, bal) in pairs) {
+                                val linkedAcc = repository.getAccountByRef(ref)
+                                if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
+                                    if (createBalanceAdjustIfNeeded(linkedAcc, bal, targetTime, body, sender, projectedTransactions)) {
+                                        matchedCount++
+                                    }
                                 }
                             }
                         }
-                        // Update available + total credit limits for CC accounts (e.g. CC Summary SMS)
+                        // Always update CC credit limits (regardless of Bal Sync setting)
                         if (parsed.accountRef != null) {
                             val linkedAcc = repository.getAccountByRef(parsed.accountRef)
                             if (linkedAcc != null) {
@@ -1392,11 +1409,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             val targetTime = parsed.parsedTimestamp ?: smsDate
 
                             // Handle bank available balance notification SMS (before ensureAccountExists to avoid creating phantom accounts)
-                            if (parsed.isBalanceUpdate && parsed.availableBalance != null) {
-                                // Always skip from regular txn flow; only process if Bal Sync enabled
-                                if (enableBalanceSync.value) {
+                            if (parsed.isBalanceUpdate) {
+                                // Balance snapshot: only when Bal Sync ON and actual balance was parsed
+                                if (enableBalanceSync.value && parsed.availableBalance != null) {
                                     val pairs = if (parsed.allBalancePairs.isNotEmpty()) parsed.allBalancePairs
-                                                else if (parsed.accountRef != null) listOf(parsed.accountRef to parsed.availableBalance!!)
+                                                else if (parsed.accountRef != null) listOf(parsed.accountRef to parsed.availableBalance)
                                                 else emptyList()
                                     for ((ref, bal) in pairs) {
                                         val linkedAcc = repository.getAccountByRef(ref)
@@ -1406,13 +1423,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                             }
                                         }
                                     }
-                                    // Update available + total credit limits for CC accounts
-                                    if (parsed.accountRef != null) {
-                                        val limitAcc = repository.getAccountByRef(parsed.accountRef)
-                                        if (limitAcc != null) {
-                                            parsed.availableLimit?.let { repository.updateAccountAvailableLimit(limitAcc.id, it) }
-                                            parsed.totalCreditLimit?.let { repository.updateAccountCreditLimit(limitAcc.id, it) }
-                                        }
+                                }
+                                // Always update CC credit limits (regardless of Bal Sync setting)
+                                if (parsed.accountRef != null) {
+                                    val limitAcc = repository.getAccountByRef(parsed.accountRef)
+                                    if (limitAcc != null) {
+                                        parsed.availableLimit?.let { repository.updateAccountAvailableLimit(limitAcc.id, it) }
+                                        parsed.totalCreditLimit?.let { repository.updateAccountCreditLimit(limitAcc.id, it) }
                                     }
                                 }
                                 continue
@@ -1504,6 +1521,25 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
         if (parsed != null) {
             val targetTime = parsed.parsedTimestamp ?: System.currentTimeMillis()
+
+            // CC Summary / balance-notification SMS: only update limits/balance, no transaction
+            if (parsed.isBalanceUpdate) {
+                if (parsed.accountRef != null) {
+                    val limitAcc = repository.getAccountByRef(parsed.accountRef)
+                    if (limitAcc != null) {
+                        if (enableBalanceSync.value && parsed.availableBalance != null) {
+                            val projected = mutableListOf<TransactionEntry>()
+                            createBalanceAdjustIfNeeded(limitAcc, parsed.availableBalance, targetTime, smsBody, sender, projected)
+                        }
+                        parsed.availableLimit?.let { repository.updateAccountAvailableLimit(limitAcc.id, it) }
+                        parsed.totalCreditLimit?.let { repository.updateAccountCreditLimit(limitAcc.id, it) }
+                        _toastMessage.emit("CC/Bank limits updated for ${limitAcc.name}.")
+                    } else {
+                        _toastMessage.emit("Limits update skipped — account not found for ref ${parsed.accountRef}.")
+                    }
+                }
+                return
+            }
 
             val walletName = ensureAccountExists(parsed.accountRef, sender, smsBody)
             if (walletName == null) {

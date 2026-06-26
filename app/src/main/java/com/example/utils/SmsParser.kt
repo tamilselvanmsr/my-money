@@ -860,7 +860,7 @@ object SmsParser {
 
             if (outstanding != null && ccRef != null) {
                 return SmsParsingResult(
-                    title = "Balance Update",
+                    title = "CC Summary",
                     amount = outstanding,
                     category = ExpenseCategory.ADJUST,
                     type = "INCOME",
@@ -868,7 +868,7 @@ object SmsParser {
                     accountRef = ccRef,
                     parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp),
                     isBalanceUpdate = true,
-                    availableBalance = -outstanding,  // negative — credit card debt is owed
+                    availableBalance = null,  // do NOT override account balance from CC Summary
                     availableLimit = availCreditLimit,
                     totalCreditLimit = totalCreditLimit
                 )

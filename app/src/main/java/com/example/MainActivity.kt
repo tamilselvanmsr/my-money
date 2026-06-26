@@ -4577,6 +4577,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                     requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
                                 }
                             },
+                            enabled = !isSmsParsing,
                             colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
@@ -4584,10 +4585,20 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                 .height(48.dp)
                                 .testTag("scan_device_sms_button")
                         ) {
-                            Text(
-                                if (hasReadSmsPermission) "Scan Inbox" else "Enable Auto-Import",
-                                fontWeight = FontWeight.Bold
-                            )
+                            if (isSmsParsing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = c.bg,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("Scanning…", fontWeight = FontWeight.Bold)
+                            } else {
+                                Text(
+                                    if (hasReadSmsPermission) "Scan Inbox" else "Enable Auto-Import",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                         // Bal Sync toggle
                         Row(

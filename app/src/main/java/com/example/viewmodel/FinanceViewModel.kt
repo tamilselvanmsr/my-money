@@ -924,6 +924,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun scanDeviceSmsInbox(context: android.content.Context, monthsBack: Int = 3) {
         viewModelScope.launch {
+            _isSmsParsing.value = true
             try {
                 val contentResolver = context.contentResolver
                 val cursor = contentResolver.query(
@@ -1080,6 +1081,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 Log.e(TAG, "SMS scan failed: ${e.message}", e)
                 _toastMessage.emit("SMS Scan failed. Ensure SMS read permission is granted.")
+            } finally {
+                _isSmsParsing.value = false
             }
         }
     }
@@ -1205,13 +1208,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         sender: String,
         projectedTransactions: MutableList<TransactionEntry>
     ): Boolean {
-        // Dedup: in-memory check (fast, covers within-scan duplicates)
-        if (projectedTransactions.any {
-            it.type == "BALANCE_UPDATE" &&
-            it.getAccountName() == account.name &&
-            it.timestamp == timestamp
-        }) return false
-        // Dedup: DB-level check (catches duplicates from previous scans / concurrent scan invocations)
+        // Dedup: DB-level check only — in-memory check removed because projectedTransactions
+        // is seeded from allTransactions.value which may be stale (e.g. user deleted a
+        // Balance Sync entry; the StateFlow may not have updated before the scan reads it).
         if (repository.countExactBalanceUpdates(account.name, timestamp) > 0) return false
 
         // Store the ABSOLUTE reported balance as a point-in-time snapshot.

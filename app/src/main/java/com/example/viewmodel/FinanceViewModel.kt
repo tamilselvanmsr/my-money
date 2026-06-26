@@ -1167,6 +1167,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 }
                 val cutoffTime = cal.timeInMillis
                 var matchedCount = 0
+                val newImportedFingerprints = mutableSetOf<String>()
                 val projectedTransactions = allTransactions.value.toMutableList()
                 // Bug 2: clear stale cache so deleted accounts can be recreated on rescan
                 createdAccountsCache.clear()

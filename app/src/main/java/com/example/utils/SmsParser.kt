@@ -33,16 +33,28 @@ data class SmsParsingResult(
 object SmsParser {
     private const val TAG = "SmsParser"
 
-    // Strict offline parser based on high-precision regex signatures
+    // Strict offline parser — processes SMS in a well-defined pipeline:
+    //   STEP 1  Header validation      (non-bypassable)
+    //   STEP 2  Hard exclusions        (non-bypassable: OTP, bill due, requests, balance expiry)
+    //   STEP 3  Balance update         (early-return for balance-notification SMS)
+    //   STEP 4  Special wallet parsers (early-return for Apay Wallet, NeuCoins)
+    //   STEP 5  Soft validation        (bypassable via bypassExclusionFilter)
+    //   STEP 6  Transaction keywords   (must contain at least one transactional trigger)
+    //   STEP 7  Amount extraction
+    //   STEP 8  Transaction type       (INCOME / EXPENSE)
+    //   STEP 9  Account reference      (last 3–4 digits)
+    //   STEP 10 Timestamp extraction
+    //   STEP 11 Special transaction types (CC ACK, CC bill payment)
+    //   STEP 12 Payee / title extraction
     fun parseOffline(body: String, senderId: String?, smsTimestamp: Long? = null, bypassExclusionFilter: Boolean = false): SmsParsingResult? {
         val cleanBody = body.replace("\\s+".toRegex(), " ").trim()
         val lowerBody = cleanBody.lowercase()
 
         Log.d(TAG, "Parsing text: '$cleanBody' from sender: '$senderId'")
 
-        // Rule 0 (STRICT — non-bypassable): Sender header must end with -S or -T.
-        // Only verified bank/fintech SMS format (e.g. JD-JUSPAY-S, AX-QCAMZN-S, AD-TNUCRD-S) are processed.
-        // Messages from senders not ending in -S or -T are silently ignored.
+        // ── STEP 1: HEADER VALIDATION ─────────────────────────────────────────
+        // Non-bypassable. Only verified bank/fintech senders ending in -S or -T are
+        // processed (e.g. JD-JUSPAY-S, AX-QCAMZN-S, AD-TNUCRD-S, VK-HDFCBK-T).
         if (!senderId.isNullOrBlank()) {
             val upperSender = senderId.trim().uppercase()
             if (!upperSender.endsWith("-S") && !upperSender.endsWith("-T")) {
@@ -51,27 +63,81 @@ object SmsParser {
             }
         }
 
-        // 0a. Detect bank available balance / balance notification SMS
-        //     e.g. "Avail Bal in A/c xxx300: Rs.3393.08 CR -SBI"
-        //          "Your Balance in account no. ending with 9553 is Rs. 0.12 -HDFC BANK"
-        val balanceUpdateResult = tryParseBalanceUpdate(cleanBody, lowerBody, senderId, smsTimestamp)
-        if (balanceUpdateResult != null) return balanceUpdateResult
+        // ── STEP 2: HARD EXCLUSIONS ───────────────────────────────────────────
+        // Non-bypassable — these must never create transactions or accounts.
+        // Intentionally placed BEFORE balance-update detection (Step 3) so that
+        // edge cases like balance-expiry notifications are rejected early.
 
-        // 0b. HARD EXCLUSIONS — never bypassed, even by custom-pattern scan.
-        //     Bill-due reminders and payment-request CTAs must never create transactions/accounts.
-        val isHardExcluded = lowerBody.contains("is due on") ||
-            (lowerBody.contains("due on") && !lowerBody.contains("credited") && !lowerBody.contains("debited") && !lowerBody.contains("received")) ||
-            (lowerBody.contains("due by") && !lowerBody.contains("credited") && !lowerBody.contains("debited")) ||
-            lowerBody.contains("has requested you") ||
-            lowerBody.contains("requesting money") ||
-            lowerBody.contains("collect request")
-        if (isHardExcluded) {
-            Log.d(TAG, "Hard-excluded: due notice / payment request SMS.")
+        // 2a. OTP / verification codes — never transactional
+        val isOtp = lowerBody.contains("otp") ||
+            lowerBody.contains("one time password") ||
+            lowerBody.contains("verification code") ||
+            lowerBody.contains("code is") ||
+            lowerBody.contains("do not share") ||
+            lowerBody.contains("code to verify") ||
+            lowerBody.contains("secure code") ||
+            lowerBody.contains("use code") ||
+            lowerBody.contains("verification otp")
+        if (isOtp) {
+            Log.d(TAG, "Excluded: OTP / verification code SMS.")
             return null
         }
 
-        // 0c. Special case: Apay Wallet / Apay Balance transactions (e.g. JD-JUSPAY-S, AX-QCAMZN-S)
-        //     No last-4 digits required. Category = CASHBACK. Account = "Apay Wallet" (WALLET type).
+        // 2b. Bill-due notices and CC statement alerts
+        val isBillDue = lowerBody.contains("is due on") ||
+            (lowerBody.contains("due on") && !lowerBody.contains("credited") && !lowerBody.contains("debited") && !lowerBody.contains("received")) ||
+            (lowerBody.contains("due by") && !lowerBody.contains("credited") && !lowerBody.contains("debited")) ||
+            lowerBody.contains("total amt due") ||
+            lowerBody.contains("total amount due") ||
+            lowerBody.contains("minimum amt due") ||
+            lowerBody.contains("minimum amount due") ||
+            lowerBody.contains("min amt due") ||
+            lowerBody.contains("statement due") ||
+            lowerBody.contains("stmt due") ||
+            lowerBody.contains("amount due") ||
+            lowerBody.contains("due amount") ||
+            lowerBody.contains("due :") ||
+            lowerBody.contains("due:")
+        if (isBillDue) {
+            Log.d(TAG, "Excluded: Bill-due / CC statement SMS.")
+            return null
+        }
+
+        // 2c. Payment request CTAs (UPI collect, money requests)
+        val isPaymentRequest = lowerBody.contains("has requested you") ||
+            lowerBody.contains("requesting money") ||
+            lowerBody.contains("requested money") ||
+            lowerBody.contains("request to pay") ||
+            lowerBody.contains("pay using link") ||
+            lowerBody.contains("collect request") ||
+            lowerBody.contains("has requested") ||
+            lowerBody.contains("requested to pay")
+        if (isPaymentRequest) {
+            Log.d(TAG, "Excluded: Payment request / UPI collect SMS.")
+            return null
+        }
+
+        // 2d. Wallet / reward balance-expiry notifications
+        //     e.g. "Rs. 5.20 added to Zomato Money … This balance expires on 15 Jul 2026."
+        //     Must be rejected here, before the balance-update detector in Step 3,
+        //     because such SMS can match the "balance … ending with" structure.
+        if (lowerBody.contains("balance expire")) {
+            Log.d(TAG, "Excluded: Wallet / reward balance-expiry notification.")
+            return null
+        }
+
+        // ── STEP 3: BALANCE UPDATE DETECTION ─────────────────────────────────
+        // Detects pure balance-notification SMS ("Avail Bal in A/c xxx300: Rs.3393.08 CR").
+        // Returns early with isBalanceUpdate = true; balance-sync is handled by the ViewModel.
+        val balanceUpdateResult = tryParseBalanceUpdate(cleanBody, lowerBody, senderId, smsTimestamp)
+        if (balanceUpdateResult != null) return balanceUpdateResult
+
+        // ── STEP 4: SPECIAL WALLET PARSERS ───────────────────────────────────
+        // These SMS types carry no standard last-4-digit account reference.
+        // They map to named wallet accounts and return early before the main pipeline.
+
+        // 4a. Apay Wallet transactions (senders: JD-JUSPAY-S, AX-QCAMZN-S)
+        //     Account = "Apay Wallet" (WALLET type). Category = CASHBACK. No last-4 required.
         if (lowerBody.contains("apay wallet") || lowerBody.contains("apay balance") || lowerBody.contains("using apay")) {
             val apayAmtPat = Pattern.compile("(?:inr|rs\\.?|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)", Pattern.CASE_INSENSITIVE)
             val apayAmtMatcher = apayAmtPat.matcher(lowerBody)
@@ -91,9 +157,9 @@ object SmsParser {
             }
         }
 
-        // 0d. Special case: NeuCoins transactions (Tata Neu loyalty coins — AD-TNUCRD-S, Cp-BIGBKT-S, etc.)
-        //     Key signal: "NeuCoin" in body + verified -S header. No last-4 digits required.
-        //     Account = "NeuCoins" (WALLET type). Categories: COINS (income), SHOPPING (expense), REFUNDS (refund).
+        // 4b. NeuCoins transactions (Tata Neu — senders: AD-TNUCRD-S, Cp-BIGBKT-S, etc.)
+        //     Account = "NeuCoins" (WALLET type). No last-4 required.
+        //     Categories: COINS (credited), SHOPPING (spent/used), REFUNDS (refund).
         if (lowerBody.contains("neucoin") ||
             (lowerBody.contains("neucard") && (lowerBody.contains("credited") || lowerBody.contains("refund")))) {
             val neuAmtPat = Pattern.compile("([0-9,]+(?:\\.[0-9]{1,2})?)\\s*(?:neucoin|neu\\s*coins?)", Pattern.CASE_INSENSITIVE)
@@ -104,7 +170,7 @@ object SmsParser {
                 val neuCategory = when {
                     lowerBody.contains("refund") -> ExpenseCategory.REFUNDS
                     neuType == "INCOME"          -> ExpenseCategory.COINS
-                    else                          -> ExpenseCategory.SHOPPING
+                    else                         -> ExpenseCategory.SHOPPING
                 }
                 val neuTitlePat = Pattern.compile("(?:at|for)\\s+([A-Za-z][A-Za-z0-9.\\-]+)(?:\\s+on|\\s+check|\\s*\\.\\s*check|\\s+team|\\s*https)", Pattern.CASE_INSENSITIVE)
                 val neuTitleMatcher = neuTitlePat.matcher(cleanBody)
@@ -112,7 +178,7 @@ object SmsParser {
                     lowerBody.contains("refund") -> "Refund"
                     neuType == "INCOME"          -> "NeuCoins Credited"
                     neuTitleMatcher.find()       -> (neuTitleMatcher.group(1) ?: "NeuCoins").split(" ").joinToString(" ") { w -> w.replaceFirstChar { it.titlecase() } }
-                    else                          -> "NeuCoins"
+                    else                         -> "NeuCoins"
                 }
                 return SmsParsingResult(
                     title = neuTitle, amount = neuAmount, category = neuCategory,
@@ -122,198 +188,159 @@ object SmsParser {
             }
         }
 
-        // 0. Use the dedicated strict regex filtering utility (bypassed for manual paste with custom patterns)
+        // ── STEP 5: SOFT VALIDATION (bypassable via bypassExclusionFilter) ────
+        // The checks below are skipped when scanning with custom user-defined patterns,
+        // allowing manual inclusion of SMS that the automatic filters would reject.
+
+        // 5a. Strict regex utility filter — rejects common non-transactional structures
         if (!bypassExclusionFilter && !SmsFilterUtility.isValidTransactionSms(body)) {
-            Log.d(TAG, "Excluded: Failed validation check in SmsFilterUtility.")
+            Log.d(TAG, "Excluded: Failed SmsFilterUtility validation.")
             return null
         }
 
-        // 1. STRICT NON-TRANSACTIONAL EXCLUSIONS (OTP, Reminders, Promotionals, Bills Due, Requests)
-        val isOtp = lowerBody.contains("otp") || 
-                     lowerBody.contains("one time password") || 
-                     lowerBody.contains("verification code") || 
-                     lowerBody.contains("code is") || 
-                     lowerBody.contains("do not share") || 
-                     lowerBody.contains("code to verify") || 
-                     lowerBody.contains("secure code") || 
-                     lowerBody.contains("use code") || 
-                     lowerBody.contains("verification otp")
-        if (isOtp) {
-            Log.d(TAG, "Excluded: Message identified as OTP / Verification code.")
+        // 5b. Promotional / marketing / reminder / future-event exclusions
+        val isPromoOrReminder =
+            // Reminder and soft due notices (stricter variants already rejected in Step 2b)
+            lowerBody.contains("is due") ||
+            lowerBody.contains("payment due") ||
+            lowerBody.contains("is due by") ||
+            lowerBody.contains("reminds you") ||
+            lowerBody.contains("reminder:") ||
+            lowerBody.contains("pay before") ||
+            lowerBody.contains("outstanding") ||
+            lowerBody.contains("overdue") ||
+            // Scheduled / future-tense events (not yet executed)
+            (lowerBody.contains("will be debited") && !lowerBody.contains("autopay") && !lowerBody.contains("auto-pay")) ||
+            lowerBody.contains("scheduled transfer") ||
+            lowerBody.contains("is scheduled") ||
+            lowerBody.contains("upcoming payment") ||
+            lowerBody.contains("requires action") ||
+            // Promotional / marketing content
+            lowerBody.contains("eligible for") ||
+            lowerBody.contains("pre-approved") ||
+            lowerBody.contains("apply now") ||
+            lowerBody.contains("win up to") ||
+            lowerBody.contains("congratulations") ||
+            lowerBody.contains("earn cashback") ||
+            (lowerBody.contains("flat") && lowerBody.contains("off")) ||
+            lowerBody.contains("exclusive discount")
+        // Exception: allow through if the SMS also confirms a completed payment
+        val isConfirmedPayment = lowerBody.contains("received towards") ||
+            lowerBody.contains("payment of") ||
+            lowerBody.contains("received") ||
+            lowerBody.contains("payment received")
+        if (isPromoOrReminder && !isConfirmedPayment && !bypassExclusionFilter) {
+            Log.d(TAG, "Excluded: Promotional, reminder, or future-event SMS.")
             return null
         }
 
-        val isNonTransactionalDoc = (
-            (lowerBody.contains("is due") || 
-             lowerBody.contains("payment due") || 
-             lowerBody.contains("due on") || 
-             lowerBody.contains("is due by") || 
-             lowerBody.contains("reminds you") || 
-             lowerBody.contains("reminder:") || 
-             lowerBody.contains("pay before") || 
-             lowerBody.contains("outstanding") || 
-             lowerBody.contains("overdue") || 
-             (lowerBody.contains("will be debited") && !lowerBody.contains("autopay") && !lowerBody.contains("auto-pay")) || 
-             lowerBody.contains("scheduled transfer") || 
-             lowerBody.contains("eligible for") || 
-             lowerBody.contains("pre-approved") || 
-             lowerBody.contains("apply now") || 
-             lowerBody.contains("win up to") || 
-             lowerBody.contains("congratulations") || 
-             lowerBody.contains("earn cashback") || 
-             (lowerBody.contains("flat") && lowerBody.contains("off")) || 
-             lowerBody.contains("exclusive discount") || 
-             lowerBody.contains("requesting money") || 
-             lowerBody.contains("requested money") || 
-             lowerBody.contains("request to pay") || 
-             lowerBody.contains("pay using link") ||
-             lowerBody.contains("collect request") ||
-             lowerBody.contains("requires action") ||
-             lowerBody.contains("is scheduled") ||
-             lowerBody.contains("upcoming payment") ||
-             lowerBody.contains("has requested") ||
-             lowerBody.contains("requested to pay") ||
-             lowerBody.contains("total amt due") ||
-             lowerBody.contains("total amount due") ||
-             lowerBody.contains("minimum amt due") ||
-             lowerBody.contains("minimum amount due") ||
-             lowerBody.contains("min amt due") ||
-             lowerBody.contains("statement due") ||
-             lowerBody.contains("stmt due") ||
-             lowerBody.contains("due amount") ||
-             lowerBody.contains("amount due") ||
-             lowerBody.contains("due :") ||
-             lowerBody.contains("due:"))
-            // Make exceptions for explicit payment confirmations or received updates
-            && !lowerBody.contains("received towards")
-            && !lowerBody.contains("payment of")
-            && !lowerBody.contains("received")
-            && !lowerBody.contains("payment received")
-        )
-
-        if (isNonTransactionalDoc && !bypassExclusionFilter) {
-            Log.d(TAG, "Excluded: Message identified as promo, reminder, due notice or pending payment request.")
-            return null
-        }
-
-        // 2. TRANSACTION SIGNIFICANCE CHECK (MUST contain dynamic transactional active words)
-        val hasTransactionKeywords = lowerBody.contains("debited") || 
-                                      lowerBody.contains("credited") || 
-                                      lowerBody.contains("spent") || 
-                                      lowerBody.contains("paid") || 
-                                      lowerBody.contains("received") || 
-                                      lowerBody.contains("withdrawn") || 
-                                      lowerBody.contains("withdrew") || 
-                                      lowerBody.contains("deposited") || 
-                                      lowerBody.contains("transferred") || 
-                                      lowerBody.contains("transfer") || 
-                                      lowerBody.contains("deducted") || 
-                                      lowerBody.contains("charged") || 
-                                      lowerBody.contains("charge") || 
-                                      lowerBody.contains("recharge successful") || 
-                                      lowerBody.contains("salary") || 
-                                      lowerBody.contains("added to your wallet") || 
-                                      lowerBody.contains("txn") ||
-                                      lowerBody.contains("payment") ||
-                                      lowerBody.contains("sent") ||
-                                      lowerBody.contains("refund") ||
-                                      lowerBody.contains("autopay") ||
-                                      lowerBody.contains("auto-pay")
+        // ── STEP 6: TRANSACTION KEYWORD CHECK ────────────────────────────────
+        // SMS must contain at least one past-tense / active transactional word.
+        val hasTransactionKeywords =
+            lowerBody.contains("debited") ||
+            lowerBody.contains("credited") ||
+            lowerBody.contains("spent") ||
+            lowerBody.contains("paid") ||
+            lowerBody.contains("received") ||
+            lowerBody.contains("withdrawn") ||
+            lowerBody.contains("withdrew") ||
+            lowerBody.contains("deposited") ||
+            lowerBody.contains("transferred") ||
+            lowerBody.contains("transfer") ||
+            lowerBody.contains("deducted") ||
+            lowerBody.contains("charged") ||
+            lowerBody.contains("charge") ||
+            lowerBody.contains("recharge successful") ||
+            lowerBody.contains("salary") ||
+            lowerBody.contains("added to your wallet") ||
+            lowerBody.contains("txn") ||
+            lowerBody.contains("payment") ||
+            lowerBody.contains("sent") ||
+            lowerBody.contains("refund") ||
+            lowerBody.contains("autopay") ||
+            lowerBody.contains("auto-pay")
         if (!hasTransactionKeywords) {
-            Log.d(TAG, "Excluded: Lack of past-tense transactional triggers.")
+            Log.d(TAG, "Excluded: No transactional trigger keywords found.")
             return null
         }
 
-        // 3. EXTRACT TRANSACTION AMOUNT
+        // ── STEP 7: AMOUNT EXTRACTION ─────────────────────────────────────────
+        // Primary: currency-symbol / currency-code prefix (e.g. "Rs.500", "INR 1,200.00")
         val amountPattern = Pattern.compile(
             "(?:rs\\.?|inr|usd|eur|egp|sgd|₹|\\$|debited with|debited\\s+by|debited\\s+of|sent\\s+rs\\.?|paid\\s+rs\\.?|received\\s+rs\\.?)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)"
         )
         val matcher = amountPattern.matcher(lowerBody)
         var amount = 0.0
         if (matcher.find()) {
-            val amountStr = matcher.group(1)?.replace(",", "")
-            amount = amountStr?.toDoubleOrNull() ?: 0.0
+            amount = matcher.group(1)?.replace(",", "")?.toDoubleOrNull() ?: 0.0
         }
-
-        // Fallback for clean decimal parsing after transaction action trigger
+        // Fallback: verb-adjacent amount (e.g. "debited 500", "paid 1,200.00")
         if (amount == 0.0) {
             val nakedAmountPattern = Pattern.compile(
                 "(?:debited|spent|paid|received|charged|credited|sent|withdrawn|transfer|transferred|deducted)\\s+(?:of|by|with|to|for)?\\s*(?:rs\\.?\\s*)?([0-9,]+(?:\\.[0-9]{1,2})?)"
             )
             val nakedMatcher = nakedAmountPattern.matcher(lowerBody)
             if (nakedMatcher.find()) {
-                val amountStr = nakedMatcher.group(1)?.replace(",", "")
-                amount = amountStr?.toDoubleOrNull() ?: 0.0
+                amount = nakedMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() ?: 0.0
             }
         }
-
         if (amount <= 0.0) {
-            Log.d(TAG, "Excluded: No dynamic valid monetary value parsed.")
+            Log.d(TAG, "Excluded: No valid monetary amount found.")
             return null
         }
 
-        // 4. IDENTIFY TRANSACTION TYPE (INCOME vs EXPENSE)
+        // ── STEP 8: TRANSACTION TYPE ──────────────────────────────────────────
         var type = "EXPENSE"
-        if (lowerBody.contains("credited") || 
-            lowerBody.contains("received") || 
-            lowerBody.contains("deposited") || 
-            lowerBody.contains("salary") || 
+        if (lowerBody.contains("credited") ||
+            lowerBody.contains("received") ||
+            lowerBody.contains("deposited") ||
+            lowerBody.contains("salary") ||
             lowerBody.contains("added to your wallet") ||
             lowerBody.contains("refund")) {
             type = "INCOME"
         }
 
-        // 5. EXTRACT ACCOUNT DETAILS (Card/Account references - ending in 3 or 4 numbers)
-        // NOTE: bare "-" removed from prefix list — it matched date separators like "22-May-2026" → year 2026
+        // ── STEP 9: ACCOUNT REFERENCE (last 3–4 digits) ───────────────────────
+        // NOTE: bare "-" is excluded from the prefix list — it falsely matched date
+        //       separators (e.g. "22-May-2026" captured "2026" as the account ref).
         val last4Pattern = Pattern.compile(
             "(?i)(?:a/c|acct|acc|account|card|ending in|ending with|ending|ended with|ended|vpa|xx|\\*+|no\\.?)\\s*(?:no\\.?\\s*)?([xX*]*\\d{3,4})\\b"
         )
         val last4Matcher = last4Pattern.matcher(lowerBody)
         var last4Digits: String? = null
         if (last4Matcher.find()) {
-            val rawEnding = last4Matcher.group(1) ?: ""
-            val digitsOnly = rawEnding.replace("[^0-9]".toRegex(), "")
-            if (digitsOnly.length in 3..4) {
-                last4Digits = digitsOnly
-            }
+            val digitsOnly = (last4Matcher.group(1) ?: "").replace("[^0-9]".toRegex(), "")
+            if (digitsOnly.length in 3..4) last4Digits = digitsOnly
         }
-
-        // We STRICTLY require an identified card/account number. Otherwise, do not parse/add this transaction.
         if (last4Digits == null) {
-            Log.d(TAG, "Excluded: No valid 3 or 4 digit account/card reference identified in SMS body.")
+            Log.d(TAG, "Excluded: No 3–4 digit account/card reference found.")
             return null
         }
 
-        // Also identify bank source header properties (e.g. SBI, IND, HDFC)
         var bankName = inferSmsBankCode(senderId, cleanBody)
-        if (bankName.isBlank() || bankName.length <= 1) {
-            bankName = "Bank"
-        }
-
+        if (bankName.isBlank() || bankName.length <= 1) bankName = "Bank"
         val accountRef = "${bankName}-${last4Digits}"
 
-        // 5b. Extract exact Date and Time parameters from body
+        // ── STEP 10: TIMESTAMP EXTRACTION ────────────────────────────────────
         val parsedTime = extractTimestampFromSms(cleanBody, smsTimestamp)
 
-        // 5c. Early detection: credit card payment acknowledgment (duplicate of payment, no balance update)
-        val isCcPaymentAck = (lowerBody.contains("was credited to your card") ||
-            (lowerBody.contains("online payment") && lowerBody.contains("vide ref") && lowerBody.contains("card")))
+        // ── STEP 11: SPECIAL TRANSACTION TYPES ───────────────────────────────
+        // 11a. Credit card payment acknowledgment — a receipt confirmation from the bank,
+        //      not a real new debit. Marked DUPLICATE so the ViewModel skips it.
+        val isCcPaymentAck = lowerBody.contains("was credited to your card") ||
+            (lowerBody.contains("online payment") && lowerBody.contains("vide ref") && lowerBody.contains("card"))
         if (isCcPaymentAck) {
             return SmsParsingResult(
-                title = "CC Payment ACK",
-                amount = amount,
-                category = ExpenseCategory.DEBT,
-                type = "DUPLICATE",
-                isGeminiParsed = false,
-                accountRef = last4Digits,
-                sender = accountRef,
-                receiver = "CC Payment ACK",
-                parsedTimestamp = parsedTime,
-                availableLimit = null
+                title = "CC Payment ACK", amount = amount,
+                category = ExpenseCategory.DEBT, type = "DUPLICATE",
+                isGeminiParsed = false, accountRef = last4Digits,
+                sender = accountRef, receiver = "CC Payment ACK",
+                parsedTimestamp = parsedTime
             )
         }
 
-        // 5d. Early detection: credit card bill payment (e.g. "payment of Rs. X received towards your credit card")
+        // 11b. Credit card bill payment received
+        //      e.g. "payment of Rs. X received towards your credit card"
         val isCreditCardPayment = lowerBody.contains("credit card") &&
             (lowerBody.contains("received towards") || lowerBody.contains("towards your credit card") ||
              (lowerBody.contains("payment") && lowerBody.contains("received") && lowerBody.contains("card")))
@@ -323,22 +350,18 @@ object SmsParser {
                 Pattern.CASE_INSENSITIVE
             )
             val availLimitMatcher = availLimitPattern.matcher(cleanBody)
-            val parsedAvailableLimit = if (availLimitMatcher.find()) {
-                availLimitMatcher.group(1)?.replace(",", "")?.toDoubleOrNull()
-            } else null
+            val parsedAvailableLimit = if (availLimitMatcher.find())
+                availLimitMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
             return SmsParsingResult(
-                title = "Credit Card Payment",
-                amount = amount,
-                category = ExpenseCategory.CC_SETTLEMENT,
-                type = "INCOME",
-                isGeminiParsed = false,
-                accountRef = last4Digits,
-                sender = accountRef,
-                receiver = "Credit Card Payment",
-                parsedTimestamp = parsedTime,
-                availableLimit = parsedAvailableLimit
+                title = "Credit Card Payment", amount = amount,
+                category = ExpenseCategory.CC_SETTLEMENT, type = "INCOME",
+                isGeminiParsed = false, accountRef = last4Digits,
+                sender = accountRef, receiver = "Credit Card Payment",
+                parsedTimestamp = parsedTime, availableLimit = parsedAvailableLimit
             )
         }
+
+        // ── STEP 12: PAYEE / TITLE EXTRACTION ────────────────────────────────
         var titleText = ""
         
         // Exact high-priority VPA / UPI ID lookup — allow 2-char handles (e.g. @pz, @ok)
@@ -737,10 +760,6 @@ object SmsParser {
      *   "Your Balance in account no. ending with 9553 is Rs. 0.12 -HDFC BANK"
      */
     private fun tryParseBalanceUpdate(cleanBody: String, lowerBody: String, senderId: String?, smsTimestamp: Long?): SmsParsingResult? {
-        // Reject wallet-expiry notifications that contain "balance" + "ending with" for mobile numbers
-        // e.g. "Rs. 5.20 added to Zomato Money (on mobile ending with *5452). This balance expires on 15 Jul 2026."
-        if (lowerBody.contains("balance expire")) return null
-
         val isBalanceSms = (lowerBody.contains("avail bal") || lowerBody.contains("avail. bal") ||
             lowerBody.contains("available balance") ||
             (lowerBody.contains("balance") && (lowerBody.contains("a/c") || lowerBody.contains("account no") ||

@@ -5,16 +5,16 @@ import androidx.compose.ui.graphics.Color
 
 // ── Material 3 seed colors ─────────────────────────────────────────────────────
 // Light palette (soft blue-gray aesthetic)
-val LightPrimary = Color(0xFF0EA5E9)
+val LightPrimary = Color(0xFF0369A1)
 val LightSecondary = Color(0xFF475569)
 val LightTertiary = Color(0xFF059669)
 val LightBackground = Color(0xFFF4F6FA)
 val LightSurface = Color(0xFFFFFFFF)
 val LightOnBackground = Color(0xFF0F172A)
 val LightOnSurface = Color(0xFF0F172A)
-val LightOutline = Color(0xFFDDE4EF)
+val LightOutline = Color(0xFFD6DDE8)
 val LightSurfaceVariant = Color(0xFFEEF2F8)
-val LightPrimaryContainer = Color(0xFFE0F2FE)
+val LightPrimaryContainer = Color(0xFFDCEEFA)
 val LightOnPrimaryContainer = Color(0xFF0F172A)
 
 // Dark palette (navy aesthetic)
@@ -69,14 +69,14 @@ fun lightAppColors() = AppColors(
     bg            = Color(0xFFF4F6FA),
     surface       = Color(0xFFFFFFFF),
     surfaceVariant = Color(0xFFEEF2F8),
-    border        = Color(0xFFDDE4EF),
-    borderStrong  = Color(0xFFC1CCDB),
+    border        = Color(0xFFD6DDE8),
+    borderStrong  = Color(0xFFB4BFD0),
     text          = Color(0xFF0F172A),
     textSecondary = Color(0xFF475569),
     textTertiary  = Color(0xFF94A3B8),
-    divider       = Color(0xFFDDE4EF),
-    accent        = Color(0xFF0EA5E9),
-    accentDim     = Color(0x200EA5E9),
+    divider       = Color(0xFFE6EBF4),
+    accent        = Color(0xFF0369A1),
+    accentDim     = Color(0x200369A1),
     income        = Color(0xFF059669),
     expense       = Color(0xFFDC2626),
     isDark        = false

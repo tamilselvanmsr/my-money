@@ -371,31 +371,34 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             )
         },
         bottomBar = {
-            NavigationBar(
-                containerColor = cardSurface,
-                tonalElevation = 8.dp,
-                windowInsets = WindowInsets.navigationBars
-            ) {
-                AppTab.values().forEach { tab ->
-                    NavigationBarItem(
-                        selected = currentTab == tab,
-                        onClick = { currentTab = tab },
-                        label = { Text(tab.label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
-                        icon = {
-                            Icon(
-                                imageVector = tab.icon,
-                                contentDescription = tab.label
+            Column {
+                HorizontalDivider(color = c.border, thickness = 1.dp)
+                NavigationBar(
+                    containerColor = if (c.isDark) c.surface else Color(0xFFEDF3FA),
+                    tonalElevation = 0.dp,
+                    windowInsets = WindowInsets.navigationBars
+                ) {
+                    AppTab.values().forEach { tab ->
+                        NavigationBarItem(
+                            selected = currentTab == tab,
+                            onClick = { currentTab = tab },
+                            label = { Text(tab.label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
+                            icon = {
+                                Icon(
+                                    imageVector = tab.icon,
+                                    contentDescription = tab.label
+                                )
+                            },
+                            modifier = Modifier.testTag("nav_tab_${tab.name.lowercase()}"),
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = c.accent,
+                                selectedTextColor = c.accent,
+                                unselectedIconColor = c.textSecondary,
+                                unselectedTextColor = c.textSecondary,
+                                indicatorColor = c.accentDim
                             )
-                        },
-                        modifier = Modifier.testTag("nav_tab_${tab.name.lowercase()}"),
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = c.accent,
-                            selectedTextColor = c.accent,
-                            unselectedIconColor = c.textSecondary,
-                            unselectedTextColor = c.textSecondary,
-                            indicatorColor = c.accentDim
                         )
-                    )
+                    }
                 }
             }
         },
@@ -1088,7 +1091,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = 1.2.sp,
-                            color = c.accent
+                            color = c.textSecondary
                         )
                         
                         val dateNet = txList.filter { it.type != "DUPLICATE" && it.type != "BALANCE_UPDATE" }.sumOf { if (it.type == "INCOME") it.amount else -it.amount }
@@ -1109,7 +1112,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(if (isAdjust) c.accent.copy(alpha = 0.05f) else Color.Transparent)
+                                    .background(Color.Transparent)
                                     .clickable { selectedTxForEdit = tx }
                                     .testTag("transaction_item_${tx.id}")
                                     .padding(horizontal = 4.dp, vertical = 10.dp),
@@ -1142,15 +1145,15 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Surface(
-                                            color = c.divider,
-                                            shape = RoundedCornerShape(4.dp)
+                                            color = c.surfaceVariant,
+                                            shape = RoundedCornerShape(20.dp)
                                         ) {
                                             Text(
                                                 text = tx.getAccountName(),
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = c.accent,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                color = c.textSecondary,
+                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                                             )
                                         }
                                     }
@@ -1835,8 +1838,8 @@ private fun AnalyticsOverviewSection(
                                                 typeface = android.graphics.Typeface.DEFAULT_BOLD
                                             }
                                             val pctPaint = android.graphics.Paint().apply {
-                                                color = android.graphics.Color.WHITE
-                                                alpha = 220
+                                                color = c.text.toArgb()
+                                                alpha = if (c.isDark) 220 else 200
                                                 textSize = 14.sp.toPx()
                                                 isAntiAlias = true
                                                 textAlign = android.graphics.Paint.Align.CENTER
@@ -1865,15 +1868,13 @@ private fun AnalyticsOverviewSection(
                                         val cy2 = size.height / 2f
                                         val innerRadius = (sizeMin - strokeWidthValue) / 2f - strokeWidthValue * 0.65f
                                         val labelPaint = android.graphics.Paint().apply {
-                                            color = android.graphics.Color.WHITE
-                                            alpha = 160
+                                            color = c.textSecondary.toArgb()
                                             textSize = 10.sp.toPx()
                                             isAntiAlias = true
                                             textAlign = android.graphics.Paint.Align.CENTER
                                         }
                                         val amtPaint = android.graphics.Paint().apply {
-                                            color = android.graphics.Color.WHITE
-                                            alpha = 230
+                                            color = c.text.toArgb()
                                             textSize = 12.sp.toPx()
                                             isAntiAlias = true
                                             textAlign = android.graphics.Paint.Align.CENTER
@@ -4868,7 +4869,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
         // Parser exclusion rules reference card
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1320)),
+                colors = CardDefaults.cardColors(containerColor = c.surface),
                 border = BorderStroke(1.dp, c.expense.copy(alpha = 0.25f)),
                 modifier = Modifier.fillMaxWidth()
             ) {

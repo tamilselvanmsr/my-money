@@ -83,6 +83,13 @@ object SmsParser {
             return null
         }
 
+        // 2b-pre. CC Summary SMS — contains "amount due" so must be routed before isBillDue.
+        // e.g. "HDFC BANK Credit Card Summary ending with *1234: Total Credit Limit: Rs. 2,36,000.
+        //       Available Credit Limit: Rs. 1,90,533.07. Total Outstanding Balance: Rs.45,466.93"
+        if (lowerBody.contains("credit card") && lowerBody.contains("total outstanding balance")) {
+            return tryParseBalanceUpdate(cleanBody, lowerBody, senderId, smsTimestamp)
+        }
+
         // 2b. Bill-due notices and CC statement alerts
         val isBillDue = lowerBody.contains("is due on") ||
             (lowerBody.contains("due on") && !lowerBody.contains("credited") && !lowerBody.contains("debited") && !lowerBody.contains("received")) ||
@@ -837,7 +844,7 @@ object SmsParser {
                 availLimitMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
 
             val refPat = Pattern.compile(
-                "(?:ending\\s+with|ending\\s+in|ending)\\s*[*xX\\s]*([0-9]{3,4})\\b",
+                "(?:ending\\s+with|ending\\s+in|ending)\\s*[*xX\\s]*([0-9]{3,4})",
                 Pattern.CASE_INSENSITIVE
             )
             val refMatcher = refPat.matcher(cleanBody)

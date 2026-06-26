@@ -1142,11 +1142,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         }
                         if (!duplicate && !matchesSmsBlocklistPattern(walletName)) {
                             val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
-                            // Bal Sync OFF: store contribution as INCOME so it counts in income totals and seeds the account balance
-                            // Bal Sync ON:  store as BALANCE_UPDATE (hidden from totals); passbook balance synced separately below
-                            val txType = if (parsed.title == "PF Contribution") {
-                                if (enableBalanceSync.value) "BALANCE_UPDATE" else "INCOME"
-                            } else parsed.type
+                            // PF Contribution is always INCOME — the Bal Sync toggle only controls
+                            // whether a separate Balance Sync snapshot entry is created below
+                            val txType = parsed.type
                             val tx = TransactionEntry(
                                 title = parsed.title,
                                 amount = parsed.amount,
@@ -1429,9 +1427,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             }
                             if (!duplicate && !matchesSmsBlocklistPattern(walletName) && !matchesSmsBlocklistPattern(sender)) {
                                 val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
-                                val txType = if (parsed.title == "PF Contribution") {
-                                    if (enableBalanceSync.value) "BALANCE_UPDATE" else "INCOME"
-                                } else parsed.type
+                                // PF Contribution is always INCOME
+                                val txType = parsed.type
                                 val tx = TransactionEntry(
                                     title = parsed.title,
                                     amount = parsed.amount,
@@ -1548,9 +1545,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             }
 
             val learnedCategory = if (parsed.title.isNotBlank()) repository.getLearnedCategoryForTitle(parsed.title) else null
-            val txType = if (parsed.title == "PF Contribution") {
-                if (enableBalanceSync.value) "BALANCE_UPDATE" else "INCOME"
-            } else parsed.type
+            // PF Contribution is always INCOME
+            val txType = parsed.type
             val tx = TransactionEntry(
                 title = parsed.title,
                 amount = parsed.amount,

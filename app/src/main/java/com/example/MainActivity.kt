@@ -504,6 +504,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     val showTotal by viewModel.showTotal.collectAsStateWithLifecycle()
     val consolidateAccounts by viewModel.consolidateAccounts.collectAsStateWithLifecycle()
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
+    val recentlyImportedFingerprints by viewModel.recentlyImportedFingerprints.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val decFormat = DecimalFormat("₹#,##0.00")
     
@@ -1140,10 +1141,12 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 "WALLET"      -> Color(0xFFFF9800)
                                 else          -> c.textSecondary
                             }
+                            val txFingerprint = "${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}"
+                            val isNewlyImported = recentlyImportedFingerprints.contains(txFingerprint)
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
                                 color = c.surface,
-                                border = BorderStroke(1.dp, c.divider),
+                                border = if (isNewlyImported) BorderStroke(2.dp, c.income) else BorderStroke(1.dp, c.divider),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 2.dp)
@@ -1238,6 +1241,21 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                         fontSize = 10.sp,
                                         color = c.textTertiary
                                     )
+                                    if (isNewlyImported) {
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Surface(
+                                            color = c.income.copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                "NEW",
+                                                fontSize = 8.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = c.income,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                             } // end Surface card
@@ -4574,7 +4592,13 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Select core keys and/or add custom patterns. Prefix with ! to exclude — e.g. !(emi Balance) skips any SMS containing that text. Hit \"Scan Inbox\" to apply globally. ",
+                        "Only SMS from senders ending in -S or -T (verified bank/fintech format) are processed — this rule is always enforced.\n" +
+                        "Select core keys and/or add custom patterns to filter the SMS body:\n" +
+                        "  balance  →  any SMS containing \"balance\"\n" +
+                        "  (Avl bal)  →  exact phrase \"Avl bal\"\n" +
+                        "  !(salary)  →  skip SMS containing \"salary\"\n" +
+                        "  !(salary credited)  →  skip SMS containing \"salary credited\"\n" +
+                        "Hit \"Scan Inbox with These Rules\" to apply globally.",
                         fontSize = 11.sp,
                         color = c.textSecondary
                     )
@@ -4644,7 +4668,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             value = customPatternInput,
                             onValueChange = { customPatternInput = it },
                             label = { Text("Add Custom Pattern") },
-                            placeholder = { Text("salary  |  !(emi Balance)") },
+                            placeholder = { Text("balance  |  (Avl bal)  |  !(salary)") },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                             ),

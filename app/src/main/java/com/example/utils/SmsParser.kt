@@ -40,6 +40,17 @@ object SmsParser {
 
         Log.d(TAG, "Parsing text: '$cleanBody' from sender: '$senderId'")
 
+        // Rule 0 (STRICT — non-bypassable): Sender header must end with -S or -T.
+        // Only verified bank/fintech SMS format (e.g. JD-JUSPAY-S, AX-QCAMZN-S, AD-TNUCRD-S) are processed.
+        // Messages from senders not ending in -S or -T are silently ignored.
+        if (!senderId.isNullOrBlank()) {
+            val upperSender = senderId.trim().uppercase()
+            if (!upperSender.endsWith("-S") && !upperSender.endsWith("-T")) {
+                Log.d(TAG, "Excluded: Sender '$senderId' does not end with -S or -T.")
+                return null
+            }
+        }
+
         // 0a. Detect bank available balance / balance notification SMS
         //     e.g. "Avail Bal in A/c xxx300: Rs.3393.08 CR -SBI"
         //          "Your Balance in account no. ending with 9553 is Rs. 0.12 -HDFC BANK"
@@ -57,6 +68,58 @@ object SmsParser {
         if (isHardExcluded) {
             Log.d(TAG, "Hard-excluded: due notice / payment request SMS.")
             return null
+        }
+
+        // 0c. Special case: Apay Wallet / Apay Balance transactions (e.g. JD-JUSPAY-S, AX-QCAMZN-S)
+        //     No last-4 digits required. Category = CASHBACK. Account = "Apay Wallet" (WALLET type).
+        if (lowerBody.contains("apay wallet") || lowerBody.contains("apay balance") || lowerBody.contains("using apay")) {
+            val apayAmtPat = Pattern.compile("(?:inr|rs\\.?|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)", Pattern.CASE_INSENSITIVE)
+            val apayAmtMatcher = apayAmtPat.matcher(lowerBody)
+            val apayAmount = if (apayAmtMatcher.find()) apayAmtMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0
+            if (apayAmount > 0.0) {
+                val apayType = if (lowerBody.contains("credited") || lowerBody.contains("added") || lowerBody.contains("refund")) "INCOME" else "EXPENSE"
+                val apayTitlePat = Pattern.compile("(?:at|for)\\s+([A-Za-z][A-Za-z0-9.\\-]+)", Pattern.CASE_INSENSITIVE)
+                val apayTitleMatcher = apayTitlePat.matcher(cleanBody)
+                val apayTitle = if (apayTitleMatcher.find())
+                    (apayTitleMatcher.group(1) ?: "Apay").split(" ").joinToString(" ") { w -> w.replaceFirstChar { it.titlecase() } }
+                else "Apay Wallet"
+                return SmsParsingResult(
+                    title = apayTitle, amount = apayAmount, category = ExpenseCategory.CASHBACK,
+                    type = apayType, isGeminiParsed = false, accountRef = "APAY_WALLET",
+                    parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp)
+                )
+            }
+        }
+
+        // 0d. Special case: NeuCoins transactions (Tata Neu loyalty coins — AD-TNUCRD-S, Cp-BIGBKT-S, etc.)
+        //     Key signal: "NeuCoin" in body + verified -S header. No last-4 digits required.
+        //     Account = "NeuCoins" (WALLET type). Categories: COINS (income), SHOPPING (expense), REFUNDS (refund).
+        if (lowerBody.contains("neucoin") ||
+            (lowerBody.contains("neucard") && (lowerBody.contains("credited") || lowerBody.contains("refund")))) {
+            val neuAmtPat = Pattern.compile("([0-9,]+(?:\\.[0-9]{1,2})?)\\s*(?:neucoin|neu\\s*coins?)", Pattern.CASE_INSENSITIVE)
+            val neuAmtMatcher = neuAmtPat.matcher(cleanBody)
+            val neuAmount = if (neuAmtMatcher.find()) neuAmtMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0
+            if (neuAmount > 0.0) {
+                val neuType = if (lowerBody.contains("debited") || lowerBody.contains("used") || lowerBody.contains("spent")) "EXPENSE" else "INCOME"
+                val neuCategory = when {
+                    lowerBody.contains("refund") -> ExpenseCategory.REFUNDS
+                    neuType == "INCOME"          -> ExpenseCategory.COINS
+                    else                          -> ExpenseCategory.SHOPPING
+                }
+                val neuTitlePat = Pattern.compile("(?:at|for)\\s+([A-Za-z][A-Za-z0-9.\\-]+)(?:\\s+on|\\s+check|\\s*\\.\\s*check|\\s+team|\\s*https)", Pattern.CASE_INSENSITIVE)
+                val neuTitleMatcher = neuTitlePat.matcher(cleanBody)
+                val neuTitle = when {
+                    lowerBody.contains("refund") -> "Refund"
+                    neuType == "INCOME"          -> "NeuCoins Credited"
+                    neuTitleMatcher.find()       -> (neuTitleMatcher.group(1) ?: "NeuCoins").split(" ").joinToString(" ") { w -> w.replaceFirstChar { it.titlecase() } }
+                    else                          -> "NeuCoins"
+                }
+                return SmsParsingResult(
+                    title = neuTitle, amount = neuAmount, category = neuCategory,
+                    type = neuType, isGeminiParsed = false, accountRef = "NEUCOINS_WALLET",
+                    parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp)
+                )
+            }
         }
 
         // 0. Use the dedicated strict regex filtering utility (bypassed for manual paste with custom patterns)

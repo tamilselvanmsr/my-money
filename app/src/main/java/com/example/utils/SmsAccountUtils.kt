@@ -22,7 +22,7 @@ fun inferSmsBankCode(senderHeader: String?, smsBody: String, accountRef: String?
         return senderBank
     }
 
-    if (refBank.isNotBlank() && refBank != "BANK") {
+    if (refBank.isNotBlank() && refBank != "BANK" && !refBank.all { it.isDigit() }) {
         return refBank
     }
 

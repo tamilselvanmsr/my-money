@@ -113,6 +113,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         prefs.edit().putBoolean("enable_balance_sync", v).apply()
     }
 
+    // ── Recently imported fingerprints (from custom-pattern scan) — session-only highlight ─────
+    // Fingerprint format: "title|amount|type|timestamp". Cleared on new scan. Never persisted.
+    private val _recentlyImportedFingerprints = MutableStateFlow<Set<String>>(emptySet())
+    val recentlyImportedFingerprints: StateFlow<Set<String>> = _recentlyImportedFingerprints.asStateFlow()
+
     // ── Light / Dark theme preference ─────────────────────────────────────────
     private val _isDarkTheme = MutableStateFlow(prefs.getBoolean("is_dark_theme", true))
     val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
@@ -546,6 +551,24 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         
         // Check in-memory cache first to avoid race conditions during batch scan
         createdAccountsCache[last4Ref]?.let { return it }
+
+        // Special wallet markers — no last-4 digits required
+        if (last4Ref == "APAY_WALLET") {
+            val existing = repository.allAccounts.first().find { it.name.equals("Apay Wallet", ignoreCase = true) }
+            val name = existing?.name ?: run {
+                repository.insertAccount(Account(name = "Apay Wallet", balance = 0.0, type = "WALLET", lastFour = null))
+                "Apay Wallet"
+            }
+            createdAccountsCache[last4Ref] = name; return name
+        }
+        if (last4Ref == "NEUCOINS_WALLET") {
+            val existing = repository.allAccounts.first().find { it.name.equals("NeuCoins", ignoreCase = true) }
+            val name = existing?.name ?: run {
+                repository.insertAccount(Account(name = "NeuCoins", balance = 0.0, type = "WALLET", lastFour = null))
+                "NeuCoins"
+            }
+            createdAccountsCache[last4Ref] = name; return name
+        }
         
         val hyphenIndex = last4Ref.indexOf('-')
         val actualLast4 = if (hyphenIndex != -1) last4Ref.substring(hyphenIndex + 1) else last4Ref
@@ -605,16 +628,36 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
          }
  
          val startBal = 0.0
+
+         // Safety rule: account name must NEVER start with a digit.
+         // Try to extract a meaningful word prefix from the body near the masked account ref.
+         val validatedNameLabel = if (nameLabel.firstOrNull()?.isDigit() == true) {
+             // Look for pattern: letters immediately before asterisks/X's and the digits (e.g. "BGBNG*****4090" → "BGBNG")
+             val bodyPrefixPat = java.util.regex.Pattern.compile(
+                 "([A-Za-z]{2,})[xX*\\s]+${java.util.regex.Pattern.quote(actualLast4)}\\b",
+                 java.util.regex.Pattern.CASE_INSENSITIVE)
+             val prefixMatcher = bodyPrefixPat.matcher(smsBody)
+             if (prefixMatcher.find()) {
+                 val prefix = (prefixMatcher.group(1) ?: "").uppercase().filter { it.isLetter() }
+                 if (prefix.isNotBlank()) {
+                     val prefixDisplay = smsDisplayBankName(prefix)
+                     if (isCreditCard) "$prefixDisplay Card Ending $actualLast4"
+                     else if (prefixDisplay.endsWith("Bank", ignoreCase = true)) "$prefixDisplay Ending $actualLast4"
+                     else "$prefixDisplay Bank Ending $actualLast4"
+                 } else nameLabel
+             } else nameLabel
+         } else nameLabel
+
          // Guard: do NOT create account if name or sender is in the SMS Import Blocklist
-         if (matchesSmsBlocklistPattern(nameLabel) || matchesSmsBlocklistPattern(senderHeader ?: "")) {
-             Log.d(TAG, "ensureAccountExists: blocked account creation by blocklist — $nameLabel")
+         if (matchesSmsBlocklistPattern(validatedNameLabel) || matchesSmsBlocklistPattern(senderHeader ?: "")) {
+             Log.d(TAG, "ensureAccountExists: blocked account creation by blocklist — $validatedNameLabel")
              return null
          }
-         val newAcObj = Account(name = nameLabel, balance = startBal, type = acType, lastFour = actualLast4)
+         val newAcObj = Account(name = validatedNameLabel, balance = startBal, type = acType, lastFour = actualLast4)
          repository.insertAccount(newAcObj)
-         Log.d(TAG, "Created account dynamically from parsed SMS: $nameLabel")
-         createdAccountsCache[last4Ref] = nameLabel
-         return nameLabel
+         Log.d(TAG, "Created account dynamically from parsed SMS: $validatedNameLabel")
+         createdAccountsCache[last4Ref] = validatedNameLabel
+         return validatedNameLabel
      }
 
     fun addRecurringTransaction(
@@ -1224,12 +1267,17 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     note = "$body [Acc: $walletName]"
                                 )
                                 repository.insertTransaction(tx)
+                                newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                                 projectedTransactions.add(tx)
                                 matchedCount++
                             }
                         }
                     }
                     cursor.close()
+                }
+
+                if (newImportedFingerprints.isNotEmpty()) {
+                    _recentlyImportedFingerprints.value = newImportedFingerprints
                 }
 
                 val rulesDesc = if (allPatterns.isNotEmpty()) " (with ${allPatterns.size} custom rule${if (allPatterns.size > 1) "s" else ""})" else ""

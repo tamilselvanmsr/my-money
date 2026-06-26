@@ -643,16 +643,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
          val acType = if (isCreditCard) "CREDIT_CARD" else "BANK"
          val displayName = smsDisplayBankName(extractedBank)
          val nameLabel = if (isCreditCard) {
-             if (displayName == "SBI" || displayName == "HDFC" || displayName == "ICICI" || displayName == "AXIS" || displayName == "PNB") {
-                 "$displayName Credit Card Ending $actualLast4"
-             } else {
-                 "$displayName Card Ending $actualLast4"
-             }
+             "$displayName CC ·$actualLast4"
          } else {
              if (displayName.endsWith("Bank", ignoreCase = true)) {
-                 "$displayName Ending $actualLast4"
+                 "$displayName ·$actualLast4"
              } else {
-                 "$displayName Bank Ending $actualLast4"
+                 "$displayName Bank ·$actualLast4"
              }
          }
  
@@ -670,9 +666,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                  val prefix = (prefixMatcher.group(1) ?: "").uppercase().filter { it.isLetter() }
                  if (prefix.isNotBlank()) {
                      val prefixDisplay = smsDisplayBankName(prefix)
-                     if (isCreditCard) "$prefixDisplay Card Ending $actualLast4"
-                     else if (prefixDisplay.endsWith("Bank", ignoreCase = true)) "$prefixDisplay Ending $actualLast4"
-                     else "$prefixDisplay Bank Ending $actualLast4"
+                     if (isCreditCard) "$prefixDisplay CC ·$actualLast4"
+                     else if (prefixDisplay.endsWith("Bank", ignoreCase = true)) "$prefixDisplay ·$actualLast4"
+                     else "$prefixDisplay Bank ·$actualLast4"
                  } else nameLabel
              } else nameLabel
          } else nameLabel
@@ -1147,6 +1143,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         // Skip PF Contribution INCOME when Bal Sync is ON — balance tracked by the Balance Sync snapshot
                         val skipPfIncome = parsed.title == "PF Contribution" && enableBalanceSync.value
                         if (!duplicate && !skipPfIncome && !matchesSmsBlocklistPattern(walletName)) {
+                            val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
+                            val txType = parsed.type
                             val tx = TransactionEntry(
                                 title = parsed.title,
                                 amount = parsed.amount,
@@ -1434,6 +1432,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             // Skip PF Contribution INCOME when Bal Sync is ON
                             val skipPfIncome = parsed.title == "PF Contribution" && enableBalanceSync.value
                             if (!duplicate && !skipPfIncome && !matchesSmsBlocklistPattern(walletName) && !matchesSmsBlocklistPattern(sender)) {
+                                val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
+                                val txType = parsed.type
                                 val tx = TransactionEntry(
                                     title = parsed.title,
                                     amount = parsed.amount,
@@ -1574,7 +1574,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val pfAcc = repository.getAccountByRef(parsed.accountRef ?: "")
                     ?: allAccounts.value.find { it.name == walletName }
                 if (pfAcc != null) {
-                    val projected = mutableListOf(tx)
+                    val projected = mutableListOf<TransactionEntry>()
                     createBalanceAdjustIfNeeded(pfAcc, parsed.availableBalance!!, targetTime + 1, smsBody, sender, projected)
                 }
             }

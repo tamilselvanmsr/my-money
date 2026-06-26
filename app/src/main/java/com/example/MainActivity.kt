@@ -1148,7 +1148,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = 1.2.sp,
-                            color = c.textTertiary
+                            color = c.textSecondary
                         )
                         
                         val dateNet = txList.filter { it.type != "DUPLICATE" && it.type != "BALANCE_UPDATE" }.sumOf { if (it.type == "INCOME") it.amount else -it.amount }
@@ -1241,7 +1241,10 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                                     text = tx.getAccountName(),
                                                     fontSize = 9.sp,
                                                     fontWeight = FontWeight.SemiBold,
-                                                    color = acctColor
+                                                    color = acctColor,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    softWrap = false
                                                 )
                                             }
                                         }
@@ -6612,7 +6615,7 @@ fun AccountCenterSettingsDialog(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = c.textSecondary,
-                        letterSpacing = 1.sp,
+                        letterSpacing = 0.5.sp,
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
@@ -6640,7 +6643,7 @@ fun AccountCenterSettingsDialog(
                     Column(modifier = Modifier.padding(top = 8.dp)) {
                         Text(
                             "SMS IMPORT BLOCKLIST",
-                            fontSize = 10.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = c.textSecondary,
                             letterSpacing = 1.sp

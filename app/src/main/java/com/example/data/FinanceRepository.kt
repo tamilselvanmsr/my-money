@@ -21,6 +21,10 @@ class FinanceRepository(private val financeDao: FinanceDao) {
         return financeDao.getPotentialDuplicates(amount, type, timestamp)
     }
 
+    suspend fun countExactBalanceUpdates(accountName: String, timestamp: Long): Int {
+        return financeDao.countExactBalanceUpdates(accountName, timestamp)
+    }
+
     suspend fun updateTransaction(transaction: TransactionEntry) {
         financeDao.updateTransaction(transaction)
     }

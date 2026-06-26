@@ -119,7 +119,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     val recentlyImportedFingerprints: StateFlow<Set<String>> = _recentlyImportedFingerprints.asStateFlow()
 
     // ── Light / Dark theme preference ─────────────────────────────────────────
-    private val _isDarkTheme = MutableStateFlow(prefs.getBoolean("is_dark_theme", true))
+    // themeMode: "system" (follow device) | "light" | "dark"
+    private val _themeMode = MutableStateFlow(prefs.getString("theme_mode", "system") ?: "system")
+    val themeMode: StateFlow<String> = _themeMode.asStateFlow()
+    fun setThemeMode(mode: String) {
+        _themeMode.value = mode
+        prefs.edit().putString("theme_mode", mode).apply()
+    }
+    // Legacy isDarkTheme kept for backward compat (used when themeMode == "dark")
+    private val _isDarkTheme = MutableStateFlow(prefs.getBoolean("is_dark_theme", false))
     val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
     fun setDarkTheme(dark: Boolean) {
         _isDarkTheme.value = dark
@@ -554,18 +562,36 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
         // Special wallet markers — no last-4 digits required
         if (last4Ref == "APAY_WALLET") {
-            val existing = repository.allAccounts.first().find { it.name.equals("Apay Wallet", ignoreCase = true) }
+            val walletDisplayName = "Apay Wallet"
+            if (matchesSmsBlocklistPattern(walletDisplayName) || matchesSmsBlocklistPattern(senderHeader ?: "")) {
+                Log.d(TAG, "ensureAccountExists: blocked Apay Wallet by blocklist")
+                return null
+            }
+            val existing = repository.allAccounts.first().find { it.name.equals(walletDisplayName, ignoreCase = true) }
+            if (existing != null && (isSmsTrackingBlocked(existing, blockedSmsAccountIds.value) || matchesSmsBlocklistPattern(existing.name))) {
+                Log.d(TAG, "ensureAccountExists: import blocked for existing Apay Wallet")
+                createdAccountsCache[last4Ref] = walletDisplayName; return null
+            }
             val name = existing?.name ?: run {
-                repository.insertAccount(Account(name = "Apay Wallet", balance = 0.0, type = "WALLET", lastFour = null))
-                "Apay Wallet"
+                repository.insertAccount(Account(name = walletDisplayName, balance = 0.0, type = "WALLET", lastFour = null))
+                walletDisplayName
             }
             createdAccountsCache[last4Ref] = name; return name
         }
         if (last4Ref == "NEUCOINS_WALLET") {
-            val existing = repository.allAccounts.first().find { it.name.equals("NeuCoins", ignoreCase = true) }
+            val walletDisplayName = "NeuCoins"
+            if (matchesSmsBlocklistPattern(walletDisplayName) || matchesSmsBlocklistPattern(senderHeader ?: "")) {
+                Log.d(TAG, "ensureAccountExists: blocked NeuCoins by blocklist")
+                return null
+            }
+            val existing = repository.allAccounts.first().find { it.name.equals(walletDisplayName, ignoreCase = true) }
+            if (existing != null && (isSmsTrackingBlocked(existing, blockedSmsAccountIds.value) || matchesSmsBlocklistPattern(existing.name))) {
+                Log.d(TAG, "ensureAccountExists: import blocked for existing NeuCoins")
+                createdAccountsCache[last4Ref] = walletDisplayName; return null
+            }
             val name = existing?.name ?: run {
-                repository.insertAccount(Account(name = "NeuCoins", balance = 0.0, type = "WALLET", lastFour = null))
-                "NeuCoins"
+                repository.insertAccount(Account(name = walletDisplayName, balance = 0.0, type = "WALLET", lastFour = null))
+                walletDisplayName
             }
             createdAccountsCache[last4Ref] = name; return name
         }
@@ -588,7 +614,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val match = candidates.firstOrNull { smsBankMatchesAccount(extractedBank, it.name) }
             ?: candidates.singleOrNull()
         if (match != null) {
-            if (isSmsTrackingBlocked(match, blockedSmsAccountIds.value)) {
+            if (isSmsTrackingBlocked(match, blockedSmsAccountIds.value) ||
+                matchesSmsBlocklistPattern(match.name) ||
+                matchesSmsBlocklistPattern(senderHeader ?: "")) {
+                Log.d(TAG, "ensureAccountExists: import blocked for existing account — ${match.name}")
                 createdAccountsCache[last4Ref] = match.name
                 return null
             }
@@ -887,6 +916,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Returns true for Apay Wallet, NeuCoins, and EPFO passbook results — excluded from the regular scan. */
+    private fun isWalletOrPfResult(parsed: com.example.utils.SmsParsingResult): Boolean =
+        parsed.accountRef == "APAY_WALLET" ||
+        parsed.accountRef == "NEUCOINS_WALLET" ||
+        parsed.title == "PF Contribution"
+
     fun scanDeviceSmsInbox(context: android.content.Context, monthsBack: Int = 3) {
         viewModelScope.launch {
             try {
@@ -909,6 +944,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 }
                 val cutoffTime = cal.timeInMillis
                 var matchedCount = 0
+                val newImportedFingerprints = mutableSetOf<String>()
                 val projectedTransactions = allTransactions.value.toMutableList()
                 // Bug 2: clear stale cache so deleted accounts can be recreated
                 createdAccountsCache.clear()
@@ -947,6 +983,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 continue
                             }
 
+                            // Wallet / PF entries are handled exclusively by scanWalletsPfInbox
+                            if (isWalletOrPfResult(parsed)) continue
+
+                            // Guard: skip account creation + transaction if sender is blocklisted
+                            if (matchesSmsBlocklistPattern(sender)) continue
+
                             val walletName = ensureAccountExists(parsed.accountRef, sender, body) ?: continue
                             val potentialDuplicates = repository.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
                             val incomingRef = com.example.utils.SmsParser.getReferenceNumber(body)
@@ -975,11 +1017,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             }
                             if (!duplicate && !matchesSmsBlocklistPattern(walletName) && !matchesSmsBlocklistPattern(sender)) {
                                 val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
+                                // EPFO passbook → store as BALANCE_UPDATE so it doesn't inflate income totals
+                                val txType = if (parsed.title == "PF Contribution") "BALANCE_UPDATE" else parsed.type
                                 val tx = TransactionEntry(
                                     title = parsed.title,
                                     amount = parsed.amount,
                                     category = finalCategory,
-                                    type = parsed.type,
+                                    type = txType,
                                     smsSender = sender,
                                     smsBody = body,
                                     timestamp = targetTime,
@@ -987,6 +1031,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 )
                                 repository.insertTransaction(tx)
                                 projectedTransactions.add(tx)
+                                newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                                 maybeNotifyBudgetAlert(tx, projectedTransactions)
                                 if (parsed.availableLimit != null && parsed.accountRef != null) {
                                     val linkedAccount = repository.getAccountByLastFour(parsed.accountRef)
@@ -1017,6 +1062,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     }
                 }
 
+                if (newImportedFingerprints.isNotEmpty()) {
+                    _recentlyImportedFingerprints.value = newImportedFingerprints
+                }
                 if (matchedCount > 0) {
                     _toastMessage.emit("Successfully imported $matchedCount transactions from your SMS messages!")
                 } else {
@@ -1033,6 +1081,108 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val _isSmsParsing = MutableStateFlow(false)
     val isSmsParsing: StateFlow<Boolean> = _isSmsParsing.asStateFlow()
 
+    private val _isWalletPfScanning = MutableStateFlow(false)
+    val isWalletPfScanning: StateFlow<Boolean> = _isWalletPfScanning.asStateFlow()
+
+    /** Scans inbox for Wallet (Apay, NeuCoins) and EPFO PF Contribution SMS only. */
+    fun scanWalletsPfInbox(context: android.content.Context, monthsBack: Int = 3) {
+        if (_isWalletPfScanning.value) return  // prevent concurrent scans / race conditions
+        viewModelScope.launch {
+            _isWalletPfScanning.value = true
+            try {
+                val contentResolver = context.contentResolver
+                val cursor = contentResolver.query(
+                    android.net.Uri.parse("content://sms/inbox"),
+                    arrayOf("address", "body", "date"),
+                    null, null, "date DESC"
+                )
+                val cal = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.DAY_OF_MONTH, 1)
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                    add(java.util.Calendar.MONTH, -(monthsBack - 1))
+                }
+                val cutoffTime = cal.timeInMillis
+                var matchedCount = 0
+                val newImportedFingerprints = mutableSetOf<String>()
+                val projectedTransactions = allTransactions.value.toMutableList()
+                createdAccountsCache.clear()
+
+                if (cursor != null) {
+                    val bodyIndex = cursor.getColumnIndex("body")
+                    val addressIndex = cursor.getColumnIndex("address")
+                    val dateIndex = cursor.getColumnIndex("date")
+                    while (cursor.moveToNext()) {
+                        val smsDate = if (dateIndex != -1) cursor.getLong(dateIndex) else System.currentTimeMillis()
+                        if (smsDate < cutoffTime) break
+                        val body = cursor.getString(bodyIndex) ?: ""
+                        val sender = cursor.getString(addressIndex) ?: "Unknown"
+
+                        val parsed = SmsParser.parseOffline(body, sender, smsDate) ?: continue
+                        if (!isWalletOrPfResult(parsed)) continue   // only wallet/PF
+                        if (matchesSmsBlocklistPattern(sender)) continue
+
+                        val targetTime = parsed.parsedTimestamp ?: smsDate
+                        val walletName = ensureAccountExists(parsed.accountRef, sender, body) ?: continue
+                        val potentialDuplicates = repository.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
+                        val incomingRef = com.example.utils.SmsParser.getReferenceNumber(body)
+                        val duplicate = allTransactions.value.any { existing ->
+                            isDuplicateImportedTransaction(existing, body, parsed.title, parsed.amount, parsed.type, targetTime, incomingRef, walletName)
+                        } || potentialDuplicates.any { existing ->
+                            isDuplicateImportedTransaction(existing, body, parsed.title, parsed.amount, parsed.type, targetTime, incomingRef, walletName)
+                        }
+                        if (!duplicate && !matchesSmsBlocklistPattern(walletName)) {
+                            val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
+                            val txType = if (parsed.title == "PF Contribution") "BALANCE_UPDATE" else parsed.type
+                            val tx = TransactionEntry(
+                                title = parsed.title,
+                                amount = parsed.amount,
+                                category = finalCategory,
+                                type = txType,
+                                smsSender = sender,
+                                smsBody = body,
+                                timestamp = targetTime,
+                                note = "$body [Acc: $walletName]"
+                            )
+                            repository.insertTransaction(tx)
+                            projectedTransactions.add(tx)
+                            newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
+                            matchedCount++
+                        }
+                        // Always sync passbook total regardless of whether contribution record is duplicate
+                        if (parsed.title == "PF Contribution" && parsed.availableBalance != null && !matchesSmsBlocklistPattern(walletName)) {
+                            val pfAcc = repository.getAccountByRef(parsed.accountRef ?: "")
+                                ?: allAccounts.value.find { it.name == walletName }
+                            if (pfAcc != null) {
+                                val inserted = createBalanceAdjustIfNeeded(pfAcc, parsed.availableBalance!!, targetTime + 1, body, sender, projectedTransactions)
+                                if (inserted) {
+                                    newImportedFingerprints.add("Balance Sync|${parsed.availableBalance!!}|BALANCE_UPDATE|${targetTime + 1}")
+                                }
+                            }
+                        }
+                    }
+                    cursor.close()
+                }
+
+                if (newImportedFingerprints.isNotEmpty()) {
+                    _recentlyImportedFingerprints.value = newImportedFingerprints
+                }
+                if (matchedCount > 0) {
+                    _toastMessage.emit("Imported $matchedCount wallet/PF transaction(s)!")
+                } else {
+                    _toastMessage.emit("Wallets & PF scan complete. No new entries found.")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Wallets/PF scan failed: ${e.message}", e)
+                _toastMessage.emit("Wallets & PF scan failed. Check SMS permission.")
+            } finally {
+                _isWalletPfScanning.value = false
+            }
+        }
+    }
+
     /**
      * Creates an ADJUST income/expense transaction if the reported balance differs from current computed balance.
      * Returns true if a transaction was created.
@@ -1045,12 +1195,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         sender: String,
         projectedTransactions: MutableList<TransactionEntry>
     ): Boolean {
-        // Dedup: skip if we already have a BALANCE_UPDATE snapshot for this account at this exact SMS timestamp
+        // Dedup: in-memory check (fast, covers within-scan duplicates)
         if (projectedTransactions.any {
             it.type == "BALANCE_UPDATE" &&
             it.getAccountName() == account.name &&
             it.timestamp == timestamp
         }) return false
+        // Dedup: DB-level check (catches duplicates from previous scans / concurrent scan invocations)
+        if (repository.countExactBalanceUpdates(account.name, timestamp) > 0) return false
 
         // Store the ABSOLUTE reported balance as a point-in-time snapshot.
         // computeWalletBalances will use this as the starting balance and only apply
@@ -1204,14 +1356,19 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         // 1. Standard parse
                         var parsed = com.example.utils.SmsParser.parseOffline(body, sender, smsDate, false)
 
+                        // Check if body explicitly matches a custom pattern (used to decide wallet/PF inclusion)
+                        val lowerBodyForMatch = body.lowercase()
+                        val customPatternMatchesBody = allPatterns.isNotEmpty() && allPatterns.any { pattern ->
+                            runCatching { Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(body) }
+                                .getOrDefault(lowerBodyForMatch.contains(pattern))
+                        }
+
+                        // Wallet/PF entries: only import when a custom pattern explicitly matches the body
+                        if (parsed != null && isWalletOrPfResult(parsed) && !customPatternMatchesBody) continue
+
                         // 2. Retry with custom rules if default parse failed and body matches any pattern
                         if (parsed == null && allPatterns.isNotEmpty()) {
-                            val lowerBody = body.lowercase()
-                            val matchesAny = allPatterns.any { pattern ->
-                                runCatching { Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(body) }
-                                    .getOrDefault(lowerBody.contains(pattern))
-                            }
-                            if (matchesAny) {
+                            if (customPatternMatchesBody) {
                                 val assistedBody = buildString {
                                     append(body)
                                     val helpers = allPatterns.flatMap { p ->
@@ -1247,6 +1404,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 continue
                             }
 
+                            // Guard: skip account creation + transaction if sender is blocklisted
+                            if (matchesSmsBlocklistPattern(sender)) continue
+
                             val walletName = ensureAccountExists(parsed.accountRef, sender, body) ?: continue
                             val potentialDuplicates = repository.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
                             val incomingRef = com.example.utils.SmsParser.getReferenceNumber(body)
@@ -1257,11 +1417,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             }
                             if (!duplicate && !matchesSmsBlocklistPattern(walletName) && !matchesSmsBlocklistPattern(sender)) {
                                 val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
+                                // EPFO passbook → store as BALANCE_UPDATE so it doesn't inflate income totals
+                                val txType = if (parsed.title == "PF Contribution") "BALANCE_UPDATE" else parsed.type
                                 val tx = TransactionEntry(
                                     title = parsed.title,
                                     amount = parsed.amount,
                                     category = finalCategory,
-                                    type = parsed.type,
+                                    type = txType,
                                     smsSender = sender,
                                     smsBody = body,
                                     timestamp = targetTime,
@@ -1271,6 +1433,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                                 projectedTransactions.add(tx)
                                 matchedCount++
+                            }
+                            // Always sync passbook total regardless of whether contribution record is duplicate
+                            if (parsed.title == "PF Contribution" && parsed.availableBalance != null &&
+                                !matchesSmsBlocklistPattern(walletName) && !matchesSmsBlocklistPattern(sender)) {
+                                val pfAcc = repository.getAccountByRef(parsed.accountRef ?: "")
+                                    ?: allAccounts.value.find { it.name == walletName }
+                                if (pfAcc != null) {
+                                    createBalanceAdjustIfNeeded(pfAcc, parsed.availableBalance!!, targetTime + 1, body, sender, projectedTransactions)
+                                }
                             }
                         }
                     }
@@ -1350,23 +1521,44 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
             if (duplicate) {
+                // For EPFO: still sync passbook balance even if the contribution record is a duplicate
+                if (parsed.title == "PF Contribution" && parsed.availableBalance != null) {
+                    val pfAcc = repository.getAccountByRef(parsed.accountRef ?: "")
+                        ?: allAccounts.value.find { it.name == walletName }
+                    if (pfAcc != null) {
+                        val projected = mutableListOf<TransactionEntry>()
+                        createBalanceAdjustIfNeeded(pfAcc, parsed.availableBalance!!, targetTime + 1, smsBody, sender, projected)
+                    }
+                }
                 _toastMessage.emit("Detected potential duplicate transaction of ₹${parsed.amount} at ${parsed.title}. Skipped.")
                 return
             }
 
             val learnedCategory = if (parsed.title.isNotBlank()) repository.getLearnedCategoryForTitle(parsed.title) else null
+            // EPFO passbook → store as BALANCE_UPDATE so it doesn't inflate income totals
+            val txType = if (parsed.title == "PF Contribution") "BALANCE_UPDATE" else parsed.type
             val tx = TransactionEntry(
                 title = parsed.title,
                 amount = parsed.amount,
                 category = learnedCategory ?: parsed.category.name,
-                type = parsed.type,
+                type = txType,
                 smsSender = sender,
                 smsBody = smsBody,
                 timestamp = targetTime,
                 note = "$smsBody [Acc: $walletName]"
             )
             repository.insertTransaction(tx)
+            _recentlyImportedFingerprints.value = setOf("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
             maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
+            // Sync passbook total to PF account balance
+            if (parsed.title == "PF Contribution" && parsed.availableBalance != null) {
+                val pfAcc = repository.getAccountByRef(parsed.accountRef ?: "")
+                    ?: allAccounts.value.find { it.name == walletName }
+                if (pfAcc != null) {
+                    val projected = mutableListOf(tx)
+                    createBalanceAdjustIfNeeded(pfAcc, parsed.availableBalance!!, targetTime + 1, smsBody, sender, projected)
+                }
+            }
 
             // Update available credit limit for credit card accounts if parsed from SMS
             if (parsed.availableLimit != null && parsed.accountRef != null) {

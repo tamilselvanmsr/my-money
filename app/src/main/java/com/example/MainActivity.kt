@@ -201,7 +201,14 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val vm: FinanceViewModel = viewModel()
-            val isDark by vm.isDarkTheme.collectAsStateWithLifecycle()
+            val themeMode by vm.themeMode.collectAsStateWithLifecycle()
+            val isDarkPref by vm.isDarkTheme.collectAsStateWithLifecycle()
+            val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+            val isDark = when (themeMode) {
+                "dark"  -> true
+                "light" -> false
+                else    -> systemDark // "system" — follow device setting
+            }
             val appColors = if (isDark) darkAppColors() else lightAppColors()
             MyApplicationTheme(darkTheme = isDark) {
                 androidx.compose.runtime.CompositionLocalProvider(LocalAppColors provides appColors) {
@@ -218,6 +225,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     val context = LocalContext.current
     val c = LocalAppColors.current
     val isDarkTheme by viewModel.isDarkTheme.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     var currentTab by remember { mutableStateOf(AppTab.DASHBOARD) }
     val dashboardListState = rememberLazyListState()
     val fabAlpha by animateFloatAsState(
@@ -309,39 +317,68 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             expanded = showAppMenu,
                             onDismissRequest = { showAppMenu = false },
                             modifier = Modifier
-                                .background(c.surface)
-                                .border(1.dp, c.border, RoundedCornerShape(12.dp))
+                                .background(c.surface, RoundedCornerShape(12.dp))
+                                .widthIn(min = 180.dp, max = 220.dp)
                         ) {
                             // ── Theme toggle ─────────────────────────────
                             DropdownMenuItem(
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                                 text = {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                                contentDescription = "Theme toggle",
-                                                tint = c.accent
-                                            )
-                                            Text(if (isDarkTheme) "Light Mode" else "Dark Mode", color = c.text)
-                                        }
-                                        Switch(
-                                            checked = isDarkTheme,
-                                            onCheckedChange = { viewModel.setDarkTheme(it) },
-                                            colors = SwitchDefaults.colors(
-                                                checkedThumbColor = c.bg,
-                                                checkedTrackColor = c.accent,
-                                                uncheckedThumbColor = c.textTertiary,
-                                                uncheckedTrackColor = c.border
-                                            ),
-                                            modifier = Modifier.scale(0.85f)
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        Text(
+                                            "Theme",
+                                            fontSize = 11.sp,
+                                            color = c.textSecondary,
+                                            modifier = Modifier.padding(bottom = 6.dp)
                                         )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            listOf(
+                                                Triple("Device", Icons.Default.SettingsBrightness, "system"),
+                                                Triple("Light",  Icons.Default.LightMode,          "light"),
+                                                Triple("Dark",   Icons.Default.DarkMode,            "dark")
+                                            ).forEach { (label, icon, mode) ->
+                                                val selected = themeMode == mode
+                                                Surface(
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    color = if (selected) c.accent else c.surface,
+                                                    border = BorderStroke(1.dp, if (selected) c.accent else c.divider),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clickable {
+                                                            viewModel.setThemeMode(mode)
+                                                            if (mode == "dark") viewModel.setDarkTheme(true)
+                                                            else if (mode == "light") viewModel.setDarkTheme(false)
+                                                        }
+                                                ) {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.Center,
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(vertical = 6.dp)
+                                                    ) {
+                                                        Icon(
+                                                            icon, null,
+                                                            tint = if (selected) c.bg else c.textSecondary,
+                                                            modifier = Modifier.size(15.dp)
+                                                        )
+                                                        Spacer(Modifier.height(3.dp))
+                                                        Text(
+                                                            label,
+                                                            fontSize = 9.sp,
+                                                            color = if (selected) c.bg else c.textSecondary,
+                                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 },
-                                onClick = { viewModel.setDarkTheme(!isDarkTheme) }
+                                onClick = {}
                             )
                             HorizontalDivider(color = c.divider)
                             DropdownMenuItem(
@@ -3888,7 +3925,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "MANAGE WALLETS",
+                    text = "MANAGE ACCOUNTS",
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
                     letterSpacing = 1.sp,
@@ -4258,7 +4295,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
 
         AlertDialog(
             onDismissRequest = { selectedAccountForEdit = null },
-            title = { Text("Edit Wallet", fontWeight = FontWeight.Bold, color = c.text) },
+            title = { Text("Edit Account", fontWeight = FontWeight.Bold, color = c.text) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Surface(
@@ -4387,7 +4424,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
 fun AutoScanHubScreen(viewModel: FinanceViewModel) {
     val c = LocalAppColors.current
     val context = LocalContext.current
-    var manualSmsSender by remember { mutableStateOf("HDFC-BANK") }
+    var manualSmsSender by remember { mutableStateOf("") }
     var manualSmsBody by remember { mutableStateOf("") }
     var customPatternInput by remember { mutableStateOf("") }
     val forcePatternOptions = listOf("txn", "debited", "credited", "spent", "paid", "received", "upi", "card", "account", "salary")
@@ -4402,6 +4439,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
     // 1 = this month only, 2 = last + this month, 3 = last 3 months (calendar start-of-month boundaries)
     var smsScanMonthsBack by remember { mutableStateOf(1) }
     val isSmsParsing by viewModel.isSmsParsing.collectAsStateWithLifecycle()
+    val isWalletPfScanning by viewModel.isWalletPfScanning.collectAsStateWithLifecycle()
     val enableBalanceSync by viewModel.enableBalanceSync.collectAsStateWithLifecycle()
     var hasReadSmsPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED)
@@ -4418,8 +4456,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
         hasReceiveSmsPermission = result[Manifest.permission.RECEIVE_SMS] == true ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
         if (hasReadSmsPermission) {
-            Toast.makeText(context, "SMS access enabled. Importing inbox now.", Toast.LENGTH_SHORT).show()
-            viewModel.scanDeviceSmsInbox(context, smsScanMonthsBack)
+            Toast.makeText(context, "SMS access enabled. Tap \"Scan Inbox\" to import messages.", Toast.LENGTH_LONG).show()
         } else {
             Toast.makeText(context, "SMS read permission is required for inbox import.", Toast.LENGTH_SHORT).show()
         }
@@ -4547,11 +4584,15 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                 .height(48.dp)
                                 .testTag("scan_device_sms_button")
                         ) {
-                            Text(if (hasReadSmsPermission) "Scan Inbox" else "Enable Auto-Import", fontWeight = FontWeight.Bold)
+                            Text(
+                                if (hasReadSmsPermission) "Scan Inbox" else "Enable Auto-Import",
+                                fontWeight = FontWeight.Bold
+                            )
                         }
+                        // Bal Sync toggle
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
                                 "Bal\nSync",
@@ -4569,6 +4610,42 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                     uncheckedThumbColor = c.textSecondary,
                                     uncheckedTrackColor = c.divider
                                 )
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // Wallets & PF scan button
+                    OutlinedButton(
+                        onClick = {
+                            if (hasReadSmsPermission) {
+                                viewModel.scanWalletsPfInbox(context, smsScanMonthsBack)
+                            } else {
+                                requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
+                            }
+                        },
+                        enabled = !isWalletPfScanning,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.accent),
+                        border = BorderStroke(1.dp, c.accent.copy(alpha = if (isWalletPfScanning) 0.3f else 0.6f)),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                    ) {
+                        if (isWalletPfScanning) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                color = c.accent,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Scanning…", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        } else {
+                            Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                if (hasReadSmsPermission) "Scan Wallets & PF" else "Enable Auto-Import",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
                             )
                         }
                     }
@@ -6517,11 +6594,11 @@ fun AccountCenterSettingsDialog(
                         )
                     }
                 }
-                // Wallet visibility section header
+                // Account visibility section header
                 item {
                     Text(
-                        "WALLET VISIBILITY",
-                        fontSize = 10.sp,
+                        "ACCOUNT VISIBILITY",
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = c.textSecondary,
                         letterSpacing = 1.sp,

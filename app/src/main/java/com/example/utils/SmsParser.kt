@@ -149,8 +149,9 @@ object SmsParser {
                 val apayTitle = if (apayTitleMatcher.find())
                     (apayTitleMatcher.group(1) ?: "Apay").split(" ").joinToString(" ") { w -> w.replaceFirstChar { it.titlecase() } }
                 else "Apay Wallet"
+                val apayCategory = if (apayType == "INCOME") ExpenseCategory.CASHBACK else ExpenseCategory.SHOPPING
                 return SmsParsingResult(
-                    title = apayTitle, amount = apayAmount, category = ExpenseCategory.CASHBACK,
+                    title = apayTitle, amount = apayAmount, category = apayCategory,
                     type = apayType, isGeminiParsed = false, accountRef = "APAY_WALLET",
                     parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp)
                 )
@@ -172,7 +173,7 @@ object SmsParser {
                     neuType == "INCOME"          -> ExpenseCategory.COINS
                     else                         -> ExpenseCategory.SHOPPING
                 }
-                val neuTitlePat = Pattern.compile("(?:at|for)\\s+([A-Za-z][A-Za-z0-9.\\-]+)(?:\\s+on|\\s+check|\\s*\\.\\s*check|\\s+team|\\s*https)", Pattern.CASE_INSENSITIVE)
+                val neuTitlePat = Pattern.compile("(?:at|for)\\s+([A-Za-z][A-Za-z0-9.\\-]+(?:\\s+[A-Za-z][A-Za-z0-9.\\-]+)*)(?:\\s+on\\b|\\s+check\\b|\\s*\\.\\s*check|\\s+team\\b|\\s*https)", Pattern.CASE_INSENSITIVE)
                 val neuTitleMatcher = neuTitlePat.matcher(cleanBody)
                 val neuTitle = when {
                     lowerBody.contains("refund") -> "Refund"
@@ -184,6 +185,45 @@ object SmsParser {
                     title = neuTitle, amount = neuAmount, category = neuCategory,
                     type = neuType, isGeminiParsed = false, accountRef = "NEUCOINS_WALLET",
                     parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp)
+                )
+            }
+        }
+
+        // 4c. EPFO passbook / contribution messages
+        //     e.g. "your passbook balance against BGBNG*****1234 is Rs. 1,94,113/-. Contribution of Rs. 13,606/- ... received."
+        //     The passbook balance is the running total — NOT the transaction amount.
+        //     The actual income event is the contribution. We extract that as PROVIDENT_FUND income.
+        //     Pattern is unique enough to auto-import without needing bypassExclusionFilter.
+        if (lowerBody.contains("passbook balance") && lowerBody.contains("contribution")) {
+            val contribPat = Pattern.compile(
+                "contribution\\s+of\\s+(?:rs\\.?\\s*|inr\\s*)([0-9,]+(?:\\.[0-9]{1,2})?)",
+                Pattern.CASE_INSENSITIVE
+            )
+            val contribMatcher = contribPat.matcher(cleanBody)
+            val contribAmount = if (contribMatcher.find())
+                contribMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0
+
+            val passbookBalPat = Pattern.compile(
+                "passbook\\s+balance\\s+(?:against\\s+[^\\s]+\\s+)?is\\s+(?:rs\\.?\\s*)([0-9,]+(?:\\.[0-9]{1,2})?)",
+                Pattern.CASE_INSENSITIVE
+            )
+            val passbookBalMatcher = passbookBalPat.matcher(cleanBody)
+            val passbookBalance = if (passbookBalMatcher.find())
+                passbookBalMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
+
+            if (contribAmount > 0.0) {
+                val maskedAccPat = Pattern.compile("[A-Z]+\\*+([0-9]{4})\\b")
+                val maskedAccMatcher = maskedAccPat.matcher(cleanBody)
+                val epfoLast4 = if (maskedAccMatcher.find()) maskedAccMatcher.group(1) else null
+                return SmsParsingResult(
+                    title = "PF Contribution",
+                    amount = contribAmount,
+                    category = ExpenseCategory.ADJUST,
+                    type = "INCOME",
+                    isGeminiParsed = false,
+                    accountRef = epfoLast4,
+                    parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp),
+                    availableBalance = passbookBalance
                 )
             }
         }
@@ -448,6 +488,7 @@ object SmsParser {
                 type == "INCOME" -> {
                     val lowerTitleText = titleText.lowercase()
                     when {
+                        lowerBody.contains("refund") || lowerTitleText.contains("refund") -> ExpenseCategory.REFUNDS
                         lowerTitleText.contains("cashback") || lowerBody.contains("cashback") -> ExpenseCategory.CASHBACK
                         lowerBody.contains("upi") || lowerBody.contains("by upi") || lowerBody.contains("via upi") || lowerTitleText.contains("upi") -> ExpenseCategory.UPI
                         lowerTitleText.contains("pocket money") || lowerTitleText.contains("allowance") -> ExpenseCategory.POCKET_MONEY_INC
@@ -760,10 +801,17 @@ object SmsParser {
      *   "Your Balance in account no. ending with 9553 is Rs. 0.12 -HDFC BANK"
      */
     private fun tryParseBalanceUpdate(cleanBody: String, lowerBody: String, senderId: String?, smsTimestamp: Long?): SmsParsingResult? {
-        val isBalanceSms = (lowerBody.contains("avail bal") || lowerBody.contains("avail. bal") ||
+        val isBalanceSms =
+            lowerBody.contains("avail bal") ||          // "Avail Bal in A/c ..."
+            lowerBody.contains("avail. bal") ||
+            lowerBody.contains("available bal") ||       // "Available Bal in HDFC Bank A/c XX9553 ..."
             lowerBody.contains("available balance") ||
-            (lowerBody.contains("balance") && (lowerBody.contains("a/c") || lowerBody.contains("account no") ||
-            lowerBody.contains("account number") || lowerBody.contains("ending with"))))
+            lowerBody.contains("your balance") ||        // "Your Balance in account no. ending with 9553 ..."
+            (lowerBody.contains("balance") && (
+                lowerBody.contains("a/c") || lowerBody.contains("account no") ||
+                lowerBody.contains("account number") || lowerBody.contains("ending with")
+            )) ||
+            (lowerBody.contains(" bal ") && lowerBody.contains("a/c")) // e.g. "Bal in A/c ..."
         if (!isBalanceSms) return null
 
         val allPairs = mutableListOf<Pair<String, Double>>()
@@ -787,7 +835,17 @@ object SmsParser {
                 Pattern.CASE_INSENSITIVE
             )
             val amtMatcher = amtPattern.matcher(cleanBody)
-            val balance = if (amtMatcher.find()) amtMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
+            var balance = if (amtMatcher.find()) amtMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
+            // Fallback: amount without currency symbol, e.g. "is 10,000.12" or ": 10,000.12"
+            // Only trigger when amount has Indian comma-format (e.g. 1,000 or 10,000.12) to avoid false matches on years/dates.
+            if (balance == null) {
+                val noCurrPat = Pattern.compile(
+                    "(?:is|:)\\s*([0-9]{1,3}(?:,[0-9]{2,3})+(?:\\.[0-9]{1,2})?)",
+                    Pattern.CASE_INSENSITIVE
+                )
+                val noCurrMatcher = noCurrPat.matcher(cleanBody)
+                if (noCurrMatcher.find()) balance = noCurrMatcher.group(1)?.replace(",", "")?.toDoubleOrNull()
+            }
             if (balance == null) return null
 
             val refPattern = Pattern.compile(
@@ -805,6 +863,41 @@ object SmsParser {
         val (firstRef, firstBal) = allPairs.first()
         val parsedTime = extractTimestampFromSms(cleanBody, smsTimestamp)
 
+        // "As of yesterday" / "as on yesterday" balance SMS:
+        // The reported balance is the closing balance of the PREVIOUS day, not today.
+        // Pin the timestamp to 23:59:59 of that date so the baseline sits at the
+        // very end of yesterday — today's transactions are unaffected and account
+        // correctly from this balance onward.
+        val isYesterdayBalance = lowerBody.contains("as on yesterday") ||
+            lowerBody.contains("as of yesterday") ||
+            lowerBody.contains("yesterday")
+
+        val effectiveTime: Long? = if (isYesterdayBalance) {
+            val cal = java.util.Calendar.getInstance()
+            when {
+                parsedTime != null -> {
+                    // extractTimestampFromSms already found yesterday's date in the body — just fix the time.
+                    cal.timeInMillis = parsedTime
+                }
+                smsTimestamp != null -> {
+                    // No date in body; roll back one day from the SMS receive time.
+                    cal.timeInMillis = smsTimestamp
+                    cal.add(java.util.Calendar.DAY_OF_MONTH, -1)
+                }
+                else -> {
+                    // Fallback: roll back one day from now.
+                    cal.add(java.util.Calendar.DAY_OF_MONTH, -1)
+                }
+            }
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
+            cal.set(java.util.Calendar.MINUTE, 59)
+            cal.set(java.util.Calendar.SECOND, 59)
+            cal.set(java.util.Calendar.MILLISECOND, 0)
+            cal.timeInMillis
+        } else {
+            parsedTime
+        }
+
         return SmsParsingResult(
             title = "Balance Update",
             amount = firstBal,
@@ -812,7 +905,7 @@ object SmsParser {
             type = "INCOME",
             isGeminiParsed = false,
             accountRef = firstRef,
-            parsedTimestamp = parsedTime,
+            parsedTimestamp = effectiveTime,
             isBalanceUpdate = true,
             availableBalance = firstBal,
             allBalancePairs = allPairs

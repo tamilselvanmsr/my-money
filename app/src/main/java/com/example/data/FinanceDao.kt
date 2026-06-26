@@ -36,6 +36,9 @@ interface FinanceDao {
     @Query("SELECT * FROM transactions WHERE amount = :amount AND type = :type AND ABS(timestamp - :timestamp) < 300000")
     suspend fun getPotentialDuplicates(amount: Double, type: String, timestamp: Long): List<TransactionEntry>
 
+    @Query("SELECT COUNT(*) FROM transactions WHERE type = 'BALANCE_UPDATE' AND note LIKE '%[Acc: ' || :accountName || ']%' AND ABS(timestamp - :timestamp) < 1000")
+    suspend fun countExactBalanceUpdates(accountName: String, timestamp: Long): Int
+
     // Budgets
     @Query("SELECT * FROM budgets WHERE monthYear = :monthYear")
     fun getBudgetsForMonth(monthYear: String): Flow<List<BudgetEntry>>

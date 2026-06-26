@@ -67,7 +67,8 @@ enum class ExpenseCategory(
     UPI("UPI", Icons.Default.QrCode, Color(0xFF0EA5E9), "INCOME"),
     POCKET_MONEY_INC("Pocket Money (Received)", Icons.Default.Savings, Color(0xFF2E7D32), "INCOME"),
     CC_SETTLEMENT("CC Settlement", Icons.Default.Payment, Color(0xFF00E676), "INCOME"),
-    ADJUST("Balance Adjust", Icons.Default.SwapVert, Color(0xFF00E5FF), "INCOME");
+    ADJUST("Balance Adjust", Icons.Default.SwapVert, Color(0xFF00E5FF), "INCOME"),
+    PROVIDENT_FUND("Provident Fund", Icons.Default.AccountBalance, Color(0xFF1565C0), "INCOME");
 
     companion object {
         fun fromString(name: String): ExpenseCategory {

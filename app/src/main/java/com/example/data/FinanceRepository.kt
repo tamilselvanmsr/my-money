@@ -144,6 +144,14 @@ class FinanceRepository(private val financeDao: FinanceDao) {
         return financeDao.getAccountByName(name)
     }
 
+    suspend fun deleteAllBalanceSyncForAccount(accountName: String) {
+        financeDao.deleteAllBalanceSyncForAccount(accountName)
+    }
+
+    suspend fun getLatestBalanceSyncAmount(accountName: String): Double? {
+        return financeDao.getLatestBalanceSyncAmount(accountName)
+    }
+
     suspend fun clearAccounts() {
         financeDao.clearAllAccounts()
     }

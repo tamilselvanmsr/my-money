@@ -826,6 +826,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         // Read fresh from DB — avoids stale StateFlow values during batch scan imports
         val acc = repository.getAccountByName(accName) ?: return
         if (acc.type != "CREDIT_CARD" || acc.creditLimit <= 0) return
+        if (type != "EXPENSE" && type != "INCOME") return  // skip BALANCE_UPDATE, DUPLICATE, etc.
         // EXPENSE → less available; INCOME → more available (reversed when undoing)
         val baseChange = if (type == "EXPENSE") -amount else amount
         val delta = if (reverse) -baseChange else baseChange
@@ -1094,8 +1095,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         val isCcSummary = parsed.totalCreditLimit != null
 
                         if (isCcSummary) {
-                            // CC Summary: update creditLimit and availableLimit on the account.
-                            // No Balance Sync transaction — balance is shown from limits fields.
+                            // CC Summary: update creditLimit + availableLimit, and create a
+                            // BALANCE_UPDATE snapshot so computeWalletBalances is properly anchored.
                             if (parsed.accountRef != null) {
                                 var linkedAcc = repository.getAccountByRef(parsed.accountRef)
                                 if (linkedAcc == null) {
@@ -1105,7 +1106,23 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
                                     parsed.availableLimit?.let { repository.updateAccountAvailableLimit(linkedAcc.id, it) }
                                     parsed.totalCreditLimit?.let { repository.updateAccountCreditLimit(linkedAcc.id, it) }
-                                    matchedCount++
+                                    // Write a negative-outstanding snapshot so computeWalletBalances
+                                    // seeds the CC wallet balance correctly (same pattern as bank Balance Sync)
+                                    val availLimit = parsed.availableLimit ?: linkedAcc.availableLimit
+                                    val creditLimit = parsed.totalCreditLimit ?: linkedAcc.creditLimit
+                                    if (creditLimit > 0) {
+                                        val snapshot = availLimit - creditLimit  // negative = outstanding debt
+                                        // Only delete+recreate when the snapshot amount changed.
+                                        // Skipping this guard caused a re-import on every scan even when nothing changed.
+                                        val existingAmount = repository.getLatestBalanceSyncAmount(linkedAcc.name)
+                                        if (existingAmount == null || Math.abs(existingAmount - snapshot) >= 0.01) {
+                                            repository.deleteAllBalanceSyncForAccount(linkedAcc.name)
+                                            // Use actual SMS received date, NOT the parsed statement date from the body
+                                            if (createBalanceAdjustIfNeeded(linkedAcc, snapshot, smsDate, body, sender, projectedTransactions)) {
+                                                matchedCount++
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         } else if (enableBalanceSync.value && parsed.availableBalance != null) {
@@ -1597,10 +1614,21 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 if (limitAcc != null) {
                     val isCcSummary = parsed.totalCreditLimit != null
                     if (isCcSummary) {
-                        // CC Summary: only update stored credit limits — no Balance Sync transaction
+                        // CC Summary: update stored limits AND create a negative-outstanding
+                        // BALANCE_UPDATE snapshot so computeWalletBalances stays anchored.
                         parsed.availableLimit?.let { repository.updateAccountAvailableLimit(limitAcc.id, it) }
                         parsed.totalCreditLimit?.let { repository.updateAccountCreditLimit(limitAcc.id, it) }
-                        _toastMessage.emit("CC limits updated for ${limitAcc.name}: Due ₹${String.format("%.2f", (limitAcc.creditLimit - (parsed.availableLimit ?: limitAcc.availableLimit)))}")
+                        val availLimit = parsed.availableLimit ?: limitAcc.availableLimit
+                        val creditLimit = parsed.totalCreditLimit ?: limitAcc.creditLimit
+                        if (creditLimit > 0) {
+                            val snapshot = availLimit - creditLimit  // negative = outstanding debt
+                            // Delete any stale CC snapshot first — new statement supersedes all previous
+                            repository.deleteAllBalanceSyncForAccount(limitAcc.name)
+                            // Use current time for manual imports — NOT the parsed statement date from the body
+                            val projected = mutableListOf<TransactionEntry>()
+                            createBalanceAdjustIfNeeded(limitAcc, snapshot, System.currentTimeMillis(), smsBody, sender, projected)
+                        }
+                        _toastMessage.emit("CC limits + balance snapshot updated for ${limitAcc.name}: Due ₹${String.format("%.2f", (limitAcc.creditLimit - (parsed.availableLimit ?: limitAcc.availableLimit)).coerceAtLeast(0.0))}")
                     } else if (enableBalanceSync.value && parsed.availableBalance != null) {
                         // Regular bank balance SMS: create Balance Sync when Bal Sync is ON
                         val projected = mutableListOf<TransactionEntry>()

@@ -132,5 +132,14 @@ interface FinanceDao {
 
     @Query("UPDATE accounts SET creditLimit = :creditLimit WHERE id = :accountId")
     suspend fun updateAccountCreditLimit(accountId: String, creditLimit: Double)
+
+    /** Removes ALL 'Balance Sync' BALANCE_UPDATE snapshots for one account.
+     *  Used for CC Summary: each new statement supersedes all previous snapshots. */
+    @Query("DELETE FROM transactions WHERE type = 'BALANCE_UPDATE' AND title = 'Balance Sync' AND note LIKE '%[Acc: ' || :accountName || ']%'")
+    suspend fun deleteAllBalanceSyncForAccount(accountName: String)
+
+    /** Returns the most-recent Balance Sync amount for an account (used to skip re-import when unchanged). */
+    @Query("SELECT amount FROM transactions WHERE type = 'BALANCE_UPDATE' AND title = 'Balance Sync' AND note LIKE '%[Acc: ' || :accountName || ']%' ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLatestBalanceSyncAmount(accountName: String): Double?
 }
 

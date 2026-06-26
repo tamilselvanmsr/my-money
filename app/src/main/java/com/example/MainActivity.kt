@@ -413,7 +413,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Ver: 1.28",
+                                        "Ver: 1.29",
                                         fontSize = 11.sp,
                                         color = c.textSecondary,
                                         modifier = Modifier.fillMaxWidth()
@@ -798,7 +798,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("Show Balance Figures", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
-                                        Text("When OFF, all balances display as ₹ ••••", fontSize = 9.sp, color = c.textSecondary)
+                                        Text("When OFF, balances display as ₹ ••••", fontSize = 9.sp, color = c.textSecondary)
                                     }
                                     Switch(
                                         checked = showTotal,
@@ -5483,6 +5483,7 @@ fun EditTransactionDialog(
     val allCategories = CategoryResolver.getAll(customCats)
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
     val selectablesWallets = accounts.map { it.name }
+    val isBalanceUpdate = tx.type == "BALANCE_UPDATE"
     val filteredCats = when (editType) {
         "INCOME" -> allCategories.filter { it.type == "INCOME" }
         else -> allCategories.filter { it.type == "EXPENSE" }
@@ -5512,25 +5513,42 @@ fun EditTransactionDialog(
                 Column {
                     Text("TRANSACTION TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("EXPENSE", "INCOME", "DUPLICATE", "BALANCE_UPDATE").forEach { t ->
-                            val sel = editType == t
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .background(if (sel) c.accent.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-                                    .border(1.dp, if (sel) c.accent else c.divider, RoundedCornerShape(8.dp))
-                                    .clickable { editType = t }
-                                    .padding(6.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (t == "BALANCE_UPDATE") "BAL_UPDATE" else t,
-                                    fontSize = 9.sp,
-                                    color = if (sel) c.accent else c.textSecondary,
-                                    fontWeight = FontWeight.Bold,
-                                    textAlign = TextAlign.Center
-                                )
+                    if (isBalanceUpdate) {
+                        // Type is locked for balance snapshots — changing it would corrupt balance tracking
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(c.textTertiary.copy(alpha = 0.08f))
+                                .border(1.dp, c.divider, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = null, tint = c.textTertiary, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("BALANCE_UPDATE — type locked", fontSize = 11.sp, color = c.textTertiary, fontWeight = FontWeight.Medium)
+                        }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("EXPENSE", "INCOME", "DUPLICATE", "BALANCE_UPDATE").forEach { t ->
+                                val sel = editType == t
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .background(if (sel) c.accent.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                        .border(1.dp, if (sel) c.accent else c.divider, RoundedCornerShape(8.dp))
+                                        .clickable { editType = t }
+                                        .padding(6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (t == "BALANCE_UPDATE") "BAL_UPDATE" else t,
+                                        fontSize = 9.sp,
+                                        color = if (sel) c.accent else c.textSecondary,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
                             }
                         }
                     }
@@ -5559,13 +5577,29 @@ fun EditTransactionDialog(
                     onClick = { showWalletPicker = true }
                 )
 
-                PickerButton(
-                    label = "Category",
-                    title = selectedCategory?.displayName ?: "Choose category",
-                    icon = selectedCategory?.icon ?: Icons.Default.Category,
-                    tint = selectedCategory?.color ?: c.accent,
-                    onClick = { showCategoryPicker = true }
-                )
+                if (isBalanceUpdate) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(c.textTertiary.copy(alpha = 0.08f))
+                            .border(1.dp, c.divider, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Lock, contentDescription = null, tint = c.textTertiary, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("ADJUST — category locked", fontSize = 11.sp, color = c.textTertiary, fontWeight = FontWeight.Medium)
+                    }
+                } else {
+                    PickerButton(
+                        label = "Category",
+                        title = selectedCategory?.displayName ?: "Choose category",
+                        icon = selectedCategory?.icon ?: Icons.Default.Category,
+                        tint = selectedCategory?.color ?: c.accent,
+                        onClick = { showCategoryPicker = true }
+                    )
+                }
 
                 OutlinedTextField(
                     value = notesStr,

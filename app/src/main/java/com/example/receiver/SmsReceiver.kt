@@ -76,6 +76,26 @@ class SmsReceiver : BroadcastReceiver() {
                                     if (limitAcc != null) {
                                         parsed.availableLimit?.let { dao.updateAccountAvailableLimit(limitAcc.id, it) }
                                         parsed.totalCreditLimit?.let { dao.updateAccountCreditLimit(limitAcc.id, it) }
+                                        // Create a negative-outstanding BALANCE_UPDATE snapshot (same as bank Balance Sync)
+                                        val availLimit = parsed.availableLimit ?: limitAcc.availableLimit
+                                        val creditLimit = parsed.totalCreditLimit ?: limitAcc.creditLimit
+                                        if (creditLimit > 0) {
+                                            val snapshot = availLimit - creditLimit  // negative = outstanding debt
+                                            // Delete any stale CC snapshot first — new statement supersedes all previous
+                                            dao.deleteAllBalanceSyncForAccount(limitAcc.name)
+                                            // Use actual SMS received time — NOT the parsed statement date from the body
+                                            val snapTx = TransactionEntry(
+                                                title = "Balance Sync",
+                                                amount = snapshot,
+                                                category = "ADJUST",
+                                                type = "BALANCE_UPDATE",
+                                                smsSender = sender,
+                                                smsBody = body,
+                                                timestamp = timestampMillis,
+                                                note = "$body [Acc: ${limitAcc.name}]"
+                                            )
+                                            dao.insertTransaction(snapTx)
+                                        }
                                         withContext(Dispatchers.Main) {
                                             Toast.makeText(context, "MyMoney: CC limits updated for ${limitAcc.name}", Toast.LENGTH_SHORT).show()
                                         }
@@ -165,6 +185,14 @@ class SmsReceiver : BroadcastReceiver() {
                                 note = "$body [Acc: $walletName]"
                             )
                             dao.insertTransaction(transaction)
+
+                            // Keep CC availableLimit in sync with live incoming transactions
+                            val linkedAcc = dao.getAccountByName(walletName)
+                            if (linkedAcc != null && linkedAcc.type == "CREDIT_CARD" && linkedAcc.creditLimit > 0
+                                && (parsed.type == "EXPENSE" || parsed.type == "INCOME")) {
+                                val delta = if (parsed.type == "EXPENSE") -parsed.amount else parsed.amount
+                                dao.updateAccountAvailableLimit(linkedAcc.id, linkedAcc.availableLimit + delta)
+                            }
 
                             withContext(Dispatchers.Main) {
                                 val direction = if (parsed.type == "INCOME") "Added Income" else "Debited Expense"

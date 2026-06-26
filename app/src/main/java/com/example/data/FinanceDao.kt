@@ -126,5 +126,8 @@ interface FinanceDao {
 
     @Query("UPDATE accounts SET availableLimit = :availableLimit WHERE id = :accountId")
     suspend fun updateAccountAvailableLimit(accountId: String, availableLimit: Double)
+
+    @Query("UPDATE accounts SET creditLimit = :creditLimit WHERE id = :accountId")
+    suspend fun updateAccountCreditLimit(accountId: String, creditLimit: Double)
 }
 

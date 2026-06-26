@@ -147,5 +147,9 @@ class FinanceRepository(private val financeDao: FinanceDao) {
     suspend fun updateAccountAvailableLimit(accountId: String, availableLimit: Double) {
         financeDao.updateAccountAvailableLimit(accountId, availableLimit)
     }
+
+    suspend fun updateAccountCreditLimit(accountId: String, creditLimit: Double) {
+        financeDao.updateAccountCreditLimit(accountId, creditLimit)
+    }
 }
 

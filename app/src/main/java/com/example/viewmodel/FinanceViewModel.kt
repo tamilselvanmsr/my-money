@@ -1060,11 +1060,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 }
                             }
                         }
-                        // Update available credit limit for CC accounts (e.g. CC Summary SMS)
-                        if (parsed.availableLimit != null && parsed.accountRef != null) {
+                        // Update available + total credit limits for CC accounts (e.g. CC Summary SMS)
+                        if (parsed.accountRef != null) {
                             val linkedAcc = repository.getAccountByRef(parsed.accountRef)
                             if (linkedAcc != null) {
-                                repository.updateAccountAvailableLimit(linkedAcc.id, parsed.availableLimit)
+                                parsed.availableLimit?.let { repository.updateAccountAvailableLimit(linkedAcc.id, it) }
+                                parsed.totalCreditLimit?.let { repository.updateAccountCreditLimit(linkedAcc.id, it) }
                             }
                         }
                     }
@@ -1143,11 +1144,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         } || potentialDuplicates.any { existing ->
                             isDuplicateImportedTransaction(existing, body, parsed.title, parsed.amount, parsed.type, targetTime, incomingRef, walletName)
                         }
-                        if (!duplicate && !matchesSmsBlocklistPattern(walletName)) {
-                            val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
-                            // PF Contribution is always INCOME — the Bal Sync toggle only controls
-                            // whether a separate Balance Sync snapshot entry is created below
-                            val txType = parsed.type
+                        // Skip PF Contribution INCOME when Bal Sync is ON — balance tracked by the Balance Sync snapshot
+                        val skipPfIncome = parsed.title == "PF Contribution" && enableBalanceSync.value
+                        if (!duplicate && !skipPfIncome && !matchesSmsBlocklistPattern(walletName)) {
                             val tx = TransactionEntry(
                                 title = parsed.title,
                                 amount = parsed.amount,
@@ -1409,6 +1408,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                             }
                                         }
                                     }
+                                    // Update available + total credit limits for CC accounts
+                                    if (parsed.accountRef != null) {
+                                        val limitAcc = repository.getAccountByRef(parsed.accountRef)
+                                        if (limitAcc != null) {
+                                            parsed.availableLimit?.let { repository.updateAccountAvailableLimit(limitAcc.id, it) }
+                                            parsed.totalCreditLimit?.let { repository.updateAccountCreditLimit(limitAcc.id, it) }
+                                        }
+                                    }
                                 }
                                 continue
                             }
@@ -1424,10 +1431,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             } || potentialDuplicates.any { existing ->
                                 isDuplicateImportedTransaction(existing, body, parsed.title, parsed.amount, parsed.type, targetTime, incomingRef, walletName)
                             }
-                            if (!duplicate && !matchesSmsBlocklistPattern(walletName) && !matchesSmsBlocklistPattern(sender)) {
-                                val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
-                                // PF Contribution is always INCOME
-                                val txType = parsed.type
+                            // Skip PF Contribution INCOME when Bal Sync is ON
+                            val skipPfIncome = parsed.title == "PF Contribution" && enableBalanceSync.value
+                            if (!duplicate && !skipPfIncome && !matchesSmsBlocklistPattern(walletName) && !matchesSmsBlocklistPattern(sender)) {
                                 val tx = TransactionEntry(
                                     title = parsed.title,
                                     amount = parsed.amount,
@@ -1546,19 +1552,23 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val learnedCategory = if (parsed.title.isNotBlank()) repository.getLearnedCategoryForTitle(parsed.title) else null
             // PF Contribution is always INCOME
             val txType = parsed.type
-            val tx = TransactionEntry(
-                title = parsed.title,
-                amount = parsed.amount,
-                category = learnedCategory ?: parsed.category.name,
-                type = txType,
-                smsSender = sender,
-                smsBody = smsBody,
-                timestamp = targetTime,
-                note = "$smsBody [Acc: $walletName]"
-            )
-            repository.insertTransaction(tx)
-            _recentlyImportedFingerprints.value = setOf("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
-            maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
+            // Skip PF Contribution INCOME when Bal Sync is ON — balance tracked by Balance Sync snapshot
+            val skipPfIncome = parsed.title == "PF Contribution" && enableBalanceSync.value
+            if (!skipPfIncome) {
+                val tx = TransactionEntry(
+                    title = parsed.title,
+                    amount = parsed.amount,
+                    category = learnedCategory ?: parsed.category.name,
+                    type = txType,
+                    smsSender = sender,
+                    smsBody = smsBody,
+                    timestamp = targetTime,
+                    note = "$smsBody [Acc: $walletName]"
+                )
+                repository.insertTransaction(tx)
+                _recentlyImportedFingerprints.value = setOf("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
+                maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
+            }
             // Sync passbook total to PF account balance (only when Bal Sync is enabled)
             if (parsed.title == "PF Contribution" && parsed.availableBalance != null && enableBalanceSync.value) {
                 val pfAcc = repository.getAccountByRef(parsed.accountRef ?: "")
@@ -1569,11 +1579,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
 
-            // Update available credit limit for credit card accounts if parsed from SMS
-            if (parsed.availableLimit != null && parsed.accountRef != null) {
-                val linkedAccount = repository.getAccountByLastFour(parsed.accountRef)
-                if (linkedAccount != null) {
-                    repository.updateAccountAvailableLimit(linkedAccount.id, parsed.availableLimit)
+            // Update available + total credit limits for CC accounts
+            if (parsed.accountRef != null) {
+                val limitAcc = repository.getAccountByRef(parsed.accountRef)
+                if (limitAcc != null) {
+                    parsed.availableLimit?.let { repository.updateAccountAvailableLimit(limitAcc.id, it) }
+                    parsed.totalCreditLimit?.let { repository.updateAccountCreditLimit(limitAcc.id, it) }
                 }
             }
 

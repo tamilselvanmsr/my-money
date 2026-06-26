@@ -25,6 +25,7 @@ data class SmsParsingResult(
     val receiver: String? = null,    // Destination of transfer
     val parsedTimestamp: Long? = null,
     val availableLimit: Double? = null, // Parsed available credit limit from CC SMS
+    val totalCreditLimit: Double? = null, // Parsed total credit limit from CC Summary SMS
     val isBalanceUpdate: Boolean = false, // True when SMS is a bank balance notification
     val availableBalance: Double? = null,  // Parsed actual account balance from bank balance SMS
     val allBalancePairs: List<Pair<String, Double>> = emptyList() // All (accountRef-digits, balance) pairs for multi-account balance SMS
@@ -824,8 +825,7 @@ object SmsParser {
         // ── Credit Card Summary SMS ───────────────────────────────────────────
         // e.g. "HDFC BANK Credit Card Summary ending with *1234: Total Credit Limit: Rs. 2,36,000.
         //       Available Credit Limit: Rs. 1,90,533.07. Total Outstanding Balance: Rs.45,466.93"
-        // The outstanding balance is the current debt on the card.
-        // The available credit limit is stored as the account's available limit.
+        // Outstanding balance is stored as NEGATIVE (debt). Available + Total credit limits updated.
         if (lowerBody.contains("credit card") && lowerBody.contains("total outstanding balance")) {
             val outstandingPat = Pattern.compile(
                 "total\\s+outstanding\\s+balance[:\\s]*(?:rs\\.?\\s*|inr\\s*)?([0-9,]+(?:\\.[0-9]{1,2})?)",
@@ -842,6 +842,14 @@ object SmsParser {
             val availLimitMatcher = availLimitPat.matcher(cleanBody)
             val availCreditLimit = if (availLimitMatcher.find())
                 availLimitMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
+
+            val totalLimitPat = Pattern.compile(
+                "total\\s+credit\\s+limit[:\\s]*(?:rs\\.?\\s*|inr\\s*)?([0-9,]+(?:\\.[0-9]{1,2})?)",
+                Pattern.CASE_INSENSITIVE
+            )
+            val totalLimitMatcher = totalLimitPat.matcher(cleanBody)
+            val totalCreditLimit = if (totalLimitMatcher.find())
+                totalLimitMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
 
             val refPat = Pattern.compile(
                 "(?:ending\\s+with|ending\\s+in|ending)\\s*[*xX\\s]*([0-9]{3,4})",
@@ -860,8 +868,9 @@ object SmsParser {
                     accountRef = ccRef,
                     parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp),
                     isBalanceUpdate = true,
-                    availableBalance = outstanding,
-                    availableLimit = availCreditLimit
+                    availableBalance = -outstanding,  // negative — credit card debt is owed
+                    availableLimit = availCreditLimit,
+                    totalCreditLimit = totalCreditLimit
                 )
             }
         }

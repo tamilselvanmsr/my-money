@@ -87,7 +87,12 @@ object SmsParser {
         // 2b-pre. CC Summary SMS — contains "amount due" so must be routed before isBillDue.
         // e.g. "HDFC BANK Credit Card Summary ending with *1234: Total Credit Limit: Rs. 2,36,000.
         //       Available Credit Limit: Rs. 1,90,533.07. Total Outstanding Balance: Rs.45,466.93"
-        if (lowerBody.contains("credit card") && lowerBody.contains("total outstanding balance")) {
+        val isCcSummaryMsg = lowerBody.contains("credit card") && (
+            lowerBody.contains("total outstanding balance") ||
+            lowerBody.contains("outstanding balance") ||
+            lowerBody.contains("outstanding bal")
+        )
+        if (isCcSummaryMsg) {
             return tryParseBalanceUpdate(cleanBody, lowerBody, senderId, smsTimestamp)
         }
 
@@ -809,26 +814,21 @@ object SmsParser {
      *   "Your Balance in account no. ending with 9553 is Rs. 0.12 -HDFC BANK"
      */
     private fun tryParseBalanceUpdate(cleanBody: String, lowerBody: String, senderId: String?, smsTimestamp: Long?): SmsParsingResult? {
-        val isBalanceSms =
-            lowerBody.contains("avail bal") ||          // "Avail Bal in A/c ..."
-            lowerBody.contains("avail. bal") ||
-            lowerBody.contains("available bal") ||       // "Available Bal in HDFC Bank A/c XX9553 ..."
-            lowerBody.contains("available balance") ||
-            lowerBody.contains("your balance") ||        // "Your Balance in account no. ending with 9553 ..."
-            (lowerBody.contains("balance") && (
-                lowerBody.contains("a/c") || lowerBody.contains("account no") ||
-                lowerBody.contains("account number") || lowerBody.contains("ending with")
-            )) ||
-            (lowerBody.contains(" bal ") && lowerBody.contains("a/c")) // e.g. "Bal in A/c ..."
-        if (!isBalanceSms) return null
 
-        // ── Credit Card Summary SMS ───────────────────────────────────────────
-        // e.g. "HDFC BANK Credit Card Summary ending with *1234: Total Credit Limit: Rs. 2,36,000.
-        //       Available Credit Limit: Rs. 1,90,533.07. Total Outstanding Balance: Rs.45,466.93"
-        // Outstanding balance is stored as NEGATIVE (debt). Available + Total credit limits updated.
-        if (lowerBody.contains("credit card") && lowerBody.contains("total outstanding balance")) {
+        // ── Credit Card Summary SMS (checked FIRST, before generic isBalanceSms guard) ──────
+        // Some CC Summary formats lack "ending with"/"a/c" so they fail the generic guard.
+        // Always route them here when all three key phrases are present.
+        // e.g. "HDFC BANK Credit Card Summary: Total Credit Limit: Rs. 2,00,000.
+        //       Available Credit Limit: Rs. 1,50,000. Total Outstanding Balance: Rs. 50,000."
+        val isCcSummaryBody = lowerBody.contains("credit card") && (
+            lowerBody.contains("total outstanding balance") ||
+            lowerBody.contains("outstanding balance") ||
+            lowerBody.contains("outstanding bal")
+        )
+        if (isCcSummaryBody) {
+            // Use [^0-9]* to skip any currency prefix (Rs., ₹, INR, invisible chars, etc.)
             val outstandingPat = Pattern.compile(
-                "total\\s+outstanding\\s+balance[:\\s]*(?:rs\\.?\\s*|inr\\s*)?([0-9,]+(?:\\.[0-9]{1,2})?)",
+                "(?:total\\s+)?outstanding\\s+(?:balance|bal)[^0-9]*([0-9,]+(?:\\.[0-9]{1,2})?)",
                 Pattern.CASE_INSENSITIVE
             )
             val outstandingMatcher = outstandingPat.matcher(cleanBody)
@@ -836,7 +836,7 @@ object SmsParser {
                 outstandingMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
 
             val availLimitPat = Pattern.compile(
-                "available\\s+credit\\s+limit[:\\s]*(?:rs\\.?\\s*|inr\\s*)?([0-9,]+(?:\\.[0-9]{1,2})?)",
+                "available\\s+credit\\s+limit[^0-9]*([0-9,]+(?:\\.[0-9]{1,2})?)",
                 Pattern.CASE_INSENSITIVE
             )
             val availLimitMatcher = availLimitPat.matcher(cleanBody)
@@ -844,7 +844,7 @@ object SmsParser {
                 availLimitMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
 
             val totalLimitPat = Pattern.compile(
-                "total\\s+credit\\s+limit[:\\s]*(?:rs\\.?\\s*|inr\\s*)?([0-9,]+(?:\\.[0-9]{1,2})?)",
+                "total\\s+credit\\s+limit[^0-9]*([0-9,]+(?:\\.[0-9]{1,2})?)",
                 Pattern.CASE_INSENSITIVE
             )
             val totalLimitMatcher = totalLimitPat.matcher(cleanBody)
@@ -858,22 +858,43 @@ object SmsParser {
             val refMatcher = refPat.matcher(cleanBody)
             val ccRef = if (refMatcher.find()) refMatcher.group(1) else null
 
-            if (outstanding != null && ccRef != null) {
+            // Return CC Summary result whenever we can identify the account or limits.
+            // If outstandingPat couldn't match directly, derive outstanding from the two limits
+            // (Total Limit - Available Limit) which are more reliably parsed.
+            val effectiveOutstanding = outstanding
+                ?: if (totalCreditLimit != null && availCreditLimit != null)
+                    totalCreditLimit - availCreditLimit
+                   else null
+            if (ccRef != null || totalCreditLimit != null) {
                 return SmsParsingResult(
                     title = "CC Summary",
-                    amount = outstanding,
+                    amount = effectiveOutstanding ?: 0.0,
                     category = ExpenseCategory.ADJUST,
                     type = "INCOME",
                     isGeminiParsed = false,
                     accountRef = ccRef,
                     parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp),
                     isBalanceUpdate = true,
-                    availableBalance = null,  // do NOT override account balance from CC Summary
+                    availableBalance = if (effectiveOutstanding != null) -effectiveOutstanding else null,
                     availableLimit = availCreditLimit,
                     totalCreditLimit = totalCreditLimit
                 )
             }
         }
+
+        // Generic balance SMS guard — applies only to non-CC-Summary paths below
+        val isBalanceSms =
+            lowerBody.contains("avail bal") ||
+            lowerBody.contains("avail. bal") ||
+            lowerBody.contains("available bal") ||
+            lowerBody.contains("available balance") ||
+            lowerBody.contains("your balance") ||
+            (lowerBody.contains("balance") && (
+                lowerBody.contains("a/c") || lowerBody.contains("account no") ||
+                lowerBody.contains("account number") || lowerBody.contains("ending with")
+            )) ||
+            (lowerBody.contains(" bal ") && lowerBody.contains("a/c"))
+        if (!isBalanceSms) return null
 
         val allPairs = mutableListOf<Pair<String, Double>>()
 

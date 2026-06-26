@@ -25,6 +25,10 @@ class FinanceRepository(private val financeDao: FinanceDao) {
         return financeDao.countExactBalanceUpdates(accountName, timestamp)
     }
 
+    suspend fun getExactBalanceUpdate(accountName: String, timestamp: Long): TransactionEntry? {
+        return financeDao.getExactBalanceUpdate(accountName, timestamp)
+    }
+
     suspend fun updateTransaction(transaction: TransactionEntry) {
         financeDao.updateTransaction(transaction)
     }

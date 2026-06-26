@@ -31,69 +31,96 @@ class SmsReceiver : BroadcastReceiver() {
             val pdus = bundle.get("pdus") as? Array<*> ?: return
             val format = bundle.getString("format")
 
-            for (pdu in pdus) {
-                val sms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            // Reassemble multi-part SMS: Android delivers all parts in one broadcast
+            val smsMessages = pdus.mapNotNull { pdu ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     SmsMessage.createFromPdu(pdu as ByteArray, format)
                 } else {
                     @Suppress("DEPRECATION")
                     SmsMessage.createFromPdu(pdu as ByteArray)
-                } ?: continue
-
-                val body = sms.messageBody ?: ""
-                val sender = sms.originatingAddress ?: "SMS Alert"
+                }
+            }
+            if (smsMessages.isEmpty()) return
+            val body = smsMessages.joinToString("") { it.messageBody ?: "" }
+            val sender = smsMessages[0].originatingAddress ?: "SMS Alert"
+            val timestampMillis = smsMessages[0].timestampMillis
 
                 // Launch background thread to insert transaction securely
                 CoroutineScope(Dispatchers.IO).launch {
-                    val parsed = SmsParser.parseOffline(body, sender, sms.timestampMillis)
+                    val parsed = SmsParser.parseOffline(body, sender, timestampMillis)
                     if (parsed != null) {
                         val db = FinanceDatabase.getDatabase(context.applicationContext)
                         val dao = db.financeDao()
 
-                        val targetTime = parsed.parsedTimestamp ?: sms.timestampMillis
+                        val targetTime = parsed.parsedTimestamp ?: timestampMillis
 
                         // --- Handle balance-snapshot SMS (available balance notification) ---
                         val balanceSyncEnabled = context.getSharedPreferences("finance_settings", Context.MODE_PRIVATE)
                             .getBoolean("enable_balance_sync", true)
-                        if (parsed.isBalanceUpdate && parsed.availableBalance != null && !balanceSyncEnabled) return@launch
-                        if (parsed.isBalanceUpdate && parsed.availableBalance != null) {
-                            // Build pairs list: use allBalancePairs if multi-account, else single ref
-                            val pairs: List<Pair<String, Double>> = if (parsed.allBalancePairs.isNotEmpty()) {
-                                parsed.allBalancePairs
-                            } else if (parsed.accountRef != null) {
-                                val hyphen = parsed.accountRef.indexOf('-')
-                                val digits = if (hyphen != -1) parsed.accountRef.substring(hyphen + 1) else parsed.accountRef
-                                listOf(digits to parsed.availableBalance)
-                            } else emptyList()
+                        if (parsed.isBalanceUpdate) {
+                            val isCcSummary = parsed.totalCreditLimit != null
 
-                            val allTx = dao.getAllTransactions().first()
-                            for ((refDigits, bal) in pairs) {
-                                // Only update if account already exists — ignore unknown account refs
-                                val linkedAcc = dao.getAccountByLastFour(refDigits)
-                                    ?: if (refDigits.length == 3) dao.getAccountByLastFourSuffix(refDigits) else null
-                                if (linkedAcc != null) {
-                                    val isDup = allTx.any {
-                                        it.type == "BALANCE_UPDATE" &&
-                                        it.timestamp == targetTime &&
-                                        it.note?.contains("[Acc: ${linkedAcc.name}]") == true
+                            if (isCcSummary) {
+                                // CC Summary: update creditLimit + availableLimit on the account.
+                                // No Balance Sync transaction — outstanding is derived from limits fields.
+                                if (parsed.accountRef != null) {
+                                    val hyphen = parsed.accountRef.indexOf('-')
+                                    val refDigits = if (hyphen != -1) parsed.accountRef.substring(hyphen + 1) else parsed.accountRef
+                                    var limitAcc = dao.getAccountByLastFour(refDigits)
+                                        ?: if (refDigits.length == 3) dao.getAccountByLastFourSuffix(refDigits) else null
+                                    if (limitAcc == null) {
+                                        ensureAccountExists(context, dao, parsed.accountRef, sender, body)
+                                        limitAcc = dao.getAccountByLastFour(refDigits)
+                                            ?: if (refDigits.length == 3) dao.getAccountByLastFourSuffix(refDigits) else null
                                     }
-                                    if (!isDup) {
-                                        val snapTx = TransactionEntry(
-                                            title = "Balance Sync",
-                                            amount = bal,
-                                            category = "ADJUST",
-                                            type = "BALANCE_UPDATE",
-                                            smsSender = sender,
-                                            smsBody = body,
-                                            timestamp = targetTime,
-                                            note = "$body [Acc: ${linkedAcc.name}]"
-                                        )
-                                        dao.insertTransaction(snapTx)
+                                    if (limitAcc != null) {
+                                        parsed.availableLimit?.let { dao.updateAccountAvailableLimit(limitAcc.id, it) }
+                                        parsed.totalCreditLimit?.let { dao.updateAccountCreditLimit(limitAcc.id, it) }
                                         withContext(Dispatchers.Main) {
-                                            Toast.makeText(context, "MyMoney: Balance updated to \u20b9${String.format("%.2f", bal)} for ${linkedAcc.name}", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "MyMoney: CC limits updated for ${limitAcc.name}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            } else if (balanceSyncEnabled && parsed.availableBalance != null) {
+                                // Regular bank balance SMS: create Balance Sync when Bal Sync is ON
+                                val pairs: List<Pair<String, Double>> = if (parsed.allBalancePairs.isNotEmpty()) {
+                                    parsed.allBalancePairs
+                                } else if (parsed.accountRef != null) {
+                                    val hyphen = parsed.accountRef.indexOf('-')
+                                    val digits = if (hyphen != -1) parsed.accountRef.substring(hyphen + 1) else parsed.accountRef
+                                    listOf(digits to parsed.availableBalance)
+                                } else emptyList()
+
+                                val allTx = dao.getAllTransactions().first()
+                                for ((refDigits, bal) in pairs) {
+                                    val linkedAcc = dao.getAccountByLastFour(refDigits)
+                                        ?: if (refDigits.length == 3) dao.getAccountByLastFourSuffix(refDigits) else null
+                                    if (linkedAcc != null) {
+                                        val isDup = allTx.any {
+                                            it.type == "BALANCE_UPDATE" &&
+                                            it.timestamp == targetTime &&
+                                            it.note?.contains("[Acc: ${linkedAcc.name}]") == true
+                                        }
+                                        if (!isDup) {
+                                            val snapTx = TransactionEntry(
+                                                title = "Balance Sync",
+                                                amount = bal,
+                                                category = "ADJUST",
+                                                type = "BALANCE_UPDATE",
+                                                smsSender = sender,
+                                                smsBody = body,
+                                                timestamp = targetTime,
+                                                note = "$body [Acc: ${linkedAcc.name}]"
+                                            )
+                                            dao.insertTransaction(snapTx)
+                                            withContext(Dispatchers.Main) {
+                                                Toast.makeText(context, "MyMoney: Balance updated to \u20b9${String.format("%.2f", bal)} for ${linkedAcc.name}", Toast.LENGTH_LONG).show()
+                                            }
                                         }
                                     }
                                 }
                             }
+
                             return@launch  // Don't also create a regular transaction
                         }
 
@@ -152,7 +179,6 @@ class SmsReceiver : BroadcastReceiver() {
                         }
                     }
                 }
-            }
         } catch (e: Exception) {
             Log.e("SmsReceiver", "Error receiving incoming SMS: ${e.message}", e)
         }

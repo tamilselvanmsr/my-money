@@ -803,9 +803,33 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 timestamp = timestamp
             )
             repository.insertTransaction(tx)
+            // Keep CC availableLimit in sync with manual transactions
+            adjustCcAvailableLimit(note, amount, type, reverse = false)
             maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
             _toastMessage.emit("Added: $title ($type)")
         }
+    }
+
+    /** Adjusts availableLimit on a CREDIT_CARD account when a transaction is added or removed.
+     *  EXPENSE reduces available credit; INCOME (payment) restores it.
+     *  Set [reverse] = true when undoing (e.g., on delete or before update).
+     *  Reads the account fresh from the DB to avoid stale StateFlow values in batch imports. */
+    private suspend fun adjustCcAvailableLimit(note: String?, amount: Double, type: String, reverse: Boolean) {
+        if (note == null) return
+        // Extract account name from note "[Acc: NAME]"
+        val accStart = note.indexOf("[Acc: ")
+        if (accStart < 0) return
+        val nameStart = accStart + 6
+        val nameEnd = note.indexOf("]", nameStart)
+        if (nameEnd <= nameStart) return
+        val accName = note.substring(nameStart, nameEnd)
+        // Read fresh from DB — avoids stale StateFlow values during batch scan imports
+        val acc = repository.getAccountByName(accName) ?: return
+        if (acc.type != "CREDIT_CARD" || acc.creditLimit <= 0) return
+        // EXPENSE → less available; INCOME → more available (reversed when undoing)
+        val baseChange = if (type == "EXPENSE") -amount else amount
+        val delta = if (reverse) -baseChange else baseChange
+        repository.updateAccountAvailableLimit(acc.id, acc.availableLimit + delta)
     }
 
     /** Sets a balance snapshot for [accountName] at [targetBalance]. */
@@ -829,7 +853,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun updateTransaction(tx: TransactionEntry) {
         viewModelScope.launch {
+            // Reverse old CC limit effect, then apply new one after update
+            val oldTx = allTransactions.value.find { it.id == tx.id }
+            if (oldTx != null) adjustCcAvailableLimit(oldTx.note, oldTx.amount, oldTx.type, reverse = true)
             repository.updateTransaction(tx)
+            adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false)
             // Auto-categorize all transactions with the same payee title
             if (tx.category.isNotBlank() && tx.title.isNotBlank()) {
                 repository.recategorizeByTitle(tx.title, tx.category, tx.id)
@@ -841,6 +869,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun deleteTransaction(txId: Int) {
         viewModelScope.launch {
+            // Reverse CC limit effect before deleting
+            val tx = allTransactions.value.find { it.id == txId }
+            if (tx != null) adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = true)
             repository.deleteTransaction(txId)
             _toastMessage.emit("Deleted transaction")
         }
@@ -1040,6 +1071,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     note = "$body [Acc: $walletName]"
                                 )
                                 repository.insertTransaction(tx)
+                                // Keep CC availableLimit in sync; if SMS also reports the exact limit, that overrides below
+                                adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false)
                                 projectedTransactions.add(tx)
                                 newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                                 maybeNotifyBudgetAlert(tx, projectedTransactions)
@@ -1058,27 +1091,39 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     for ((body, sender, smsDate) in deferredBalanceSms) {
                         val parsed = SmsParser.parseOffline(body, sender, smsDate) ?: continue
                         val targetTime = parsed.parsedTimestamp ?: smsDate
-                        // Balance snapshot: only when Bal Sync ON and an actual balance was parsed
-                        // CC Summary has availableBalance=null so it never creates a BALANCE_UPDATE tx
-                        if (enableBalanceSync.value && parsed.availableBalance != null) {
+                        val isCcSummary = parsed.totalCreditLimit != null
+
+                        if (isCcSummary) {
+                            // CC Summary: update creditLimit and availableLimit on the account.
+                            // No Balance Sync transaction — balance is shown from limits fields.
+                            if (parsed.accountRef != null) {
+                                var linkedAcc = repository.getAccountByRef(parsed.accountRef)
+                                if (linkedAcc == null) {
+                                    ensureAccountExists(parsed.accountRef, sender, body)
+                                    linkedAcc = repository.getAccountByRef(parsed.accountRef)
+                                }
+                                if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
+                                    parsed.availableLimit?.let { repository.updateAccountAvailableLimit(linkedAcc.id, it) }
+                                    parsed.totalCreditLimit?.let { repository.updateAccountCreditLimit(linkedAcc.id, it) }
+                                    matchedCount++
+                                }
+                            }
+                        } else if (enableBalanceSync.value && parsed.availableBalance != null) {
+                            // Regular bank balance SMS: create Balance Sync when Bal Sync is ON
                             val pairs = if (parsed.allBalancePairs.isNotEmpty()) parsed.allBalancePairs
                                         else if (parsed.accountRef != null) listOf(parsed.accountRef to parsed.availableBalance)
                                         else emptyList()
                             for ((ref, bal) in pairs) {
-                                val linkedAcc = repository.getAccountByRef(ref)
+                                var linkedAcc = repository.getAccountByRef(ref)
                                 if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
                                     if (createBalanceAdjustIfNeeded(linkedAcc, bal, targetTime, body, sender, projectedTransactions)) {
                                         matchedCount++
                                     }
                                 }
-                            }
-                        }
-                        // Always update CC credit limits (regardless of Bal Sync setting)
-                        if (parsed.accountRef != null) {
-                            val linkedAcc = repository.getAccountByRef(parsed.accountRef)
-                            if (linkedAcc != null) {
-                                parsed.availableLimit?.let { repository.updateAccountAvailableLimit(linkedAcc.id, it) }
-                                parsed.totalCreditLimit?.let { repository.updateAccountCreditLimit(linkedAcc.id, it) }
+                                parsed.availableLimit?.let {
+                                    val acc = linkedAcc ?: repository.getAccountByRef(ref)
+                                    acc?.let { a -> repository.updateAccountAvailableLimit(a.id, it) }
+                                }
                             }
                         }
                     }
@@ -1088,7 +1133,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     _recentlyImportedFingerprints.value = newImportedFingerprints
                 }
                 if (matchedCount > 0) {
-                    _toastMessage.emit("Successfully imported $matchedCount transactions from your SMS messages!")
+                    _toastMessage.emit("Successfully imported $matchedCount transactions from your Inbox!")
                 } else {
                     _toastMessage.emit("Scan complete. No new transaction messages found.")
                 }
@@ -1173,6 +1218,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 note = "$body [Acc: $walletName]"
                             )
                             repository.insertTransaction(tx)
+                            adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false)
                             projectedTransactions.add(tx)
                             newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                             matchedCount++
@@ -1222,10 +1268,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         sender: String,
         projectedTransactions: MutableList<TransactionEntry>
     ): Boolean {
-        // Dedup: DB-level check only — in-memory check removed because projectedTransactions
-        // is seeded from allTransactions.value which may be stale (e.g. user deleted a
-        // Balance Sync entry; the StateFlow may not have updated before the scan reads it).
-        if (repository.countExactBalanceUpdates(account.name, timestamp) > 0) return false
+        // Dedup: if there's already a Balance Sync near this timestamp, check its amount.
+        // Same amount → genuine duplicate, skip.  Different amount → stale/wrong entry: replace it.
+        val existing = repository.getExactBalanceUpdate(account.name, timestamp)
+        if (existing != null) {
+            if (Math.abs(existing.amount - reportedBalance) < 0.01) return false  // exact same value
+            repository.deleteTransaction(existing.id)  // stale entry with wrong amount — replace below
+        }
 
         // Store the ABSOLUTE reported balance as a point-in-time snapshot.
         // computeWalletBalances will use this as the starting balance and only apply
@@ -1416,7 +1465,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                                 else if (parsed.accountRef != null) listOf(parsed.accountRef to parsed.availableBalance)
                                                 else emptyList()
                                     for ((ref, bal) in pairs) {
-                                        val linkedAcc = repository.getAccountByRef(ref)
+                                        var linkedAcc = repository.getAccountByRef(ref)
+                                        if (linkedAcc == null && parsed.totalCreditLimit != null) {
+                                            ensureAccountExists(ref, sender, body)
+                                            linkedAcc = repository.getAccountByRef(ref)
+                                        }
                                         if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
                                             if (createBalanceAdjustIfNeeded(linkedAcc, bal, targetTime, body, sender, projectedTransactions)) {
                                                 matchedCount++
@@ -1426,7 +1479,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 }
                                 // Always update CC credit limits (regardless of Bal Sync setting)
                                 if (parsed.accountRef != null) {
-                                    val limitAcc = repository.getAccountByRef(parsed.accountRef)
+                                    var limitAcc = repository.getAccountByRef(parsed.accountRef)
+                                    if (limitAcc == null && parsed.totalCreditLimit != null) {
+                                        ensureAccountExists(parsed.accountRef, sender, body)
+                                        limitAcc = repository.getAccountByRef(parsed.accountRef)
+                                    }
                                     if (limitAcc != null) {
                                         parsed.availableLimit?.let { repository.updateAccountAvailableLimit(limitAcc.id, it) }
                                         parsed.totalCreditLimit?.let { repository.updateAccountCreditLimit(limitAcc.id, it) }
@@ -1462,6 +1519,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     note = "$body [Acc: $walletName]"
                                 )
                                 repository.insertTransaction(tx)
+                                adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false)
                                 newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                                 projectedTransactions.add(tx)
                                 matchedCount++
@@ -1506,40 +1564,58 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     ) {
         _isSmsParsing.value = true
         val apiKey = BuildConfig.GEMINI_API_KEY
-        
-        val parsed = if (isGeminiAvailable) {
-            _toastMessage.emit("Analyzing SMS with Gemini Hybrid AI...")
+
+        // Always try offline parser first — it handles CC Summary, balance updates, and most
+        // bank transactions reliably without a network round-trip.  Only fall back to Gemini
+        // when offline returns null AND Gemini is available.
+        _toastMessage.emit(progressMessage)
+        val parsed = withContext(Dispatchers.Default) {
+            SmsParser.parseOffline(parserBody, sender, System.currentTimeMillis(), bypassExclusionFilter)
+        } ?: if (isGeminiAvailable) {
+            _toastMessage.emit("Offline parser found nothing — retrying with Gemini AI...")
             SmsParser.parseWithGemini(parserBody, sender, apiKey, System.currentTimeMillis())
-        } else {
-            _toastMessage.emit(progressMessage)
-            withContext(Dispatchers.Default) {
-                SmsParser.parseOffline(parserBody, sender, System.currentTimeMillis(), bypassExclusionFilter)
-            }
-        }
+        } else null
 
         _isSmsParsing.value = false
 
-        if (parsed != null) {
-            val targetTime = parsed.parsedTimestamp ?: System.currentTimeMillis()
+        if (parsed == null) {
+            _toastMessage.emit("Could not parse this SMS. Check the Sender ID and SMS body format.")
+            return
+        }
 
-            // CC Summary / balance-notification SMS: only update limits/balance, no transaction
-            if (parsed.isBalanceUpdate) {
-                if (parsed.accountRef != null) {
-                    val limitAcc = repository.getAccountByRef(parsed.accountRef)
-                    if (limitAcc != null) {
-                        if (enableBalanceSync.value && parsed.availableBalance != null) {
-                            val projected = mutableListOf<TransactionEntry>()
-                            createBalanceAdjustIfNeeded(limitAcc, parsed.availableBalance, targetTime, smsBody, sender, projected)
-                        }
+        val targetTime = parsed.parsedTimestamp ?: System.currentTimeMillis()
+
+        // CC Summary / balance-notification SMS: update limits only, no Balance Sync entry
+        if (parsed.isBalanceUpdate) {
+            if (parsed.accountRef != null) {
+                // Create CC account if not yet in DB
+                var limitAcc = repository.getAccountByRef(parsed.accountRef)
+                if (limitAcc == null && parsed.totalCreditLimit != null) {
+                    ensureAccountExists(parsed.accountRef, sender, smsBody)
+                    limitAcc = repository.getAccountByRef(parsed.accountRef)
+                }
+                if (limitAcc != null) {
+                    val isCcSummary = parsed.totalCreditLimit != null
+                    if (isCcSummary) {
+                        // CC Summary: only update stored credit limits — no Balance Sync transaction
                         parsed.availableLimit?.let { repository.updateAccountAvailableLimit(limitAcc.id, it) }
                         parsed.totalCreditLimit?.let { repository.updateAccountCreditLimit(limitAcc.id, it) }
-                        _toastMessage.emit("CC/Bank limits updated for ${limitAcc.name}.")
+                        _toastMessage.emit("CC limits updated for ${limitAcc.name}: Due ₹${String.format("%.2f", (limitAcc.creditLimit - (parsed.availableLimit ?: limitAcc.availableLimit)))}")
+                    } else if (enableBalanceSync.value && parsed.availableBalance != null) {
+                        // Regular bank balance SMS: create Balance Sync when Bal Sync is ON
+                        val projected = mutableListOf<TransactionEntry>()
+                        createBalanceAdjustIfNeeded(limitAcc, parsed.availableBalance, targetTime, smsBody, sender, projected)
+                        parsed.availableLimit?.let { repository.updateAccountAvailableLimit(limitAcc.id, it) }
+                        _toastMessage.emit("Balance updated for ${limitAcc.name}.")
                     } else {
-                        _toastMessage.emit("Limits update skipped — account not found for ref ${parsed.accountRef}.")
+                        _toastMessage.emit("Balance Sync is off — limits noted for ${limitAcc.name}.")
                     }
+                } else {
+                    _toastMessage.emit("Account not found for ref ${parsed.accountRef}.")
                 }
-                return
             }
+            return
+        }
 
             val walletName = ensureAccountExists(parsed.accountRef, sender, smsBody)
             if (walletName == null) {
@@ -1602,6 +1678,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     note = "$smsBody [Acc: $walletName]"
                 )
                 repository.insertTransaction(tx)
+                adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false)
                 _recentlyImportedFingerprints.value = setOf("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                 maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
             }
@@ -1625,9 +1702,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             }
 
             _toastMessage.emit("Auto-Tracked Expense: ₹${parsed.amount} at ${parsed.title}")
-        } else {
-            _toastMessage.emit("SMS analyzed, but no valid transaction data was detected.")
-        }
     }
 
     // ── CSV Backup / Restore ──────────────────────────────────────────────────

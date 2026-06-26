@@ -124,8 +124,9 @@ fun TransactionEntry.getAccountName(consolidate: Boolean = false): String {
 }
 
 fun makeNoteWithAccount(plainNote: String?, accountName: String): String {
-    val clean = plainNote ?: ""
-    return "$clean [Acc: $accountName]".trim()
+    // Strip any pre-existing [Acc: ...] tag to avoid double-tagging on re-save
+    val clean = (plainNote ?: "").replace("\\s*\\[Acc:[^]]*]".toRegex(), "").trim()
+    return if (clean.isEmpty()) "[Acc: $accountName]" else "$clean [Acc: $accountName]"
 }
 
 // Base balances helper
@@ -408,6 +409,19 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                 },
                                 onClick = { showAppMenu = false; showRestoreDialog = true }
                             )
+                            HorizontalDivider(color = c.divider)
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "Ver: 1.28",
+                                        fontSize = 11.sp,
+                                        color = c.textSecondary,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                },
+                                onClick = {},
+                                enabled = false
+                            )
                         }
                     }
                 },
@@ -554,6 +568,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     var deleteConfirmMode by remember { mutableStateOf("") }
     var selectedDeleteCategory by remember { mutableStateOf("") }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var showNetAssetInfo by remember { mutableStateOf(false) }
     
     val (periodStart, periodEnd) = getPeriodRange(activeMode, anchorTime)
     
@@ -782,8 +797,8 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("Show Grand Totals", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
-                                        Text("Privacy mask total value", fontSize = 9.sp, color = c.textSecondary)
+                                        Text("Show Balance Figures", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
+                                        Text("When OFF, all balances display as ₹ ••••", fontSize = 9.sp, color = c.textSecondary)
                                     }
                                     Switch(
                                         checked = showTotal,
@@ -821,13 +836,50 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                     modifier = Modifier.padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        text = if (selectedWallet == "All") "NET WALLET ASSETS" else "${selectedWallet.uppercase()}",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        letterSpacing = 1.sp,
-                        color = c.textSecondary
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (selectedWallet == "All") "NET WALLET ASSETS" else "${selectedWallet.uppercase()}",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            letterSpacing = 1.sp,
+                            color = c.textSecondary
+                        )
+                        if (selectedWallet == "All") {
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "What is Net Wallet Assets?",
+                                tint = c.textSecondary.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .size(13.dp)
+                                    .clickable { showNetAssetInfo = true }
+                            )
+                        }
+                    }
+                    if (showNetAssetInfo) {
+                        AlertDialog(
+                            onDismissRequest = { showNetAssetInfo = false },
+                            title = { Text("Net Wallet Assets", fontWeight = FontWeight.Bold, color = c.text) },
+                            text = {
+                                Text(
+                                    "This is the actual running balance across all your wallets — the real money present in each account right now.\n\n" +
+                                    "It is computed from your recorded income and expense transactions, anchored by any manual balance adjustments you've set. " +
+                                    "It reflects how much money you truly have, regardless of how much flowed in or out during this period.\n\n" +
+                                    "If you select a specific wallet instead of 'All', this shows that wallet's individual balance.",
+                                    color = c.text, fontSize = 13.sp
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { showNetAssetInfo = false }) {
+                                    Text("Got it", color = c.accent, fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            containerColor = c.surface
+                        )
+                    }
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = if (showTotal) {
@@ -3809,13 +3861,21 @@ fun AccountScreen(viewModel: FinanceViewModel) {
     var showAddAccountDialog by remember { mutableStateOf(false) }
     var selectedAccountForEdit by remember { mutableStateOf<Account?>(null) }
     var showAccountCenterSettings by remember { mutableStateOf(false) }
+    var showAllAccountsInfo by remember { mutableStateOf(false) }
 
     val decFormat = DecimalFormat("₹#,##0.00")
 
     val activeAccounts = accounts.filter { !hiddenAccountIds.contains(it.id) }
     val orderedAccounts = activeAccounts
 
-    val totalAllAccounts = activeAccounts.sumOf { walletsBalances[it.name] ?: 0.0 }
+    val totalAllAccounts = activeAccounts.sumOf { acc ->
+        // CC accounts with Limit-Based Balance ON contribute availableLimit − creditLimit
+        // (negative = outstanding debt). All others use the transaction-based wallet balance.
+        if (acc.type == "CREDIT_CARD" && acc.showCreditLimitBalance && acc.creditLimit > 0)
+            acc.availableLimit - acc.creditLimit
+        else
+            walletsBalances[acc.name] ?: 0.0
+    }
     val totalIncomeSoFar = txs.filter { it.type == "INCOME" }.sumOf { it.amount }
     val totalExpenseSoFar = txs.filter { it.type == "EXPENSE" }.sumOf { it.amount }
 
@@ -3864,13 +3924,44 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text(
-                        "ALL ACCOUNTS",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.2.sp,
-                        color = c.textSecondary
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "ALL ACCOUNTS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.2.sp,
+                            color = c.textSecondary
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "How is this calculated?",
+                            tint = c.textSecondary.copy(alpha = 0.6f),
+                            modifier = Modifier
+                                .size(13.dp)
+                                .clickable { showAllAccountsInfo = true }
+                        )
+                    }
+                    if (showAllAccountsInfo) {
+                        AlertDialog(
+                            onDismissRequest = { showAllAccountsInfo = false },
+                            title = { Text("All Accounts Balance", fontWeight = FontWeight.Bold, color = c.text) },
+                            text = {
+                                Text(
+                                    "Shows the combined balance across all your visible accounts.\n\n" +
+                                    "Each account's balance is computed from its full transaction history, anchored by any manual balance snapshots you've set.\n\n" +
+                                    "For Credit Card accounts with 'Limit-Based Balance' toggled ON, the outstanding debt (Available Limit − Credit Limit, which is negative) is included — so your total net worth correctly decreases by the amount you owe.",
+                                    color = c.text, fontSize = 13.sp
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { showAllAccountsInfo = false }) {
+                                    Text("Got it", color = c.accent, fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            containerColor = c.surface
+                        )
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = if (showTotal) decFormat.format(totalAllAccounts) else "₹ ••••",
@@ -4039,24 +4130,33 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                 }
 
                                 Column(horizontalAlignment = Alignment.End) {
+                                    // Toggle ON: show availableLimit - creditLimit (negative = amount owed)
+                                    // Toggle OFF (default): show transaction-based wallet balance + Due subtitle
+                                    val useLimitBalance = acc.type == "CREDIT_CARD"
+                                        && acc.showCreditLimitBalance
+                                        && acc.creditLimit > 0
+                                    val primaryBal = if (useLimitBalance) acc.availableLimit - acc.creditLimit else bal
                                     Text(
-                                        decFormat.format(bal),
+                                        decFormat.format(primaryBal),
                                         fontWeight = FontWeight.ExtraBold,
                                         fontSize = 16.sp,
-                                        color = if (bal >= 0) c.income else c.expense
+                                        color = if (useLimitBalance) c.expense
+                                                else if (primaryBal >= 0) c.income else c.expense
                                     )
                                     if (acc.type == "CREDIT_CARD" && showCreditCardDetails && acc.availableLimit > 0) {
                                         Text(
                                             text = "Avail: ${decFormat.format(acc.availableLimit)}",
                                             fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
                                             color = c.accent
                                         )
-                                        if (acc.creditLimit > 0) {
+                                        if (!useLimitBalance && acc.creditLimit > 0) {
                                             val outstanding = acc.creditLimit - acc.availableLimit
                                             Text(
                                                 text = "Due: ${decFormat.format(outstanding.coerceAtLeast(0.0))}",
                                                 fontSize = 11.sp,
-                                                color = Color(0xFFFB923C)
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color(0xFFE05A00)
                                             )
                                         }
                                     }
@@ -4289,6 +4389,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
         var editBalanceInput by remember(acc) { mutableStateOf(String.format("%.2f", computedBal)) }
         var editType by remember(acc) { mutableStateOf(acc.type) }
         var editCreditLimit by remember(acc) { mutableStateOf(if (acc.creditLimit > 0) acc.creditLimit.toString() else "") }
+        var editShowCreditLimitBalance by remember(acc) { mutableStateOf(acc.showCreditLimitBalance) }
 
         val types = listOf("CASH", "BANK", "CREDIT_CARD", "WALLET")
 
@@ -4343,6 +4444,31 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
                             modifier = Modifier.fillMaxWidth()
                         )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(c.surface)
+                                .border(1.dp, c.divider, RoundedCornerShape(10.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Limit-Based Balance", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text)
+                                Text("Show Avail. Limit − Credit Limit as main balance", fontSize = 10.sp, color = c.textSecondary)
+                            }
+                            Switch(
+                                checked = editShowCreditLimitBalance,
+                                onCheckedChange = { editShowCreditLimitBalance = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = c.accent,
+                                    checkedTrackColor = c.accent.copy(alpha = 0.45f),
+                                    uncheckedThumbColor = c.text,
+                                    uncheckedTrackColor = c.textTertiary
+                                )
+                            )
+                        }
                     }
                     Column {
                         Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
@@ -4394,7 +4520,8 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                     name = editName,
                                     type = editType,
                                     lastFour = editName.filter { it.isDigit() }.takeLast(4).ifBlank { null },
-                                    creditLimit = editCreditLimit.toDoubleOrNull() ?: acc.creditLimit
+                                    creditLimit = editCreditLimit.toDoubleOrNull() ?: acc.creditLimit,
+                                    showCreditLimitBalance = editShowCreditLimitBalance
                                 )
                             )
 
@@ -5345,7 +5472,7 @@ fun EditTransactionDialog(
         mutableStateOf(if (tx.category.equals("INCOME", ignoreCase = true)) "SALARY" else tx.category)
     }
     var accountSelection by remember { mutableStateOf(tx.getAccountName()) }
-    var notesStr by remember { mutableStateOf(tx.note?.substringBefore(" [Acc:")?.trim() ?: "") }
+    var notesStr by remember { mutableStateOf((tx.note ?: "").replace("\\s*\\[Acc:[^]]*]".toRegex(), "").trim()) }
     var selectedTimestamp by remember { mutableStateOf(tx.timestamp) }
     var showWalletPicker by remember { mutableStateOf(false) }
     var showCategoryPicker by remember { mutableStateOf(false) }
@@ -6706,7 +6833,15 @@ fun AccountCenterSettingsDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done", color = c.accent) } },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
+            ) {
+                Text("Done", fontWeight = FontWeight.Bold)
+            }
+        },
         containerColor = c.surface,
         titleContentColor = c.text,
         textContentColor = c.text

@@ -21,8 +21,10 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -33,6 +35,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
@@ -216,6 +219,12 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     val c = LocalAppColors.current
     val isDarkTheme by viewModel.isDarkTheme.collectAsStateWithLifecycle()
     var currentTab by remember { mutableStateOf(AppTab.DASHBOARD) }
+    val dashboardListState = rememberLazyListState()
+    val fabAlpha by animateFloatAsState(
+        targetValue = if (currentTab == AppTab.DASHBOARD && dashboardListState.isScrollInProgress) 0f else 1f,
+        animationSpec = tween(durationMillis = 250),
+        label = "FabAlpha"
+    )
     
     // Bottom Sheet & Dialog control states
     var showAddDialog by remember { mutableStateOf(false) }
@@ -412,6 +421,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                     modifier = Modifier
                         .testTag("add_transaction_fab")
                         .padding(bottom = 8.dp)
+                        .alpha(fabAlpha)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
@@ -436,7 +446,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                 label = "TabTransition"
             ) { targetTab ->
                 when (targetTab) {
-                    AppTab.DASHBOARD -> DashboardScreen(viewModel)
+                    AppTab.DASHBOARD -> DashboardScreen(viewModel, dashboardListState)
                     AppTab.BUDGETS -> BudgetsScreen(viewModel)
                     AppTab.ANALYTICS -> AnalyticsScreen(viewModel)
                     AppTab.ACCOUNT -> AccountScreen(viewModel)
@@ -484,7 +494,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
 // 1. RECORDS / DASHBOARD SCREEN
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(viewModel: FinanceViewModel) {
+fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
     val c = LocalAppColors.current
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
@@ -561,6 +571,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
     val totalWealth = walletsBalances.values.sum()
 
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .testTag("dashboard_scroll_column"),
@@ -894,7 +905,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         }
 
                         val cardBorderColor = if (isSelected) c.accent else c.border
-                        val cardBg = if (isSelected) c.border else c.surface
+                        val cardBg = if (isSelected) c.accentDim else c.surface
 
                         Surface(
                             shape = RoundedCornerShape(16.dp),
@@ -1091,7 +1102,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = 1.2.sp,
-                            color = c.textSecondary
+                            color = c.textTertiary
                         )
                         
                         val dateNet = txList.filter { it.type != "DUPLICATE" && it.type != "BALANCE_UPDATE" }.sumOf { if (it.type == "INCOME") it.amount else -it.amount }
@@ -1109,6 +1120,10 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         txList.forEachIndexed { txIdx, tx ->
                             val resolvedCat = CategoryResolver.resolve(tx.category, customCats)
                             val isAdjust = tx.category.equals("ADJUST", ignoreCase = true)
+                            val isBalanceSync = tx.type == "BALANCE_UPDATE"
+                            val catColor = if (isBalanceSync) c.textTertiary else resolvedCat.color
+                            val catIcon  = if (isBalanceSync) Icons.Default.Autorenew else resolvedCat.icon
+                            val acctIcon = walletIconFor(tx.getAccountName(), null)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1120,14 +1135,14 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                             ) {
                                 Surface(
                                     shape = CircleShape,
-                                    color = resolvedCat.color.copy(alpha = 0.15f),
+                                    color = catColor.copy(alpha = 0.15f),
                                     modifier = Modifier.size(40.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(
-                                            imageVector = resolvedCat.icon,
+                                            imageVector = catIcon,
                                             contentDescription = resolvedCat.displayName,
-                                            tint = resolvedCat.color,
+                                            tint = catColor,
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -1145,16 +1160,27 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Surface(
-                                            color = c.surfaceVariant,
+                                            color = c.accent.copy(alpha = 0.10f),
                                             shape = RoundedCornerShape(20.dp)
                                         ) {
-                                            Text(
-                                                text = tx.getAccountName(),
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = c.textSecondary,
-                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
-                                            )
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = acctIcon,
+                                                    contentDescription = null,
+                                                    tint = c.accent,
+                                                    modifier = Modifier.size(9.dp)
+                                                )
+                                                Text(
+                                                    text = tx.getAccountName(),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = c.accent
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -1963,9 +1989,9 @@ private fun AnalyticsOverviewSection(
             categoryTotals.forEachIndexed { idx, stats ->
                 val active = activeSectorIndex == idx
                 Surface(
-                    color = if (active) c.border else c.surface,
+                    color = if (active) stats.category.color.copy(alpha = 0.08f) else c.surface,
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, if (active) c.accent else c.border),
+                    border = BorderStroke(1.dp, if (active) stats.category.color else c.border),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {

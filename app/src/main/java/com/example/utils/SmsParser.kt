@@ -814,6 +814,51 @@ object SmsParser {
             (lowerBody.contains(" bal ") && lowerBody.contains("a/c")) // e.g. "Bal in A/c ..."
         if (!isBalanceSms) return null
 
+        // ── Credit Card Summary SMS ───────────────────────────────────────────
+        // e.g. "HDFC BANK Credit Card Summary ending with *1234: Total Credit Limit: Rs. 2,36,000.
+        //       Available Credit Limit: Rs. 1,90,533.07. Total Outstanding Balance: Rs.45,466.93"
+        // The outstanding balance is the current debt on the card.
+        // The available credit limit is stored as the account's available limit.
+        if (lowerBody.contains("credit card") && lowerBody.contains("total outstanding balance")) {
+            val outstandingPat = Pattern.compile(
+                "total\\s+outstanding\\s+balance[:\\s]*(?:rs\\.?\\s*|inr\\s*)?([0-9,]+(?:\\.[0-9]{1,2})?)",
+                Pattern.CASE_INSENSITIVE
+            )
+            val outstandingMatcher = outstandingPat.matcher(cleanBody)
+            val outstanding = if (outstandingMatcher.find())
+                outstandingMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
+
+            val availLimitPat = Pattern.compile(
+                "available\\s+credit\\s+limit[:\\s]*(?:rs\\.?\\s*|inr\\s*)?([0-9,]+(?:\\.[0-9]{1,2})?)",
+                Pattern.CASE_INSENSITIVE
+            )
+            val availLimitMatcher = availLimitPat.matcher(cleanBody)
+            val availCreditLimit = if (availLimitMatcher.find())
+                availLimitMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
+
+            val refPat = Pattern.compile(
+                "(?:ending\\s+with|ending\\s+in|ending)\\s*[*xX\\s]*([0-9]{3,4})\\b",
+                Pattern.CASE_INSENSITIVE
+            )
+            val refMatcher = refPat.matcher(cleanBody)
+            val ccRef = if (refMatcher.find()) refMatcher.group(1) else null
+
+            if (outstanding != null && ccRef != null) {
+                return SmsParsingResult(
+                    title = "Balance Update",
+                    amount = outstanding,
+                    category = ExpenseCategory.ADJUST,
+                    type = "INCOME",
+                    isGeminiParsed = false,
+                    accountRef = ccRef,
+                    parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp),
+                    isBalanceUpdate = true,
+                    availableBalance = outstanding,
+                    availableLimit = availCreditLimit
+                )
+            }
+        }
+
         val allPairs = mutableListOf<Pair<String, Double>>()
 
         // Multi-account format: "XXXXXX2045 INR 2204.092Cr, XXXXXXX8660 INR 100Cr"

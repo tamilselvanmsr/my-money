@@ -1059,6 +1059,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 }
                             }
                         }
+                        // Update available credit limit for CC accounts (e.g. CC Summary SMS)
+                        if (parsed.availableLimit != null && parsed.accountRef != null) {
+                            val linkedAcc = repository.getAccountByRef(parsed.accountRef)
+                            if (linkedAcc != null) {
+                                repository.updateAccountAvailableLimit(linkedAcc.id, parsed.availableLimit)
+                            }
+                        }
                     }
                 }
 
@@ -1135,7 +1142,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         }
                         if (!duplicate && !matchesSmsBlocklistPattern(walletName)) {
                             val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
-                            val txType = if (parsed.title == "PF Contribution") "BALANCE_UPDATE" else parsed.type
+                            // Bal Sync OFF: store contribution as INCOME so it counts in income totals and seeds the account balance
+                            // Bal Sync ON:  store as BALANCE_UPDATE (hidden from totals); passbook balance synced separately below
+                            val txType = if (parsed.title == "PF Contribution") {
+                                if (enableBalanceSync.value) "BALANCE_UPDATE" else "INCOME"
+                            } else parsed.type
                             val tx = TransactionEntry(
                                 title = parsed.title,
                                 amount = parsed.amount,
@@ -1151,8 +1162,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                             matchedCount++
                         }
-                        // Always sync passbook total regardless of whether contribution record is duplicate
-                        if (parsed.title == "PF Contribution" && parsed.availableBalance != null && !matchesSmsBlocklistPattern(walletName)) {
+                        // Sync passbook total to PF account balance (only when Bal Sync is enabled)
+                        if (parsed.title == "PF Contribution" && parsed.availableBalance != null &&
+                            enableBalanceSync.value && !matchesSmsBlocklistPattern(walletName)) {
                             val pfAcc = repository.getAccountByRef(parsed.accountRef ?: "")
                                 ?: allAccounts.value.find { it.name == walletName }
                             if (pfAcc != null) {
@@ -1417,8 +1429,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             }
                             if (!duplicate && !matchesSmsBlocklistPattern(walletName) && !matchesSmsBlocklistPattern(sender)) {
                                 val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
-                                // EPFO passbook → store as BALANCE_UPDATE so it doesn't inflate income totals
-                                val txType = if (parsed.title == "PF Contribution") "BALANCE_UPDATE" else parsed.type
+                                val txType = if (parsed.title == "PF Contribution") {
+                                    if (enableBalanceSync.value) "BALANCE_UPDATE" else "INCOME"
+                                } else parsed.type
                                 val tx = TransactionEntry(
                                     title = parsed.title,
                                     amount = parsed.amount,
@@ -1434,9 +1447,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 projectedTransactions.add(tx)
                                 matchedCount++
                             }
-                            // Always sync passbook total regardless of whether contribution record is duplicate
+                            // Sync passbook total to PF account balance (only when Bal Sync is enabled)
                             if (parsed.title == "PF Contribution" && parsed.availableBalance != null &&
-                                !matchesSmsBlocklistPattern(walletName) && !matchesSmsBlocklistPattern(sender)) {
+                                enableBalanceSync.value && !matchesSmsBlocklistPattern(walletName) && !matchesSmsBlocklistPattern(sender)) {
                                 val pfAcc = repository.getAccountByRef(parsed.accountRef ?: "")
                                     ?: allAccounts.value.find { it.name == walletName }
                                 if (pfAcc != null) {
@@ -1521,8 +1534,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
             if (duplicate) {
-                // For EPFO: still sync passbook balance even if the contribution record is a duplicate
-                if (parsed.title == "PF Contribution" && parsed.availableBalance != null) {
+                // For EPFO with Bal Sync ON: still sync passbook balance even if contribution record is a duplicate
+                if (parsed.title == "PF Contribution" && parsed.availableBalance != null && enableBalanceSync.value) {
                     val pfAcc = repository.getAccountByRef(parsed.accountRef ?: "")
                         ?: allAccounts.value.find { it.name == walletName }
                     if (pfAcc != null) {
@@ -1535,8 +1548,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             }
 
             val learnedCategory = if (parsed.title.isNotBlank()) repository.getLearnedCategoryForTitle(parsed.title) else null
-            // EPFO passbook → store as BALANCE_UPDATE so it doesn't inflate income totals
-            val txType = if (parsed.title == "PF Contribution") "BALANCE_UPDATE" else parsed.type
+            val txType = if (parsed.title == "PF Contribution") {
+                if (enableBalanceSync.value) "BALANCE_UPDATE" else "INCOME"
+            } else parsed.type
             val tx = TransactionEntry(
                 title = parsed.title,
                 amount = parsed.amount,
@@ -1550,8 +1564,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             repository.insertTransaction(tx)
             _recentlyImportedFingerprints.value = setOf("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
             maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
-            // Sync passbook total to PF account balance
-            if (parsed.title == "PF Contribution" && parsed.availableBalance != null) {
+            // Sync passbook total to PF account balance (only when Bal Sync is enabled)
+            if (parsed.title == "PF Contribution" && parsed.availableBalance != null && enableBalanceSync.value) {
                 val pfAcc = repository.getAccountByRef(parsed.accountRef ?: "")
                     ?: allAccounts.value.find { it.name == walletName }
                 if (pfAcc != null) {

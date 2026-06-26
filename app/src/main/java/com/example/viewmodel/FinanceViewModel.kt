@@ -804,7 +804,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             )
             repository.insertTransaction(tx)
             // Keep CC availableLimit in sync with manual transactions
-            adjustCcAvailableLimit(note, amount, type, reverse = false)
+            adjustCcAvailableLimit(note, amount, type, reverse = false, txTimestamp = timestamp)
             maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
             _toastMessage.emit("Added: $title ($type)")
         }
@@ -814,7 +814,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
      *  EXPENSE reduces available credit; INCOME (payment) restores it.
      *  Set [reverse] = true when undoing (e.g., on delete or before update).
      *  Reads the account fresh from the DB to avoid stale StateFlow values in batch imports. */
-    private suspend fun adjustCcAvailableLimit(note: String?, amount: Double, type: String, reverse: Boolean) {
+    private suspend fun adjustCcAvailableLimit(note: String?, amount: Double, type: String, reverse: Boolean, txTimestamp: Long? = null) {
         if (note == null) return
         // Extract account name from note "[Acc: NAME]"
         val accStart = note.indexOf("[Acc: ")
@@ -827,6 +827,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val acc = repository.getAccountByName(accName) ?: return
         if (acc.type != "CREDIT_CARD" || acc.creditLimit <= 0) return
         if (type != "EXPENSE" && type != "INCOME") return  // skip BALANCE_UPDATE, DUPLICATE, etc.
+        // Pre-CC-Summary transactions are already baked into the CC Summary's availableLimit.
+        // Skip the delta for any transaction whose timestamp ≤ the latest Balance Sync anchor.
+        if (txTimestamp != null) {
+            val latestSyncTs = repository.getLatestBalanceSyncTimestamp(accName)
+            if (latestSyncTs != null && txTimestamp <= latestSyncTs) return
+        }
         // EXPENSE → less available; INCOME → more available (reversed when undoing)
         val baseChange = if (type == "EXPENSE") -amount else amount
         val delta = if (reverse) -baseChange else baseChange
@@ -856,9 +862,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             // Reverse old CC limit effect, then apply new one after update
             val oldTx = allTransactions.value.find { it.id == tx.id }
-            if (oldTx != null) adjustCcAvailableLimit(oldTx.note, oldTx.amount, oldTx.type, reverse = true)
+            if (oldTx != null) adjustCcAvailableLimit(oldTx.note, oldTx.amount, oldTx.type, reverse = true, txTimestamp = oldTx.timestamp)
             repository.updateTransaction(tx)
-            adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false)
+            adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
             // Auto-categorize all transactions with the same payee title
             if (tx.category.isNotBlank() && tx.title.isNotBlank()) {
                 repository.recategorizeByTitle(tx.title, tx.category, tx.id)
@@ -872,7 +878,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             // Reverse CC limit effect before deleting
             val tx = allTransactions.value.find { it.id == txId }
-            if (tx != null) adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = true)
+            if (tx != null) adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = true, txTimestamp = tx.timestamp)
             repository.deleteTransaction(txId)
             _toastMessage.emit("Deleted transaction")
         }
@@ -1073,7 +1079,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 )
                                 repository.insertTransaction(tx)
                                 // Keep CC availableLimit in sync; if SMS also reports the exact limit, that overrides below
-                                adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false)
+                                adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
                                 projectedTransactions.add(tx)
                                 newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                                 maybeNotifyBudgetAlert(tx, projectedTransactions)
@@ -1113,13 +1119,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     if (creditLimit > 0) {
                                         val snapshot = availLimit - creditLimit  // negative = outstanding debt
                                         // Only delete+recreate when the snapshot amount changed.
-                                        // Skipping this guard caused a re-import on every scan even when nothing changed.
                                         val existingAmount = repository.getLatestBalanceSyncAmount(linkedAcc.name)
                                         if (existingAmount == null || Math.abs(existingAmount - snapshot) >= 0.01) {
                                             repository.deleteAllBalanceSyncForAccount(linkedAcc.name)
                                             // Use actual SMS received date, NOT the parsed statement date from the body
                                             if (createBalanceAdjustIfNeeded(linkedAcc, snapshot, smsDate, body, sender, projectedTransactions)) {
                                                 matchedCount++
+                                            }
+                                        }
+                                        // Re-apply post-CC-Summary deltas from Pass 1 transactions.
+                                        // Pass 2 overwrote acc.availableLimit with the CC Summary value, which
+                                        // loses adjustments for expenses/income that arrived AFTER the CC Summary.
+                                        if (parsed.availableLimit != null) {
+                                            var adjustedAvail = parsed.availableLimit
+                                            for (tx in projectedTransactions) {
+                                                if ((tx.type == "EXPENSE" || tx.type == "INCOME")
+                                                    && tx.timestamp > smsDate
+                                                    && tx.getAccountName() == linkedAcc.name) {
+                                                    adjustedAvail += if (tx.type == "EXPENSE") -tx.amount else tx.amount
+                                                }
+                                            }
+                                            if (Math.abs(adjustedAvail - parsed.availableLimit) > 0.01) {
+                                                repository.updateAccountAvailableLimit(linkedAcc.id, adjustedAvail)
                                             }
                                         }
                                     }
@@ -1133,7 +1154,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             for ((ref, bal) in pairs) {
                                 var linkedAcc = repository.getAccountByRef(ref)
                                 if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
-                                    if (createBalanceAdjustIfNeeded(linkedAcc, bal, targetTime, body, sender, projectedTransactions)) {
+                                    // CC accounts report available credit; convert to snapshot format (avail - limit)
+                                    // so that the display formula (creditLimit + bal) gives the correct available credit.
+                                    val snapshotBal = if (linkedAcc.type == "CREDIT_CARD" && linkedAcc.creditLimit > 0)
+                                        bal - linkedAcc.creditLimit else bal
+                                    if (createBalanceAdjustIfNeeded(linkedAcc, snapshotBal, targetTime, body, sender, projectedTransactions)) {
                                         matchedCount++
                                     }
                                 }
@@ -1235,7 +1260,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 note = "$body [Acc: $walletName]"
                             )
                             repository.insertTransaction(tx)
-                            adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false)
+                            adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
                             projectedTransactions.add(tx)
                             newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                             matchedCount++
@@ -1536,7 +1561,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     note = "$body [Acc: $walletName]"
                                 )
                                 repository.insertTransaction(tx)
-                                adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false)
+                                adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
                                 newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                                 projectedTransactions.add(tx)
                                 matchedCount++
@@ -1632,7 +1657,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     } else if (enableBalanceSync.value && parsed.availableBalance != null) {
                         // Regular bank balance SMS: create Balance Sync when Bal Sync is ON
                         val projected = mutableListOf<TransactionEntry>()
-                        createBalanceAdjustIfNeeded(limitAcc, parsed.availableBalance, targetTime, smsBody, sender, projected)
+                        // CC accounts report available credit; convert to snapshot format (avail - limit)
+                        val snapshotBal = if (limitAcc.type == "CREDIT_CARD" && limitAcc.creditLimit > 0)
+                            parsed.availableBalance - limitAcc.creditLimit else parsed.availableBalance
+                        createBalanceAdjustIfNeeded(limitAcc, snapshotBal, targetTime, smsBody, sender, projected)
                         parsed.availableLimit?.let { repository.updateAccountAvailableLimit(limitAcc.id, it) }
                         _toastMessage.emit("Balance updated for ${limitAcc.name}.")
                     } else {
@@ -1706,7 +1734,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     note = "$smsBody [Acc: $walletName]"
                 )
                 repository.insertTransaction(tx)
-                adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false)
+                adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
                 _recentlyImportedFingerprints.value = setOf("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                 maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
             }

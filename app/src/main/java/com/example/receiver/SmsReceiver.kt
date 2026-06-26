@@ -116,6 +116,10 @@ class SmsReceiver : BroadcastReceiver() {
                                     val linkedAcc = dao.getAccountByLastFour(refDigits)
                                         ?: if (refDigits.length == 3) dao.getAccountByLastFourSuffix(refDigits) else null
                                     if (linkedAcc != null) {
+                                        // CC accounts report available credit; convert to snapshot format (avail - limit)
+                                        // so that the display formula (creditLimit + bal) gives the correct available credit.
+                                        val snapshotBal = if (linkedAcc.type == "CREDIT_CARD" && linkedAcc.creditLimit > 0)
+                                            bal - linkedAcc.creditLimit else bal
                                         val isDup = allTx.any {
                                             it.type == "BALANCE_UPDATE" &&
                                             it.timestamp == targetTime &&
@@ -124,7 +128,7 @@ class SmsReceiver : BroadcastReceiver() {
                                         if (!isDup) {
                                             val snapTx = TransactionEntry(
                                                 title = "Balance Sync",
-                                                amount = bal,
+                                                amount = snapshotBal,
                                                 category = "ADJUST",
                                                 type = "BALANCE_UPDATE",
                                                 smsSender = sender,
@@ -186,12 +190,21 @@ class SmsReceiver : BroadcastReceiver() {
                             )
                             dao.insertTransaction(transaction)
 
-                            // Keep CC availableLimit in sync with live incoming transactions
+                            // Keep CC availableLimit in sync with live incoming transactions.
+                            // Live SMS is always post-any-existing-CC-Summary, so delta is always valid.
                             val linkedAcc = dao.getAccountByName(walletName)
-                            if (linkedAcc != null && linkedAcc.type == "CREDIT_CARD" && linkedAcc.creditLimit > 0
-                                && (parsed.type == "EXPENSE" || parsed.type == "INCOME")) {
-                                val delta = if (parsed.type == "EXPENSE") -parsed.amount else parsed.amount
-                                dao.updateAccountAvailableLimit(linkedAcc.id, linkedAcc.availableLimit + delta)
+                            if (linkedAcc != null && linkedAcc.type == "CREDIT_CARD") {
+                                when {
+                                    // CC Payment SMS reports the exact available limit — set it directly
+                                    parsed.availableLimit != null ->
+                                        dao.updateAccountAvailableLimit(linkedAcc.id, parsed.availableLimit)
+                                    // Regular expense/income with a known credit limit — apply delta
+                                    // (live SMS always post-CC-Summary, no pre-summary guard needed)
+                                    linkedAcc.creditLimit > 0 && (parsed.type == "EXPENSE" || parsed.type == "INCOME") -> {
+                                        val delta = if (parsed.type == "EXPENSE") -parsed.amount else parsed.amount
+                                        dao.updateAccountAvailableLimit(linkedAcc.id, linkedAcc.availableLimit + delta)
+                                    }
+                                }
                             }
 
                             withContext(Dispatchers.Main) {

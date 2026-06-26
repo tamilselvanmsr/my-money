@@ -152,6 +152,10 @@ class FinanceRepository(private val financeDao: FinanceDao) {
         return financeDao.getLatestBalanceSyncAmount(accountName)
     }
 
+    suspend fun getLatestBalanceSyncTimestamp(accountName: String): Long? {
+        return financeDao.getLatestBalanceSyncTimestamp(accountName)
+    }
+
     suspend fun clearAccounts() {
         financeDao.clearAllAccounts()
     }

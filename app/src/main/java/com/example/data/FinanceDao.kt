@@ -141,5 +141,10 @@ interface FinanceDao {
     /** Returns the most-recent Balance Sync amount for an account (used to skip re-import when unchanged). */
     @Query("SELECT amount FROM transactions WHERE type = 'BALANCE_UPDATE' AND title = 'Balance Sync' AND note LIKE '%[Acc: ' || :accountName || ']%' ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatestBalanceSyncAmount(accountName: String): Double?
+
+    /** Returns the timestamp of the most-recent Balance Sync for an account.
+     *  Used by adjustCcAvailableLimit to skip pre-CC-Summary transactions. */
+    @Query("SELECT timestamp FROM transactions WHERE type = 'BALANCE_UPDATE' AND title = 'Balance Sync' AND note LIKE '%[Acc: ' || :accountName || ']%' ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLatestBalanceSyncTimestamp(accountName: String): Long?
 }
 

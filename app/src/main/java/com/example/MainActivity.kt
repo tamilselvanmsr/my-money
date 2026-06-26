@@ -413,7 +413,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Ver: 1.29",
+                                        "Ver: 1.30",
                                         fontSize = 11.sp,
                                         color = c.textSecondary,
                                         modifier = Modifier.fillMaxWidth()
@@ -3869,8 +3869,8 @@ fun AccountScreen(viewModel: FinanceViewModel) {
     val orderedAccounts = activeAccounts
 
     val totalAllAccounts = activeAccounts.sumOf { acc ->
-        // CC accounts with Limit-Based Balance ON contribute availableLimit − creditLimit
-        // (negative = outstanding debt). All others use the transaction-based wallet balance.
+        // CC with Limit-Based Balance ON: contribute outstanding debt (avail - limit, negative = owed).
+        // All others: use the transaction-based wallet balance.
         if (acc.type == "CREDIT_CARD" && acc.showCreditLimitBalance && acc.creditLimit > 0)
             acc.availableLimit - acc.creditLimit
         else
@@ -4130,12 +4130,12 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                 }
 
                                 Column(horizontalAlignment = Alignment.End) {
-                                    // Toggle ON: show availableLimit - creditLimit (negative = amount owed)
-                                    // Toggle OFF (default): show transaction-based wallet balance + Due subtitle
+                                    // bal already = (CC statement snapshot) + post-sync transactions, so:
+                                    //   creditLimit + bal  = real-time available limit (when creditLimit is known)
                                     val useLimitBalance = acc.type == "CREDIT_CARD"
                                         && acc.showCreditLimitBalance
                                         && acc.creditLimit > 0
-                                    val primaryBal = if (useLimitBalance) acc.availableLimit - acc.creditLimit else bal
+                                    val primaryBal = bal
                                     Text(
                                         decFormat.format(primaryBal),
                                         fontWeight = FontWeight.ExtraBold,
@@ -4143,7 +4143,11 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                         color = if (useLimitBalance) c.expense
                                                 else if (primaryBal >= 0) c.income else c.expense
                                     )
-                                    if (acc.type == "CREDIT_CARD" && showCreditCardDetails && acc.availableLimit > 0) {
+                                    // acc.availableLimit is the single source of truth:
+                                    // set directly from every CC Payment or CC Summary SMS,
+                                    // delta-adjusted by adjustCcAvailableLimit on new transactions.
+                                    // This is robust even when Balance Sync is missing/stale.
+                                    if (showCreditCardDetails && acc.type == "CREDIT_CARD" && acc.availableLimit > 0) {
                                         Text(
                                             text = "Avail: ${decFormat.format(acc.availableLimit)}",
                                             fontSize = 11.sp,
@@ -4151,9 +4155,9 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                             color = c.accent
                                         )
                                         if (!useLimitBalance && acc.creditLimit > 0) {
-                                            val outstanding = acc.creditLimit - acc.availableLimit
+                                            val outstanding = (acc.creditLimit - acc.availableLimit).coerceAtLeast(0.0)
                                             Text(
-                                                text = "Due: ${decFormat.format(outstanding.coerceAtLeast(0.0))}",
+                                                text = "Due: ${decFormat.format(outstanding)}",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = Color(0xFFE05A00)

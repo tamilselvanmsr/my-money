@@ -906,6 +906,14 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
 
                         val cardBorderColor = if (isSelected) c.accent else c.border
                         val cardBg = if (isSelected) c.accentDim else c.surface
+                        val walletAccType = if (name == "All") "ALL" else accounts.find { it.name == name }?.type ?: ""
+                        val walletTypeColor = when (walletAccType) {
+                            "CASH"        -> c.income
+                            "BANK"        -> Color(0xFF3B82F6)
+                            "CREDIT_CARD" -> c.expense
+                            "WALLET"      -> Color(0xFFFF9800)
+                            else          -> c.accent
+                        }
 
                         Surface(
                             shape = RoundedCornerShape(16.dp),
@@ -935,8 +943,8 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                         }
                                     },
                                     contentDescription = name,
-                                    tint = if (isSelected) c.accent else c.textSecondary,
-                                    modifier = Modifier.size(18.dp)
+                                    tint = walletTypeColor,
+                                    modifier = Modifier.size(22.dp)
                                 )
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Text(
@@ -1124,26 +1132,41 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             val catColor = if (isBalanceSync) c.textTertiary else resolvedCat.color
                             val catIcon  = if (isBalanceSync) Icons.Default.Autorenew else resolvedCat.icon
                             val acctIcon = walletIconFor(tx.getAccountName(), null)
+                            val acctType = accounts.find { it.name == tx.getAccountName() }?.type ?: ""
+                            val acctColor = when (acctType) {
+                                "CASH"        -> c.income
+                                "BANK"        -> Color(0xFF3B82F6)
+                                "CREDIT_CARD" -> c.expense
+                                "WALLET"      -> Color(0xFFFF9800)
+                                else          -> c.textSecondary
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = c.surface,
+                                border = BorderStroke(1.dp, c.divider),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                                    .clickable { selectedTxForEdit = tx }
+                                    .testTag("transaction_item_${tx.id}")
+                            ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color.Transparent)
-                                    .clickable { selectedTxForEdit = tx }
-                                    .testTag("transaction_item_${tx.id}")
-                                    .padding(horizontal = 4.dp, vertical = 10.dp),
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Surface(
                                     shape = CircleShape,
                                     color = catColor.copy(alpha = 0.15f),
-                                    modifier = Modifier.size(40.dp)
+                                    modifier = Modifier.size(48.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(
                                             imageVector = catIcon,
                                             contentDescription = resolvedCat.displayName,
                                             tint = catColor,
-                                            modifier = Modifier.size(18.dp)
+                                            modifier = Modifier.size(24.dp)
                                         )
                                     }
                                 }
@@ -1157,10 +1180,10 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Spacer(modifier = Modifier.height(3.dp))
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Surface(
-                                            color = c.accent.copy(alpha = 0.10f),
+                                            color = acctColor.copy(alpha = 0.10f),
                                             shape = RoundedCornerShape(20.dp)
                                         ) {
                                             Row(
@@ -1171,14 +1194,14 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                                 Icon(
                                                     imageVector = acctIcon,
                                                     contentDescription = null,
-                                                    tint = c.accent,
+                                                    tint = acctColor,
                                                     modifier = Modifier.size(9.dp)
                                                 )
                                                 Text(
                                                     text = tx.getAccountName(),
                                                     fontSize = 9.sp,
                                                     fontWeight = FontWeight.SemiBold,
-                                                    color = c.accent
+                                                    color = acctColor
                                                 )
                                             }
                                         }
@@ -1217,12 +1240,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     )
                                 }
                             }
-                            if (txIdx < txList.size - 1) {
-                                HorizontalDivider(
-                                    color = c.divider,
-                                    modifier = Modifier.padding(start = 56.dp)
-                                )
-                            }
+                            } // end Surface card
                         }
                     }
                 }

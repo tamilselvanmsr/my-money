@@ -1350,9 +1350,8 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                                     fontSize = 9.sp,
                                                     fontWeight = FontWeight.SemiBold,
                                                     color = acctColor,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    softWrap = false
+                                                    maxLines = if (isTransfer) 2 else 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                             }
                                         }

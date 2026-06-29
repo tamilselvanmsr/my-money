@@ -188,6 +188,40 @@ class SmsReceiver : BroadcastReceiver() {
                                 timestamp = targetTime,
                                 note = "$body [Acc: $walletName]"
                             )
+
+                            // Transfer pair detection: if a recent SMS with the same UPI ref no
+                            // already exists with the opposite type, merge both into one TRANSFER.
+                            val transferCounterpart = if (incomingRef != null && parsed.type in listOf("EXPENSE", "INCOME")) {
+                                allTransactions.firstOrNull { existing ->
+                                    val existRef = com.example.utils.SmsParser.getReferenceNumber(existing.smsBody)
+                                    existRef != null && existRef == incomingRef &&
+                                    existing.amount == parsed.amount &&
+                                    existing.type != parsed.type &&
+                                    existing.type in listOf("EXPENSE", "INCOME")
+                                }
+                            } else null
+
+                            if (transferCounterpart != null) {
+                                val fromAcc = if (parsed.type == "EXPENSE") walletName else transferCounterpart.getAccountName()
+                                val toAcc   = if (parsed.type == "INCOME") walletName else transferCounterpart.getAccountName()
+                                dao.deleteTransactionById(transferCounterpart.id)
+                                val transferTx = TransactionEntry(
+                                    title = parsed.title,
+                                    amount = parsed.amount,
+                                    category = "TRANSFER",
+                                    type = "TRANSFER",
+                                    smsSender = sender,
+                                    smsBody = body,
+                                    timestamp = targetTime,
+                                    note = "$body [Acc: $fromAcc][To: $toAcc]"
+                                )
+                                dao.insertTransaction(transferTx)
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, "MyMoney: Transfer ₹${parsed.amount} ($fromAcc → $toAcc)", Toast.LENGTH_LONG).show()
+                                }
+                                return@launch
+                            }
+
                             dao.insertTransaction(transaction)
 
                             // Keep CC availableLimit in sync with live incoming transactions.

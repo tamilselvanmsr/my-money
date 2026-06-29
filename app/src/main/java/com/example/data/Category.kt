@@ -16,7 +16,7 @@ enum class ExpenseCategory(
     val type: String = "EXPENSE"
 ) {
     // Legacy / original categories
-    FOOD("Food & Dining", Icons.Default.Restaurant, Color(0xFFFF9800)),
+    FOOD("Food", Icons.Default.Restaurant, Color(0xFFFF9800)),
     SHOPPING("Shopping", Icons.Default.ShoppingBag, Color(0xFFE91E63)),
     TRANSPORT("Transport", Icons.Default.LocalTaxi, Color(0xFF03A9F4)),
     BILLS("Bills & Utilities", Icons.Default.ReceiptLong, Color(0xFF9C27B0)),
@@ -66,9 +66,9 @@ enum class ExpenseCategory(
     COINS("Coins", Icons.Default.Savings, Color(0xFFFBC02D), "INCOME"),
     UPI("UPI", Icons.Default.QrCode, Color(0xFF0EA5E9), "INCOME"),
     POCKET_MONEY_INC("Pocket Money (Received)", Icons.Default.Savings, Color(0xFF2E7D32), "INCOME"),
-    CC_SETTLEMENT("CC Settlement", Icons.Default.Payment, Color(0xFF00E676), "INCOME"),
+    CC_SETTLEMENT("CC Settlement", Icons.Default.Payment, Color(0xFF00BFA5), "INCOME"),
     ADJUST("Balance Adjust", Icons.Default.SwapVert, Color(0xFF00E5FF), "INCOME"),
-    PROVIDENT_FUND("Provident Fund", Icons.Default.AccountBalance, Color(0xFF1565C0), "INCOME");
+    PROVIDENT_FUND("Provident Fund", Icons.Default.AccountBalance, Color(0xFF4527A0), "INCOME");
 
     companion object {
         fun fromString(name: String): ExpenseCategory {

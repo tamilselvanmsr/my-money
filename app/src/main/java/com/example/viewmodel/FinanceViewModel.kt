@@ -31,6 +31,15 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
+/** Holds a parsed transaction before it is committed, so we can match transfer pairs first. */
+private data class PendingTxItem(
+    val tx: com.example.data.TransactionEntry,
+    val refNo: String?,
+    val walletName: String,
+    val parsedAvailableLimit: Double?,
+    val parsedAccountRef: String?
+)
+
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
     private val TAG = "FinanceViewModel"
     private val budgetAlertChannelId = "budget_alerts"
@@ -1067,6 +1076,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
                     // ── PASS 1: regular income/expense (creates accounts) ─────────────────
                     val deferredBalanceSms = mutableListOf<Triple<String, String, Long>>()
+                    val pendingPass1 = mutableListOf<PendingTxItem>()
+
                     for ((body, sender, smsDate) in allRawSms) {
                         val parsed = SmsParser.parseOffline(body, sender, smsDate)
                         if (parsed != null) {
@@ -1125,20 +1136,54 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     timestamp = targetTime,
                                     note = "$body [Acc: $walletName]"
                                 )
-                                repository.insertTransaction(tx)
-                                // Keep CC availableLimit in sync; if SMS also reports the exact limit, that overrides below
-                                adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
-                                projectedTransactions.add(tx)
-                                newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
-                                maybeNotifyBudgetAlert(tx, projectedTransactions)
-                                if (parsed.availableLimit != null && parsed.accountRef != null) {
-                                    val linkedAccount = repository.getAccountByLastFour(parsed.accountRef)
-                                    if (linkedAccount != null) {
-                                        repository.updateAccountAvailableLimit(linkedAccount.id, parsed.availableLimit)
-                                    }
-                                }
-                                matchedCount++
+                                pendingPass1.add(PendingTxItem(tx, incomingRef, walletName, parsed.availableLimit, parsed.accountRef))
                             }
+                        }
+                    }
+
+                    // ── PASS 1 post: detect UPI transfer pairs (same refNo, same amount, EXPENSE↔INCOME) ──
+                    val usedInPass1 = mutableSetOf<Int>()
+                    for (i in pendingPass1.indices) {
+                        if (i in usedInPass1) continue
+                        val item = pendingPass1[i]
+                        val matchIdx: Int? = if (item.refNo != null && item.tx.type in listOf("EXPENSE", "INCOME")) {
+                            pendingPass1.indices.firstOrNull { j ->
+                                j != i && j !in usedInPass1 &&
+                                pendingPass1[j].refNo == item.refNo &&
+                                pendingPass1[j].tx.amount == item.tx.amount &&
+                                pendingPass1[j].tx.type != item.tx.type &&
+                                pendingPass1[j].tx.type in listOf("EXPENSE", "INCOME")
+                            }
+                        } else null
+
+                        if (matchIdx != null) {
+                            usedInPass1 += i
+                            usedInPass1 += matchIdx
+                            val expItem = if (item.tx.type == "EXPENSE") item else pendingPass1[matchIdx]
+                            val incItem = if (item.tx.type == "INCOME") item else pendingPass1[matchIdx]
+                            val transferTx = expItem.tx.copy(
+                                category = "TRANSFER",
+                                type = "TRANSFER",
+                                note = "${expItem.tx.smsBody ?: ""} [Acc: ${expItem.walletName}][To: ${incItem.walletName}]"
+                            )
+                            repository.insertTransaction(transferTx)
+                            projectedTransactions.add(transferTx)
+                            newImportedFingerprints.add("${transferTx.title}|${transferTx.amount}|TRANSFER|${transferTx.timestamp}")
+                            matchedCount++
+                        } else {
+                            usedInPass1 += i
+                            repository.insertTransaction(item.tx)
+                            adjustCcAvailableLimit(item.tx.note, item.tx.amount, item.tx.type, reverse = false, txTimestamp = item.tx.timestamp)
+                            projectedTransactions.add(item.tx)
+                            newImportedFingerprints.add("${item.tx.title}|${item.tx.amount}|${item.tx.type}|${item.tx.timestamp}")
+                            maybeNotifyBudgetAlert(item.tx, projectedTransactions)
+                            if (item.parsedAvailableLimit != null && item.parsedAccountRef != null) {
+                                val linkedAccount = repository.getAccountByLastFour(item.parsedAccountRef)
+                                if (linkedAccount != null) {
+                                    repository.updateAccountAvailableLimit(linkedAccount.id, item.parsedAvailableLimit)
+                                }
+                            }
+                            matchedCount++
                         }
                     }
 

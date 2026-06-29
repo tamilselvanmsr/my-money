@@ -72,7 +72,9 @@ interface FinanceDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCustomCategory(category: CustomCategory)
 
-    @Query("SELECT * FROM custom_categories WHERE name = :name LIMIT 1")
+    // COLLATE NOCASE prevents duplicate rows when the same category name is looked up
+    // with different capitalisation (e.g. "GROCERIES" vs "Groceries").
+    @Query("SELECT * FROM custom_categories WHERE name = :name COLLATE NOCASE LIMIT 1")
     suspend fun getCustomCategoryByName(name: String): CustomCategory?
 
     @Query("UPDATE transactions SET category = :newCategory WHERE category = :oldCategory")

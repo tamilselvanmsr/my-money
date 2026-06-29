@@ -452,14 +452,17 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             if (newName.isBlank()) return@launch
             val trimmedNew = newName.trim()
+            // When the user hasn't changed the name (editCatName is pre-filled with displayName
+            // which may differ in case from the stored key, e.g. "Groceries" vs "GROCERIES"),
+            // keep the original stored key to prevent silent key drift in the DB.
+            val resolvedName = if (trimmedNew.equals(oldName, ignoreCase = true)) oldName else trimmedNew
             val iconNameWithType = "$iconName:$type"
-            val cat = CustomCategory(id = id, name = trimmedNew, iconName = iconNameWithType, colorHex = colorHex)
+            val cat = CustomCategory(id = id, name = resolvedName, iconName = iconNameWithType, colorHex = colorHex)
             repository.insertCustomCategory(cat)
-            
-            if (!oldName.equals(trimmedNew, ignoreCase = true)) {
-                repository.updateCategoryReferences(oldName, trimmedNew)
+            if (!resolvedName.equals(oldName, ignoreCase = true)) {
+                repository.updateCategoryReferences(oldName, resolvedName)
             }
-            _toastMessage.emit("Category '$trimmedNew' updated successfully!")
+            _toastMessage.emit("Category '$resolvedName' updated successfully!")
         }
     }
 

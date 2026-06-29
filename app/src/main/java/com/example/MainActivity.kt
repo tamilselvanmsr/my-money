@@ -446,7 +446,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Ver: 1.36",
+                                        "Ver: 1.37",
                                         fontSize = 11.sp,
                                         color = c.textSecondary,
                                         modifier = Modifier.fillMaxWidth()
@@ -4863,13 +4863,13 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
     }
     val merchantRules by viewModel.merchantCategoryRules.collectAsStateWithLifecycle()
     val customCatsForMerchant by viewModel.allCustomCategories.collectAsStateWithLifecycle()
+    // Build via CategoryResolver.getAll so custom overrides of standard categories appear only
+    // once (with the correct display name), not as both a standard entry AND a custom entry.
     val allMerchantCategoryOptions = remember(customCatsForMerchant) {
-        (com.example.data.ExpenseCategory.entries
-            .filter { it.type == "EXPENSE" && it.name != "OUTSIDE_FOOD" && it.name != "POCKET_MONEY" }
-            .map { it.name to it.displayName } +
-        customCatsForMerchant.filter { !it.iconName.startsWith("hidden") && !it.iconName.equals("hidden") && it.iconName.split(":").getOrNull(1) != "INCOME" }
-            .map { it.name to it.name })
-        .sortedBy { it.second }
+        CategoryResolver.getAll(customCatsForMerchant)
+            .filter { it.type == "EXPENSE" }
+            .map { it.name to it.displayName }
+            .sortedBy { it.second }
     }
     var merchantPatternInput by remember { mutableStateOf("") }
     var merchantCategoryInput by remember { mutableStateOf("") }

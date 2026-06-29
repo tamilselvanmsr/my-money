@@ -41,7 +41,8 @@ interface FinanceDao {
 
     @Query("SELECT * FROM transactions WHERE type = 'BALANCE_UPDATE' AND title = 'Balance Sync' AND note LIKE '%[Acc: ' || :accountName || ']%' AND ABS(timestamp - :timestamp) < 1000 LIMIT 1")
     suspend fun getExactBalanceUpdate(accountName: String, timestamp: Long): TransactionEntry?
-
+    @Query("SELECT COUNT(*) FROM transactions WHERE note LIKE '%[Acc: ' || :accountName || ']%'")
+    suspend fun countTransactionsForAccount(accountName: String): Int
     // Budgets
     @Query("SELECT * FROM budgets WHERE monthYear = :monthYear")
     fun getBudgetsForMonth(monthYear: String): Flow<List<BudgetEntry>>

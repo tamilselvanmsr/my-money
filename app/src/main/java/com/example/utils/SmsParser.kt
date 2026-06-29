@@ -511,9 +511,9 @@ object SmsParser {
                 else -> {
                     val lowerTitleText = titleText.lowercase()
                     when {
-                        // Tea & Soft Drinks — merchant name starts with tea/stall OR exact small amounts (Rs.12/15/20)
+                        // Tea & Soft Drinks — merchant name starts with tea/stall OR exact small amounts (Rs.10/12/15/20)
                         lowerTitleText.contains("tea") || lowerTitleText.contains("stall") ||
-                        (amount == 12.0 || amount == 15.0 || amount == 20.0) -> ExpenseCategory.SOFT_HOT_DRINKS
+                        (amount == 10.0 || amount == 12.0 || amount == 15.0 || amount == 20.0) -> ExpenseCategory.SOFT_HOT_DRINKS
 
                         lowerTitleText.contains("starbucks") || lowerTitleText.contains("mcdonald") || lowerTitleText.contains("swiggy") ||
                         lowerTitleText.contains("zomato") || lowerTitleText.contains("food") || lowerTitleText.contains("restaurant") ||
@@ -531,21 +531,23 @@ object SmsParser {
                         lowerTitleText.contains("footwear") || lowerTitleText.contains("bata") -> ExpenseCategory.SHOES
 
                         lowerTitleText.contains("clothes") || lowerTitleText.contains("fashion") || lowerTitleText.contains("clothing") ||
-                        lowerTitleText.contains("zara") || lowerTitleText.contains("hm") || lowerTitleText.contains("apparel") -> ExpenseCategory.CLOTHES
+                        lowerTitleText.contains("zara") || lowerTitleText.contains("readymade") || lowerTitleText.contains("apparel") ||
+                        lowerTitleText.contains("trends") || lowerTitleText.contains("zudio") || lowerTitleText.contains("Levi's") ||
+                        lowerTitleText.contains("raymond") -> ExpenseCategory.CLOTHES
 
-                        lowerTitleText.contains("amazon") || lowerTitleText.contains("flipkart") || lowerTitleText.contains("walmart") ||
-                        lowerTitleText.contains("gmart") ||
-                        lowerTitleText.contains("shopping") || lowerTitleText.contains("grocery") || lowerTitleText.contains("target") ||
-                        lowerTitleText.contains("store") || lowerBody.contains("supermarket") -> ExpenseCategory.SHOPPING
+                        lowerTitleText.contains("walmart") || lowerTitleText.contains("blikit") || lowerTitleText.contains("zepto") ||
+                        lowerTitleText.contains("mart") || lowerTitleText.contains("dmart") || lowerTitleText.contains("bigbasket") || 
+                        lowerTitleText.contains("grocery") || lowerTitleText.contains("departmental") ||
+                        lowerTitleText.contains("store") || lowerBody.contains("supermarket") -> ExpenseCategory.GROCERIES
 
                         lowerTitleText.contains("uber") || lowerTitleText.contains("lyft") || lowerTitleText.contains("ola") ||
-                        lowerTitleText.contains("rapido") ||
-                        lowerTitleText.contains("taxi") || lowerTitleText.contains("metro") || lowerBody.contains("transit") -> ExpenseCategory.TRANSPORT
+                        lowerTitleText.contains("rapido") || lowerTitleText.contains("taxi") || lowerTitleText.contains("cab") ||
+                        lowerTitleText.contains("metro") || lowerBody.contains("transit") -> ExpenseCategory.TRANSPORT
 
                         lowerTitleText.contains("electric") || lowerTitleText.contains("water") || lowerTitleText.contains("utility") ||
                         lowerTitleText.contains("bill") || lowerTitleText.contains("recharge") || lowerTitleText.contains("netflix") ||
                         lowerTitleText.contains("broadband") || lowerTitleText.contains("club") || lowerTitleText.contains("payments") ||
-                        lowerTitleText.contains("airtel") || lowerTitleText.contains("jio") ||
+                        lowerTitleText.contains("airtel") || lowerTitleText.contains("jio") || lowerBody.contains("insurance") ||
                         lowerBody.contains("insurance") || lowerBody.contains("mobile bill") -> ExpenseCategory.BILLS
 
                         lowerTitleText.contains("movie") || lowerTitleText.contains("cinema") || lowerTitleText.contains("steam") ||
@@ -560,24 +562,25 @@ object SmsParser {
                         lowerTitleText.contains("school") || lowerTitleText.contains("college") || lowerTitleText.contains("tuition") ||
                         lowerTitleText.contains("education") || lowerTitleText.contains("book") || lowerTitleText.contains("course") -> ExpenseCategory.EDUCATION
 
-                        lowerTitleText.contains("zerodha") || lowerTitleText.contains("groww") -> ExpenseCategory.INVESTMENT
+                        lowerTitleText.contains("zerodha") || lowerTitleText.contains("groww") || lowerTitleText.contains("INDMoney")  -> ExpenseCategory.INVESTMENT
 
-                        lowerTitleText.contains("iccl") -> ExpenseCategory.MUTUAL_FUND
+                        lowerTitleText.contains("mutual fund") || lowerTitleText.contains("mutualfund") -> ExpenseCategory.MUTUAL_FUND
 
-                        lowerTitleText.contains("techno") -> ExpenseCategory.ELECTRONICS
+                        lowerTitleText.contains("shopping") || lowerTitleText.contains("amazon") || lowerTitleText.contains("flipkart") ||
+                        lowerTitleText.contains("techno") || lowerTitleText.contains("croma") -> ExpenseCategory.ELECTRONICS
 
-                        lowerTitleText.contains("redbus") -> ExpenseCategory.TRAVEL
+                        lowerTitleText.contains("redbus") || lowerTitleText.contains("irctc") || lowerTitleText.contains("travel") -> ExpenseCategory.TRAVEL
 
                         lowerTitleText.contains("protein") || lowerTitleText.contains("powder") || lowerTitleText.contains("supplement") ||
-                        lowerTitleText.contains("whey") || lowerTitleText.contains("nutrition") -> ExpenseCategory.GYM
+                        lowerTitleText.contains("whey") || lowerTitleText.contains("nutrition") ||lowerTitleText.contains("gym") || lowerTitleText.contains("fitness") || lowerTitleText.contains("workout") -> ExpenseCategory.GYM
 
-                        lowerTitleText.contains("gym") || lowerTitleText.contains("fitness") || lowerTitleText.contains("workout") -> ExpenseCategory.GYM
-
-                        lowerTitleText.contains("fruit") || lowerTitleText.contains("fruit") || lowerTitleText.contains("market") ||
-                        lowerTitleText.contains("apple") || lowerTitleText.contains("banana") -> ExpenseCategory.FRUITS
+                        lowerTitleText.contains("fruit") || lowerTitleText.contains("market") ||
+                        lowerTitleText.contains("banana") -> ExpenseCategory.FRUITS
 
                         lowerTitleText.contains("bike") || lowerTitleText.contains("motorcycle") || lowerTitleText.contains("two wheeler") ||
-                        lowerTitleText.contains("royal enfield") || lowerTitleText.contains("RE bike") -> ExpenseCategory.BIKE
+                        lowerTitleText.contains("garage") || lowerTitleText.contains("automobile") || lowerTitleText.contains("mechanic") ||
+                        lowerTitleText.contains("royal enfield") || lowerTitleText.contains("RE bike") || 
+                        lowerTitleText.contains("water wash") -> ExpenseCategory.BIKE
 
                         lowerTitleText.contains("gift") || lowerTitleText.contains("gifting") || lowerTitleText.contains("friend") ||
                         lowerTitleText.contains("shagun") || lowerTitleText.contains("giftcard") -> ExpenseCategory.GIFTING_FRIENDS

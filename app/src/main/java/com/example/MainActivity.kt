@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -33,7 +34,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -446,7 +446,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Ver: 1.32",
+                                        "Ver: 1.35",
                                         fontSize = 11.sp,
                                         color = c.textSecondary,
                                         modifier = Modifier.fillMaxWidth()
@@ -599,6 +599,13 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     var searchFilter by remember { mutableStateOf("All") }
     var isSearchExpanded by remember { mutableStateOf(false) }
     var showDeleteOptionsSheet by remember { mutableStateOf(false) }
+
+    // Close search bar on back press instead of exiting the app
+    BackHandler(enabled = isSearchExpanded) {
+        isSearchExpanded = false
+        searchQuery = ""
+        searchFilter = "All"
+    }
     var deleteConfirmMode by remember { mutableStateOf("") }
     var selectedDeleteCategory by remember { mutableStateOf("") }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
@@ -708,7 +715,21 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilledTonalIconButton(
+                        onClick = {
+                            isSearchExpanded = !isSearchExpanded
+                            if (!isSearchExpanded) { searchQuery = ""; searchFilter = "All" }
+                        },
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent.copy(alpha = 0.18f) else c.divider,
+                            contentColor = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent else c.text
+                        ),
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = "Toggle search", modifier = Modifier.size(20.dp))
+                    }
+
                     Box {
                         FilledTonalIconButton(
                             onClick = { showFilterMenu = !showFilterMenu },
@@ -811,7 +832,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("Show Balance Figures", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
-                                        Text("When OFF, balances display as ₹ ••••", fontSize = 9.sp, color = c.textSecondary)
+                                        Text("Turn off to hide amounts for privacy", fontSize = 9.sp, color = c.textSecondary)
                                     }
                                     Switch(
                                         checked = showTotal,
@@ -829,28 +850,6 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             }
                         )
                         HorizontalDivider(color = c.divider, thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
-                        DropdownMenuItem(
-                            text = {
-                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Search,
-                                        contentDescription = "Search",
-                                        tint = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent else c.textSecondary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Text(
-                                        if (isSearchExpanded) "Close Search" else "Search Records",
-                                        fontSize = 13.sp,
-                                        color = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent else c.text
-                                    )
-                                }
-                            },
-                            onClick = {
-                                isSearchExpanded = !isSearchExpanded
-                                if (!isSearchExpanded) { searchQuery = ""; searchFilter = "All" }
-                                showFilterMenu = false
-                            }
-                        )
                         DropdownMenuItem(
                             text = {
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1664,6 +1663,19 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
     var selectedMode by remember { mutableStateOf(AnalyticsMode.EXPENSE_OVERVIEW) }
     var showModeMenu by remember { mutableStateOf(false) }
     var showPeriodMenu by remember { mutableStateOf(false) }
+
+    // Sync Analytics period with Records view so both tabs show the same window
+    val activeMode by viewModel.displayMode.collectAsStateWithLifecycle()
+    LaunchedEffect(activeMode) {
+        timeFilter = when (activeMode) {
+            DisplayMode.WEEKLY       -> "WEEKLY"
+            DisplayMode.MONTHLY      -> "MONTHLY"
+            DisplayMode.THREE_MONTHS -> "3M"
+            DisplayMode.SIX_MONTHS   -> "6M"
+            DisplayMode.ONE_YEAR     -> "1Y"
+            else                     -> "MONTHLY"
+        }
+    }
     val (analysisStart, analysisEnd) = getAnalyticsRange(rawMonthYear, timeFilter, anchorTime)
 
     val filteredTransactions = txs.filter { tx ->
@@ -2938,9 +2950,9 @@ val suitableIconsList = listOf(
     "online_shopping" to Icons.Default.Laptop,
     "maintenance" to Icons.Default.Build,
     "drinks" to Icons.Default.LocalBar,
-    "fruits" to Icons.Default.LocalFlorist,
+    "fruits" to Icons.Default.WaterDrop,
     "campfire" to Icons.Default.Fireplace,
-    "shoes" to Icons.Default.Style,
+    "shoes" to Icons.Default.DirectionsRun,
     "party" to Icons.Default.Celebration,
     "birthday" to Icons.Default.Cake,
     "vacation" to Icons.Default.BeachAccess,
@@ -4065,6 +4077,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
     val carryOverPreviousAmount by viewModel.carryOverPreviousAmount.collectAsStateWithLifecycle()
     val showTotal by viewModel.showTotal.collectAsStateWithLifecycle()
     val blockedSmsAccountIds by viewModel.blockedSmsAccountIds.collectAsStateWithLifecycle()
+    val blockedAccountNames by viewModel.blockedAccountNames.collectAsStateWithLifecycle()
     val showCreditCardDetails by viewModel.showCreditCardDetails.collectAsStateWithLifecycle()
     val hiddenAccountIds by viewModel.hiddenAccountIds.collectAsStateWithLifecycle()
     val smsBlocklistPatterns by viewModel.smsBlocklistPatterns.collectAsStateWithLifecycle()
@@ -4123,6 +4136,8 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                     hiddenAccountIds = hiddenAccountIds,
                     showCreditCardDetails = showCreditCardDetails,
                     smsBlocklistPatterns = smsBlocklistPatterns,
+                    blockedSmsAccountIds = blockedSmsAccountIds,
+                    blockedAccountNames = blockedAccountNames,
                     onDismiss = { showAccountCenterSettings = false }
                 )
             }
@@ -4599,6 +4614,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
         var editType by remember(acc) { mutableStateOf(acc.type) }
         var editCreditLimit by remember(acc) { mutableStateOf(if (acc.creditLimit > 0) acc.creditLimit.toString() else "") }
         var editShowCreditLimitBalance by remember(acc) { mutableStateOf(acc.showCreditLimitBalance) }
+        var blockOnDelete by remember(acc) { mutableStateOf(false) }
 
         val types = listOf("CASH", "BANK", "CREDIT_CARD", "WALLET")
 
@@ -4702,17 +4718,52 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                 }
             },
             confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        onClick = {
-                            viewModel.deleteAccount(acc.id)
-                            selectedAccountForEdit = null
-                        },
-                        colors = ButtonDefaults.textButtonColors(contentColor = c.expense)
+                Column {
+                    // Block toggle row shown before the action buttons
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { blockOnDelete = !blockOnDelete }
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Delete Wallet", fontWeight = FontWeight.Bold)
+                        Checkbox(
+                            checked = blockOnDelete,
+                            onCheckedChange = { blockOnDelete = it },
+                            modifier = Modifier.size(20.dp),
+                            colors = CheckboxDefaults.colors(checkedColor = c.accent)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Block future SMS imports for this account", fontSize = 11.sp, color = c.textSecondary)
                     }
-
+                    Spacer(Modifier.height(6.dp))
+                    // Row 1: Cancel + Delete (destructive)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { selectedAccountForEdit = null },
+                            modifier = Modifier.weight(1f),
+                            border = BorderStroke(1.dp, c.divider),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text)
+                        ) {
+                            Text("Cancel")
+                        }
+                        Button(
+                            onClick = {
+                                if (blockOnDelete) viewModel.setAccountSmsTrackingBlocked(acc, true)
+                                viewModel.deleteAccount(acc.id)
+                                selectedAccountForEdit = null
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = c.expense, contentColor = Color.White)
+                        ) {
+                            Text("Delete Account", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    // Row 2: Save Changes (primary action, full width)
                     Button(
                         onClick = {
                             val targetBal = editBalanceInput.toDoubleOrNull() ?: computedBal
@@ -4739,15 +4790,14 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                             }
                             selectedAccountForEdit = null
                         },
+                        modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
                     ) {
                         Text("Save Changes", fontWeight = FontWeight.Bold)
                     }
-                }
+                }   // end Column (confirmButton)
             },
-            dismissButton = {
-                TextButton(onClick = { selectedAccountForEdit = null }) { Text("Cancel", color = c.text) }
-            },
+            dismissButton = {},
             containerColor = c.surface
         )
     }
@@ -5091,7 +5141,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             value = customPatternInput,
                             onValueChange = { customPatternInput = it },
                             label = { Text("Add Custom Pattern") },
-                            placeholder = { Text("balance  |  (Avl bal)  |  !(salary)") },
+                            placeholder = { Text("balance | !(salary)") },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                             ),
@@ -5234,7 +5284,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     }
                     Text(
                         "Map payee/merchant names to categories. Supports wildcards:\n" +
-                        "  zerodha*  →  starts with\n" +
+                        "  gmart*    →  starts with\n" +
                         "  *paytm*   →  contains\n" +
                         "  *nova     →  ends with\n" +
                         "  (no *)    →  contains (same as *text*)\n" +
@@ -5246,7 +5296,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     OutlinedTextField(
                         value = merchantPatternInput,
                         onValueChange = { merchantPatternInput = it },
-                        label = { Text("Merchant Pattern (e.g. zerodha*, *paytm*)") },
+                        label = { Text("Merchant Pattern (e.g. *paytm*)") },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = c.text, unfocusedTextColor = c.text,
@@ -6988,6 +7038,8 @@ fun AccountCenterSettingsDialog(
     hiddenAccountIds: Set<String>,
     showCreditCardDetails: Boolean,
     smsBlocklistPatterns: Set<String>,
+    blockedSmsAccountIds: Set<String>,
+    blockedAccountNames: Set<String>,
     onDismiss: () -> Unit
 ) {
     val c = LocalAppColors.current
@@ -7106,6 +7158,29 @@ fun AccountCenterSettingsDialog(
                         Text(pattern, color = c.expense, fontSize = 12.sp, modifier = Modifier.weight(1f))
                         IconButton(onClick = { viewModel.removeSmsBlocklistPattern(pattern) }) {
                             Icon(Icons.Default.Close, contentDescription = "Remove", tint = c.expense)
+                        }
+                    }
+                }
+                // Accounts blocked via the Delete Account dialog (persist even after account deleted)
+                if (blockedAccountNames.isNotEmpty()) {
+                    item {
+                        Text("BLOCKED ACCOUNTS", fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                            color = c.textSecondary, letterSpacing = 1.sp,
+                            modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+                items(blockedAccountNames.toList()) { name ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(name, color = c.expense, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Blocked from SMS import", color = c.textSecondary, fontSize = 10.sp)
+                        }
+                        IconButton(onClick = { viewModel.unblockAccountByName(name) }) {
+                            Icon(Icons.Default.Close, contentDescription = "Unblock", tint = c.expense)
                         }
                     }
                 }

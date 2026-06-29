@@ -70,6 +70,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     val consolidateAccounts: StateFlow<Boolean> = _consolidateAccounts.asStateFlow()
     private val _blockedSmsAccountIds = MutableStateFlow(prefs.getStringSet("blocked_sms_account_ids", emptySet())?.toSet() ?: emptySet())
     val blockedSmsAccountIds: StateFlow<Set<String>> = _blockedSmsAccountIds.asStateFlow()
+    // Account NAMES stored separately so they survive after the account is deleted
+    private val _blockedAccountNames = MutableStateFlow(prefs.getStringSet("blocked_account_names", emptySet())?.toSet() ?: emptySet())
+    val blockedAccountNames: StateFlow<Set<String>> = _blockedAccountNames.asStateFlow()
+
+    fun setAccountSmsTrackingBlocked(account: Account, blocked: Boolean) {
+        val updatedIds   = _blockedSmsAccountIds.value.toMutableSet()
+        val updatedNames = _blockedAccountNames.value.toMutableSet()
+        if (blocked) { updatedIds.add(account.id); updatedNames.add(account.name) }
+        else         { updatedIds.remove(account.id); updatedNames.remove(account.name) }
+        _blockedSmsAccountIds.value = updatedIds
+        _blockedAccountNames.value  = updatedNames
+        prefs.edit()
+            .putStringSet("blocked_sms_account_ids", updatedIds)
+            .putStringSet("blocked_account_names", updatedNames)
+            .apply()
+    }
+
+    fun unblockAccountByName(name: String) {
+        val updated = _blockedAccountNames.value.toMutableSet().also { it.remove(name) }
+        _blockedAccountNames.value = updated
+        prefs.edit().putStringSet("blocked_account_names", updated).apply()
+    }
 
     fun setCarryOverPreviousAmount(value: Boolean) {
         _carryOverPreviousAmount.value = value
@@ -84,17 +106,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun setConsolidateAccounts(value: Boolean) {
         _consolidateAccounts.value = value
         prefs.edit().putBoolean("consolidate_accounts", value).apply()
-    }
-
-    fun setAccountSmsTrackingBlocked(account: Account, blocked: Boolean) {
-        val updated = _blockedSmsAccountIds.value.toMutableSet()
-        if (blocked) {
-            updated.add(account.id)
-        } else {
-            updated.remove(account.id)
-        }
-        _blockedSmsAccountIds.value = updated
-        prefs.edit().putStringSet("blocked_sms_account_ids", updated).apply()
     }
 
     // ── Credit card detail display ─────────────────────────────────────────────
@@ -909,6 +920,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.clearTransactions()
             repository.clearBudgets()
+            repository.clearAccounts()
+            seedDefaultAccountsIfNeeded()
             _toastMessage.emit("All data cleared successfully")
         }
     }
@@ -1186,6 +1199,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 } else {
                     _toastMessage.emit("Scan complete. No new transaction messages found.")
                 }
+                cleanupEmptyDefaultAccounts()
             } catch (e: Exception) {
                 Log.e(TAG, "SMS scan failed: ${e.message}", e)
                 _toastMessage.emit("SMS Scan failed. Ensure SMS read permission is granted.")
@@ -1597,9 +1611,20 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 } else {
                     _toastMessage.emit("Scan complete$rulesDesc. No new transactions matched.")
                 }
+                cleanupEmptyDefaultAccounts()
             } catch (e: Exception) {
                 Log.e(TAG, "Custom rule inbox scan failed: ${e.message}", e)
                 _toastMessage.emit("SMS scan failed. Ensure SMS read permission is granted.")
+            }
+        }
+    }
+
+    private suspend fun cleanupEmptyDefaultAccounts() {
+        val defaultNames = setOf("Cash Wallet", "Savings Account", "Credit Card", "Digital Wallet")
+        val accounts = repository.allAccounts.first().filter { it.name in defaultNames }
+        for (acc in accounts) {
+            if (repository.countTransactionsForAccount(acc.name) == 0) {
+                repository.deleteAccount(acc.id)
             }
         }
     }

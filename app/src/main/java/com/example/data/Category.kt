@@ -51,7 +51,7 @@ enum class ExpenseCategory(
     RENT("Rent", Icons.Default.Home, Color(0xFF7E57C2)),
     COOKING("Cooking", Icons.Default.Kitchen, Color(0xFFFF7043)),
     OUTSIDE_FOOD("Outside Food", Icons.Default.Fastfood, Color(0xFFFFB300)),
-    GROCERIES("Groceries", Icons.Default.ShoppingCart, Color(0xFF26C6DA)),
+    GROCERIES("Groceries", Icons.Default.ShoppingCart, Color(0xFF388E3C)),
     SOFT_HOT_DRINKS("Tea & Soft Drinks", Icons.Default.LocalCafe, Color(0xFF8D6E63)),
 
     // Newly requested Income categories

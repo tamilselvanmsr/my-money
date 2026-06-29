@@ -20,8 +20,10 @@ fun isDuplicateImportedTransaction(
     }
 
     val existingReference = SmsParser.getReferenceNumber(existing.smsBody)
-    if (incomingReference != null && existingReference != null) {
-        return incomingReference == existingReference
+    if (incomingReference != null && existingReference != null && incomingReference == existingReference) {
+        // Same ref no — only a duplicate if same transaction type.
+        // Opposite types (EXPENSE ↔ INCOME) with the same ref no are a UPI transfer pair, NOT duplicates.
+        return existing.type == incomingType
     }
 
     val sameCoreFields = existing.amount == incomingAmount &&

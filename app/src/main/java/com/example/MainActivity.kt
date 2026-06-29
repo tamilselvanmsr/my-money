@@ -446,7 +446,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Ver: 1.34",
+                                        "Ver: 1.36",
                                         fontSize = 11.sp,
                                         color = c.textSecondary,
                                         modifier = Modifier.fillMaxWidth()
@@ -3155,18 +3155,6 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         }
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilledTonalIconButton(
-                            onClick = { viewModel.copyBudgetsFromPreviousMonth() },
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = c.divider,
-                                contentColor = c.textSecondary
-                            ),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy budgets from last month", modifier = Modifier.size(18.dp))
-                        }
-
                     Button(
                         onClick = { showAddCategoryDialog = true },
                         colors = ButtonDefaults.buttonColors(
@@ -3181,7 +3169,6 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Add Category", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
-                    } // end Row (copy + add buttons)
                 }
             }
         }
@@ -3611,6 +3598,22 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                 Text(if (activeCategoryTypeTab == "INCOME") "Set Expected" else "Set Budget", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
+                    }
+                }
+
+                // "Copy from last month" — shown below unbudgeted list, only for EXPENSE tab
+                if (unbudgetedCats.isNotEmpty() && activeCategoryTypeTab == "EXPENSE") {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    OutlinedButton(
+                        onClick = { viewModel.copyBudgetsFromPreviousMonth() },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.textSecondary),
+                        border = BorderStroke(1.dp, c.border),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Copy budgets from last month", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     }
                 }
             }

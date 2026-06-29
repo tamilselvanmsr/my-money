@@ -538,7 +538,8 @@ object SmsParser {
                         lowerTitleText.contains("walmart") || lowerTitleText.contains("blikit") || lowerTitleText.contains("zepto") ||
                         lowerTitleText.contains("mart") || lowerTitleText.contains("dmart") || lowerTitleText.contains("bigbasket") || 
                         lowerTitleText.contains("grocery") || lowerTitleText.contains("departmental") ||
-                        lowerTitleText.contains("store") || lowerBody.contains("supermarket") -> ExpenseCategory.GROCERIES
+                        (lowerTitleText.contains("store") && !lowerTitleText.contains("playstore") && !lowerTitleText.contains("play store")) ||
+                        lowerBody.contains("supermarket") -> ExpenseCategory.GROCERIES
 
                         lowerTitleText.contains("uber") || lowerTitleText.contains("lyft") || lowerTitleText.contains("ola") ||
                         lowerTitleText.contains("rapido") || lowerTitleText.contains("taxi") || lowerTitleText.contains("cab") ||

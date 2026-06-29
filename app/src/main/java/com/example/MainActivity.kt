@@ -25,6 +25,9 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -110,6 +113,16 @@ fun TransactionEntry.getRawAccountName(): String {
     return "Cash Wallet"
 }
 
+fun TransactionEntry.getTransferDestName(): String? {
+    val noteStr = this.note ?: return null
+    if (noteStr.contains("[To: ")) {
+        val start = noteStr.indexOf("[To: ") + 5
+        val end = noteStr.indexOf("]", start)
+        if (end > start) return noteStr.substring(start, end)
+    }
+    return null
+}
+
 fun TransactionEntry.getAccountName(consolidate: Boolean = false): String {
     val rawName = getRawAccountName()
     if (!consolidate) return rawName
@@ -189,6 +202,26 @@ fun computeWalletBalances(
         val actualName = tx.getAccountName(consolidate = false)
         val snap = latestSnap[actualName]
         if (snap != null && tx.timestamp <= snap.first) continue  // pre-snapshot — already accounted for
+
+        if (tx.type == "TRANSFER") {
+            // Deduct from source, credit destination
+            val srcKey = tx.getAccountName(consolidate)
+            val destRaw = tx.getTransferDestName() ?: continue
+            val destKey = if (consolidate) {
+                val destAcc = accountsList.find { it.name == destRaw }
+                if (destAcc != null) when (destAcc.type) {
+                    "CASH" -> "Cash Wallet"
+                    "BANK" -> "Bank Account"
+                    "CREDIT_CARD" -> "Credit Card"
+                    "WALLET" -> "Digital Wallet"
+                    else -> "Bank Account"
+                } else destRaw
+            } else destRaw
+            balances[srcKey] = (balances[srcKey] ?: 0.0) - tx.amount
+            balances[destKey] = (balances[destKey] ?: 0.0) + tx.amount
+            continue
+        }
+
         val accountKey = tx.getAccountName(consolidate)
         val change = if (tx.type == "INCOME") tx.amount else -tx.amount
         balances[accountKey] = (balances[accountKey] ?: 0.0) + change
@@ -1199,7 +1232,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             color = c.textSecondary
                         )
                         
-                        val dateNet = txList.filter { it.type != "DUPLICATE" && it.type != "BALANCE_UPDATE" }.sumOf { if (it.type == "INCOME") it.amount else -it.amount }
+                        val dateNet = txList.filter { it.type != "DUPLICATE" && it.type != "BALANCE_UPDATE" && it.type != "TRANSFER" }.sumOf { if (it.type == "INCOME") it.amount else -it.amount }
                         Text(
                             text = (if (dateNet >= 0) "+" else "") + decFormat.format(dateNet),
                             fontSize = 11.sp,
@@ -1215,8 +1248,18 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             val resolvedCat = CategoryResolver.resolve(tx.category, customCats)
                             val isAdjust = tx.category.equals("ADJUST", ignoreCase = true)
                             val isBalanceSync = tx.type == "BALANCE_UPDATE"
-                            val catColor = if (isBalanceSync) c.textTertiary else resolvedCat.color
-                            val catIcon  = if (isBalanceSync) Icons.Default.Autorenew else resolvedCat.icon
+                            val isTransfer = tx.type == "TRANSFER"
+                            val transferColor = Color(0xFF3B82F6)
+                            val catColor = when {
+                                isBalanceSync -> c.textTertiary
+                                isTransfer -> transferColor
+                                else -> resolvedCat.color
+                            }
+                            val catIcon  = when {
+                                isBalanceSync -> Icons.Default.Autorenew
+                                isTransfer -> Icons.Default.SwapHoriz
+                                else -> resolvedCat.icon
+                            }
                             val acctIcon = walletIconFor(tx.getAccountName(), null)
                             val acctType = accounts.find { it.name == tx.getAccountName() }?.type ?: ""
                             val acctColor = when (acctType) {
@@ -1286,7 +1329,10 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                                     modifier = Modifier.size(9.dp)
                                                 )
                                                 Text(
-                                                    text = tx.getAccountName(),
+                                                    text = if (isTransfer) {
+                                                        val dest = tx.getTransferDestName()
+                                                        if (dest != null) "${tx.getAccountName()} → $dest" else tx.getAccountName()
+                                                    } else tx.getAccountName(),
                                                     fontSize = 9.sp,
                                                     fontWeight = FontWeight.SemiBold,
                                                     color = acctColor,
@@ -1304,6 +1350,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                         text = when (tx.type) {
                                             "INCOME" -> "+" + decFormat.format(tx.amount)
                                             "DUPLICATE" -> "DUP"
+                                            "TRANSFER" -> "⇄ " + decFormat.format(tx.amount)
                                             "BALANCE_UPDATE" -> {
                                                 val a = tx.amount
                                                 when {
@@ -1319,6 +1366,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                         color = when (tx.type) {
                                             "INCOME" -> c.income
                                             "DUPLICATE" -> c.textTertiary
+                                            "TRANSFER" -> Color(0xFF3B82F6)
                                             "BALANCE_UPDATE" -> c.textTertiary
                                             else -> c.expense
                                         }
@@ -1579,8 +1627,8 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                 viewModel = viewModel,
                 onDismiss = { selectedTxForEdit = null },
                 onDelete = { showDeleteConfirm = true },
-                onConfirm = { updated ->
-                    viewModel.updateTransaction(updated)
+                onConfirm = { updated, applyToAll ->
+                    viewModel.updateTransaction(updated, applyToAll)
                     selectedTxForEdit = null
                 }
             )
@@ -2845,7 +2893,6 @@ val suitableIconsList = listOf(
     "rewards" to Icons.Default.MilitaryTech,
     "coins" to Icons.Default.Savings,
     "upi" to Icons.Default.QrCode,
-    "handshake" to Icons.Default.Handshake,
     "localgasstation" to Icons.Default.LocalGasStation,
     "checkroom" to Icons.Default.Checkroom,
     "payments" to Icons.Default.Payments,
@@ -2853,21 +2900,56 @@ val suitableIconsList = listOf(
     "twowheeler" to Icons.Default.TwoWheeler,
     "bolt" to Icons.Default.Bolt,
     "creditcard" to Icons.Default.CreditCard,
+    // Additional icons
+    "coffee" to Icons.Default.LocalCafe,
+    "flight" to Icons.Default.Flight,
+    "home" to Icons.Default.Home,
+    "kitchen" to Icons.Default.Kitchen,
+    "outside_food" to Icons.Default.Fastfood,
+    "groceries" to Icons.Default.ShoppingCart,
+    "cashback" to Icons.Default.Redeem,
+    "investment" to Icons.Default.TrendingUp,
+    "mutual_fund" to Icons.Default.AccountBalance,
+    "etf" to Icons.Default.BarChart,
+    "adjust" to Icons.Default.SwapVert,
+    "hotel" to Icons.Default.Hotel,
+    "movie" to Icons.Default.Movie,
+    "music" to Icons.Default.MusicNote,
+    "gift" to Icons.Default.Redeem,
+    "children" to Icons.Default.ChildCare,
+    "pet" to Icons.Default.Pets,
+    "pharmacy" to Icons.Default.LocalPharmacy,
+    "work" to Icons.Default.Work,
     "others" to Icons.Default.Category
 )
 
 val categoryColorsList = listOf(
-    "#FF9800" to Color(0xFFFF9800),
-    "#E91E63" to Color(0xFFE91E63),
-    "#0288D1" to Color(0xFF0288D1),
-    "#9C27B0" to Color(0xFF9C27B0),
-    "#FF5722" to Color(0xFFFF5722),
-    "#4CAF50" to Color(0xFF4CAF50),
-    "#009688" to Color(0xFF009688),
-    "#EC407A" to Color(0xFFEC407A),
-    "#00BCD4" to Color(0xFF00BCD4),
-    "#795548" to Color(0xFF795548),
-    "#607D8B" to Color(0xFF607D8B)
+    "#FF9800" to Color(0xFFFF9800),  // Orange
+    "#E91E63" to Color(0xFFE91E63),  // Pink
+    "#0288D1" to Color(0xFF0288D1),  // Light Blue
+    "#9C27B0" to Color(0xFF9C27B0),  // Purple
+    "#FF5722" to Color(0xFFFF5722),  // Deep Orange
+    "#4CAF50" to Color(0xFF4CAF50),  // Green
+    "#009688" to Color(0xFF009688),  // Teal
+    "#EC407A" to Color(0xFFEC407A),  // Pink Light
+    "#00BCD4" to Color(0xFF00BCD4),  // Cyan
+    "#795548" to Color(0xFF795548),  // Brown
+    "#607D8B" to Color(0xFF607D8B),  // Blue Grey
+    "#F44336" to Color(0xFFF44336),  // Red
+    "#673AB7" to Color(0xFF673AB7),  // Deep Purple
+    "#3F51B5" to Color(0xFF3F51B5),  // Indigo
+    "#2196F3" to Color(0xFF2196F3),  // Blue
+    "#00C853" to Color(0xFF00C853),  // Green Accent
+    "#FFD600" to Color(0xFFFFD600),  // Yellow
+    "#FF6D00" to Color(0xFFFF6D00),  // Deep Orange Accent
+    "#00BFA5" to Color(0xFF00BFA5),  // Teal Accent
+    "#AA00FF" to Color(0xFFAA00FF),  // Purple Accent
+    "#2979FF" to Color(0xFF2979FF),  // Blue Accent
+    "#D81B60" to Color(0xFFD81B60),  // Pink Dark
+    "#43A047" to Color(0xFF43A047),  // Green Medium
+    "#FB8C00" to Color(0xFFFB8C00),  // Orange Medium
+    "#8D6E63" to Color(0xFF8D6E63),  // Brown Light
+    "#26C6DA" to Color(0xFF26C6DA),  // Cyan Light
 )
 
 // 3. BUDGETS SCREEN
@@ -3463,9 +3545,11 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                     )
 
                     Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxWidth()
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(52.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
                     ) {
                         items(suitableIconsList) { (iconName, iconVec) ->
                             val isSelected = selectedIconName == iconName
@@ -3474,7 +3558,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                 color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
                                 border = BorderStroke(2.dp, if (isSelected) selectedColor else Color.Transparent),
                                 modifier = Modifier
-                                    .size(44.dp)
+                                    .size(52.dp)
                                     .clickable { selectedIconName = iconName }
                                     .testTag("edit_icon_$iconName")
                             ) {
@@ -3483,7 +3567,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                         imageVector = iconVec,
                                         contentDescription = iconName,
                                         tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(26.dp)
                                     )
                                 }
                             }
@@ -3749,9 +3833,11 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                     }
 
                     Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxWidth()
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(52.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
                     ) {
                         items(suitableIconsList) { (iconName, iconVec) ->
                             val isSelected = selectedIconName == iconName
@@ -3760,7 +3846,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                 color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
                                 border = BorderStroke(2.dp, if (isSelected) selectedColor else Color.Transparent),
                                 modifier = Modifier
-                                    .size(44.dp)
+                                    .size(52.dp)
                                     .clickable { selectedIconName = iconName }
                                     .testTag("add_icon_$iconName")
                             ) {
@@ -3769,7 +3855,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                         imageVector = iconVec,
                                         contentDescription = iconName,
                                         tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(26.dp)
                                     )
                                 }
                             }
@@ -4186,7 +4272,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
             title = { Text("Transfer Funds", fontWeight = FontWeight.Bold, color = c.text) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("Record a virtual transfer of liquidity. Note: This creates a synchronized offsetting expense & income transaction.", fontSize = 11.sp, color = c.textSecondary)
+                    Text("Move funds between your accounts. Creates a single Transfer entry.", fontSize = 11.sp, color = c.textSecondary)
                     
                     OutlinedTextField(
                         value = trAmount,
@@ -4261,21 +4347,13 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                     onClick = {
                         val dVal = trAmount.toDoubleOrNull() ?: 0.0
                         if (dVal > 0.0 && sourceWall != destWall) {
-                            // Deduct from Source
+                            // Single TRANSFER entry with [Acc: SOURCE][To: DEST] note
                             viewModel.addTransaction(
-                                title = "Transfer to $destWall",
+                                title = "Transfer",
                                 amount = dVal,
-                                categoryName = "OTHERS",
-                                type = "EXPENSE",
-                                note = "[Acc: $sourceWall]"
-                            )
-                            // Credit to Dest
-                            viewModel.addTransaction(
-                                title = "Transfer from $sourceWall",
-                                amount = dVal,
-                                categoryName = "OTHERS",
-                                type = "INCOME",
-                                note = "[Acc: $destWall]"
+                                categoryName = "TRANSFER",
+                                type = "TRANSFER",
+                                note = "[Acc: $sourceWall][To: $destWall]"
                             )
                         }
                         showTransferDialog = false
@@ -5466,11 +5544,11 @@ fun EditTransactionDialog(
     viewModel: FinanceViewModel,
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
-    onConfirm: (TransactionEntry) -> Unit
+    onConfirm: (TransactionEntry, Boolean) -> Unit
 ) {
     val c = LocalAppColors.current
     var title by remember { mutableStateOf(tx.title) }
-    var amountStr by remember { mutableStateOf(tx.amount.toInt().toString()) }
+    var amountStr by remember { mutableStateOf(if (tx.amount == kotlin.math.floor(tx.amount)) tx.amount.toLong().toString() else tx.amount.toString()) }
     var editType by remember { mutableStateOf(tx.type) }
     var categorySelection by remember {
         mutableStateOf(if (tx.category.equals("INCOME", ignoreCase = true)) "SALARY" else tx.category)
@@ -5482,6 +5560,7 @@ fun EditTransactionDialog(
     var showCategoryPicker by remember { mutableStateOf(false) }
     var showQuickAddAccount by remember { mutableStateOf(false) }
     var showQuickAddCategory by remember { mutableStateOf(false) }
+    var applyToAllPayees by remember { mutableStateOf(false) }
 
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
     val allCategories = CategoryResolver.getAll(customCats)
@@ -5614,6 +5693,31 @@ fun EditTransactionDialog(
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // Apply-to-all-payees toggle (opt-in, only when category is not OTHERS)
+                if (!isBalanceUpdate && title.isNotBlank() && !categorySelection.equals("OTHERS", ignoreCase = true)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(c.textTertiary.copy(alpha = 0.06f))
+                            .border(1.dp, c.divider, RoundedCornerShape(8.dp))
+                            .clickable { applyToAllPayees = !applyToAllPayees }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Apply category to all '$title' transactions", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = c.text)
+                            Text("Re-categorizes every transaction with this merchant name", fontSize = 10.sp, color = c.textSecondary)
+                        }
+                        Switch(
+                            checked = applyToAllPayees,
+                            onCheckedChange = { applyToAllPayees = it },
+                            colors = SwitchDefaults.colors(checkedThumbColor = c.accent, checkedTrackColor = c.accent.copy(alpha = 0.4f))
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
@@ -5637,7 +5741,8 @@ fun EditTransactionDialog(
                                     type = editType,
                                     timestamp = selectedTimestamp,
                                     note = makeNoteWithAccount(notesStr, accountSelection)
-                                )
+                                ),
+                                applyToAllPayees
                             )
                         }
                     },
@@ -6105,7 +6210,12 @@ private fun QuickAddCategoryDialog(
                 }
 
                 Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(52.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
+                ) {
                     items(suitableIconsList) { (iconName, iconVec) ->
                         val isSelected = selectedIconName == iconName
                         Surface(
@@ -6113,7 +6223,7 @@ private fun QuickAddCategoryDialog(
                             color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
                             border = BorderStroke(2.dp, if (isSelected) selectedColor else Color.Transparent),
                             modifier = Modifier
-                                .size(44.dp)
+                                .size(52.dp)
                                 .clickable { selectedIconName = iconName }
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -6121,7 +6231,7 @@ private fun QuickAddCategoryDialog(
                                     imageVector = iconVec,
                                     contentDescription = iconName,
                                     tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(26.dp)
                                 )
                             }
                         }

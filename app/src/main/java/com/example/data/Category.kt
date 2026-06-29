@@ -176,9 +176,11 @@ object CategoryResolver {
             } catch (e: Exception) {
                 Color(0xFF6750A4)
             }
+            // If this custom entry overrides a standard category, keep the standard's display name
+            val standardMatch = ExpenseCategory.entries.firstOrNull { it.name.equals(custom.name, ignoreCase = true) }
             return DisplayCategory(
                 name = custom.name,
-                displayName = custom.name,
+                displayName = standardMatch?.displayName ?: custom.name,
                 icon = icon,
                 color = parsedColor,
                 isCustom = true,
@@ -246,10 +248,12 @@ object CategoryResolver {
                 // Remove override first
                 list.removeAll { it.name.equals(custom.name, ignoreCase = true) }
                 
+                // If this custom entry overrides a standard category, keep the standard's display name
+                val standardMatch = ExpenseCategory.entries.firstOrNull { it.name.equals(custom.name, ignoreCase = true) }
                 list.add(
                     DisplayCategory(
                         name = custom.name,
-                        displayName = custom.name,
+                        displayName = standardMatch?.displayName ?: custom.name,
                         icon = icon,
                         color = parsedColor,
                         isCustom = true,

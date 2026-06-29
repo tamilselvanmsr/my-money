@@ -858,15 +858,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun updateTransaction(tx: TransactionEntry) {
+    fun updateTransaction(tx: TransactionEntry, applyToSameMerchant: Boolean = false) {
         viewModelScope.launch {
             // Reverse old CC limit effect, then apply new one after update
             val oldTx = allTransactions.value.find { it.id == tx.id }
             if (oldTx != null) adjustCcAvailableLimit(oldTx.note, oldTx.amount, oldTx.type, reverse = true, txTimestamp = oldTx.timestamp)
             repository.updateTransaction(tx)
             adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
-            // Auto-categorize all transactions with the same payee title
-            if (tx.category.isNotBlank() && tx.title.isNotBlank()) {
+            // Auto-categorize all transactions with the same payee title (only when user opts in)
+            if (applyToSameMerchant && tx.category.isNotBlank() && tx.title.isNotBlank()) {
                 repository.recategorizeByTitle(tx.title, tx.category, tx.id)
             }
             maybeNotifyBudgetAlert(tx, allTransactions.value.map { if (it.id == tx.id) tx else it })

@@ -420,7 +420,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             if (name.isBlank()) return@launch
             val trimmed = name.trim()
             val iconNameWithType = "$iconName:$type"
-            val cat = CustomCategory(name = trimmed, iconName = iconNameWithType, colorHex = colorHex)
+            // Reuse existing ID to avoid duplicate rows
+            val existing = repository.getCustomCategoryByName(trimmed)
+            val cat = CustomCategory(id = existing?.id ?: 0, name = trimmed, iconName = iconNameWithType, colorHex = colorHex)
             repository.insertCustomCategory(cat)
             _toastMessage.emit("Category '$trimmed' added successfully!")
         }
@@ -457,20 +459,23 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val isRename = !oldName.equals(trimmedNew, ignoreCase = true) && !standardDisplayName.equals(trimmedNew, ignoreCase = true)
             
             if (isRename) {
-                // 1. Hide the old standard category
-                val hideCat = CustomCategory(name = oldName, iconName = "hidden:$type", colorHex = "#000000")
+                // 1. Hide the old standard category — reuse existing ID to avoid duplicates
+                val existingOld = repository.getCustomCategoryByName(oldName)
+                val hideCat = CustomCategory(id = existingOld?.id ?: 0, name = oldName, iconName = "hidden:$type", colorHex = "#000000")
                 repository.insertCustomCategory(hideCat)
                 
-                // 2. Add the new custom category with the new name
-                val newCat = CustomCategory(name = trimmedNew, iconName = iconNameWithType, colorHex = colorHex)
+                // 2. Add the new custom category — reuse existing ID if name already exists
+                val existingNew = repository.getCustomCategoryByName(trimmedNew)
+                val newCat = CustomCategory(id = existingNew?.id ?: 0, name = trimmedNew, iconName = iconNameWithType, colorHex = colorHex)
                 repository.insertCustomCategory(newCat)
                 
                 // 3. Update all existing transaction category references
                 repository.updateCategoryReferences(oldName, trimmedNew)
                 _toastMessage.emit("Category renamed to '$trimmedNew' and updated.")
             } else {
-                // Just overriding the icon/color for the standard category name
-                val overrideCat = CustomCategory(name = oldName, iconName = iconNameWithType, colorHex = colorHex)
+                // Just overriding the icon/color — reuse existing ID to avoid duplicate rows
+                val existingCustom = repository.getCustomCategoryByName(oldName)
+                val overrideCat = CustomCategory(id = existingCustom?.id ?: 0, name = oldName, iconName = iconNameWithType, colorHex = colorHex)
                 repository.insertCustomCategory(overrideCat)
                 _toastMessage.emit("Category '$standardDisplayName' icon/color updated.")
             }
@@ -479,7 +484,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun hideStandardCategory(name: String, type: String) {
         viewModelScope.launch {
-            val hideCat = CustomCategory(name = name, iconName = "hidden:$type", colorHex = "#000000")
+            // Reuse existing ID to avoid duplicate hidden entries
+            val existing = repository.getCustomCategoryByName(name)
+            val hideCat = CustomCategory(id = existing?.id ?: 0, name = name, iconName = "hidden:$type", colorHex = "#000000")
             repository.insertCustomCategory(hideCat)
             _toastMessage.emit("Category '$name' removed.")
         }

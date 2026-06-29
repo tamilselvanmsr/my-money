@@ -71,6 +71,9 @@ interface FinanceDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCustomCategory(category: CustomCategory)
 
+    @Query("SELECT * FROM custom_categories WHERE name = :name LIMIT 1")
+    suspend fun getCustomCategoryByName(name: String): CustomCategory?
+
     @Query("UPDATE transactions SET category = :newCategory WHERE category = :oldCategory")
     suspend fun updateTransactionCategory(oldCategory: String, newCategory: String)
 

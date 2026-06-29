@@ -71,6 +71,9 @@ class FinanceRepository(private val financeDao: FinanceDao) {
         financeDao.insertCustomCategory(category)
     }
 
+    suspend fun getCustomCategoryByName(name: String): CustomCategory? =
+        financeDao.getCustomCategoryByName(name)
+
     suspend fun updateCategoryReferences(oldCategory: String, newCategory: String) {
         financeDao.updateTransactionCategory(oldCategory, newCategory)
         financeDao.updateBudgetCategory(oldCategory, newCategory)

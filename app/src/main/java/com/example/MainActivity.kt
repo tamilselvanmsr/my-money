@@ -446,14 +446,15 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Ver: 1.30",
+                                        "Ver: 1.32",
                                         fontSize = 11.sp,
                                         color = c.textSecondary,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 },
                                 onClick = {},
-                                enabled = false
+                                enabled = false,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                             )
                         }
                     }
@@ -708,37 +709,16 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalIconButton(
-                        onClick = {
-                            isSearchExpanded = !isSearchExpanded
-                            if (!isSearchExpanded) { searchQuery = ""; searchFilter = "All" }
-                        },
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent.copy(alpha = 0.18f) else c.divider,
-                            contentColor = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent else c.text
-                        ),
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Default.Search, contentDescription = "Toggle search")
-                    }
-
-                    FilledTonalIconButton(
-                        onClick = { showDeleteOptionsSheet = true },
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = c.expense.copy(alpha = 0.18f),
-                            contentColor = c.expense
-                        ),
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Default.DeleteSweep, contentDescription = "Delete options")
-                    }
-
                     Box {
-                        IconButton(
+                        FilledTonalIconButton(
                             onClick = { showFilterMenu = !showFilterMenu },
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent.copy(alpha = 0.18f) else c.divider,
+                                contentColor = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent else c.text
+                            ),
                             modifier = Modifier.size(40.dp).testTag("three_bar_filter_button")
                         ) {
-                            Icon(Icons.Default.Menu, contentDescription = "Options and Filtering", tint = c.accent, modifier = Modifier.size(24.dp))
+                            Icon(Icons.Default.Menu, contentDescription = "Options and Filtering", modifier = Modifier.size(22.dp))
                         }
 
                         DropdownMenu(
@@ -846,6 +826,41 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             },
                             onClick = {
                                 viewModel.setShowTotal(!showTotal)
+                            }
+                        )
+                        HorizontalDivider(color = c.divider, thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
+                        DropdownMenuItem(
+                            text = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "Search",
+                                        tint = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent else c.textSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        if (isSearchExpanded) "Close Search" else "Search Records",
+                                        fontSize = 13.sp,
+                                        color = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent else c.text
+                                    )
+                                }
+                            },
+                            onClick = {
+                                isSearchExpanded = !isSearchExpanded
+                                if (!isSearchExpanded) { searchQuery = ""; searchFilter = "All" }
+                                showFilterMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.DeleteSweep, contentDescription = "Delete", tint = c.expense, modifier = Modifier.size(18.dp))
+                                    Text("Delete Records", fontSize = 13.sp, color = c.expense)
+                                }
+                            },
+                            onClick = {
+                                showDeleteOptionsSheet = true
+                                showFilterMenu = false
                             }
                         )
                     }
@@ -2900,7 +2915,6 @@ val suitableIconsList = listOf(
     "twowheeler" to Icons.Default.TwoWheeler,
     "bolt" to Icons.Default.Bolt,
     "creditcard" to Icons.Default.CreditCard,
-    // Additional icons
     "coffee" to Icons.Default.LocalCafe,
     "flight" to Icons.Default.Flight,
     "home" to Icons.Default.Home,
@@ -2915,13 +2929,92 @@ val suitableIconsList = listOf(
     "hotel" to Icons.Default.Hotel,
     "movie" to Icons.Default.Movie,
     "music" to Icons.Default.MusicNote,
-    "gift" to Icons.Default.Redeem,
+    "gift" to Icons.Default.CardGiftcard,
     "children" to Icons.Default.ChildCare,
     "pet" to Icons.Default.Pets,
     "pharmacy" to Icons.Default.LocalPharmacy,
     "work" to Icons.Default.Work,
+    // New icons
+    "online_shopping" to Icons.Default.Laptop,
+    "maintenance" to Icons.Default.Build,
+    "drinks" to Icons.Default.LocalBar,
+    "fruits" to Icons.Default.LocalFlorist,
+    "campfire" to Icons.Default.Fireplace,
+    "shoes" to Icons.Default.Style,
+    "party" to Icons.Default.Celebration,
+    "birthday" to Icons.Default.Cake,
+    "vacation" to Icons.Default.BeachAccess,
+    "beauty" to Icons.Default.Spa,
+    "cab" to Icons.Default.LocalTaxi,
     "others" to Icons.Default.Category
 )
+
+fun iconLabel(key: String): String = when (key) {
+    "restaurant" -> "Dining"
+    "shopping" -> "Shopping"
+    "car" -> "Car"
+    "bills" -> "Bills"
+    "recharge" -> "Recharge"
+    "gym" -> "Gym"
+    "sport" -> "Sport"
+    "electronics" -> "Tech"
+    "insurance" -> "Insurance"
+    "social" -> "Social"
+    "tax" -> "Tax"
+    "transportation" -> "Transit"
+    "education" -> "Education"
+    "healthcare" -> "Health"
+    "entertainment" -> "Fun"
+    "awards" -> "Awards"
+    "coupons" -> "Coupons"
+    "grants" -> "Grants"
+    "refunds" -> "Refunds"
+    "rental" -> "Rental"
+    "salary" -> "Salary"
+    "sale" -> "Sale"
+    "rewards" -> "Rewards"
+    "coins" -> "Savings"
+    "upi" -> "UPI"
+    "localgasstation" -> "Fuel"
+    "checkroom" -> "Clothing"
+    "payments" -> "Payment"
+    "eco" -> "Eco"
+    "twowheeler" -> "Bike"
+    "bolt" -> "Electric"
+    "creditcard" -> "Card"
+    "coffee" -> "Café"
+    "flight" -> "Flight"
+    "home" -> "Home"
+    "kitchen" -> "Kitchen"
+    "outside_food" -> "Takeout"
+    "groceries" -> "Grocery"
+    "cashback" -> "Cashback"
+    "investment" -> "Invest"
+    "mutual_fund" -> "Funds"
+    "etf" -> "ETF"
+    "adjust" -> "Adjust"
+    "hotel" -> "Hotel"
+    "movie" -> "Movie"
+    "music" -> "Music"
+    "gift" -> "Gift"
+    "children" -> "Kids"
+    "pet" -> "Pet"
+    "pharmacy" -> "Pharmacy"
+    "work" -> "Work"
+    "online_shopping" -> "Online"
+    "maintenance" -> "Repair"
+    "drinks" -> "Drinks"
+    "fruits" -> "Fruits"
+    "campfire" -> "Camp"
+    "shoes" -> "Shoes"
+    "party" -> "Party"
+    "birthday" -> "Birthday"
+    "vacation" -> "Vacation"
+    "beauty" -> "Beauty"
+    "cab" -> "Cab"
+    "others" -> "Others"
+    else -> key.split("_").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }.take(9)
+}
 
 val categoryColorsList = listOf(
     "#FF9800" to Color(0xFFFF9800),  // Orange
@@ -3546,30 +3639,47 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
 
                     Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(52.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
+                        columns = GridCells.Adaptive(58.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
                     ) {
                         items(suitableIconsList) { (iconName, iconVec) ->
                             val isSelected = selectedIconName == iconName
-                            Surface(
-                                shape = CircleShape,
-                                color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
-                                border = BorderStroke(2.dp, if (isSelected) selectedColor else Color.Transparent),
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
-                                    .size(52.dp)
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
                                     .clickable { selectedIconName = iconName }
+                                    .padding(vertical = 4.dp)
                                     .testTag("edit_icon_$iconName")
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = iconVec,
-                                        contentDescription = iconName,
-                                        tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
-                                        modifier = Modifier.size(26.dp)
-                                    )
+                                Surface(
+                                    shape = CircleShape,
+                                    color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
+                                    border = BorderStroke(if (isSelected) 2.dp else 0.dp, if (isSelected) selectedColor else Color.Transparent),
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = iconVec,
+                                            contentDescription = iconName,
+                                            tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
                                 }
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    text = iconLabel(iconName),
+                                    fontSize = 7.sp,
+                                    color = if (isSelected) selectedColor else c.textTertiary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
                         }
                     }
@@ -3834,30 +3944,47 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
 
                     Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(52.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
+                        columns = GridCells.Adaptive(58.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
                     ) {
                         items(suitableIconsList) { (iconName, iconVec) ->
                             val isSelected = selectedIconName == iconName
-                            Surface(
-                                shape = CircleShape,
-                                color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
-                                border = BorderStroke(2.dp, if (isSelected) selectedColor else Color.Transparent),
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
-                                    .size(52.dp)
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
                                     .clickable { selectedIconName = iconName }
+                                    .padding(vertical = 4.dp)
                                     .testTag("add_icon_$iconName")
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = iconVec,
-                                        contentDescription = iconName,
-                                        tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
-                                        modifier = Modifier.size(26.dp)
-                                    )
+                                Surface(
+                                    shape = CircleShape,
+                                    color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
+                                    border = BorderStroke(if (isSelected) 2.dp else 0.dp, if (isSelected) selectedColor else Color.Transparent),
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = iconVec,
+                                            contentDescription = iconName,
+                                            tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
                                 }
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    text = iconLabel(iconName),
+                                    fontSize = 7.sp,
+                                    color = if (isSelected) selectedColor else c.textTertiary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
                         }
                     }
@@ -6211,29 +6338,46 @@ private fun QuickAddCategoryDialog(
 
                 Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(52.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
+                    columns = GridCells.Adaptive(58.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
                 ) {
                     items(suitableIconsList) { (iconName, iconVec) ->
                         val isSelected = selectedIconName == iconName
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
-                            border = BorderStroke(2.dp, if (isSelected) selectedColor else Color.Transparent),
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
-                                .size(52.dp)
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
                                 .clickable { selectedIconName = iconName }
+                                .padding(vertical = 4.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = iconVec,
-                                    contentDescription = iconName,
-                                    tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(26.dp)
-                                )
+                            Surface(
+                                shape = CircleShape,
+                                color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
+                                border = BorderStroke(if (isSelected) 2.dp else 0.dp, if (isSelected) selectedColor else Color.Transparent),
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = iconVec,
+                                        contentDescription = iconName,
+                                        tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
                             }
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = iconLabel(iconName),
+                                fontSize = 7.sp,
+                                color = if (isSelected) selectedColor else c.textTertiary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
@@ -6997,57 +7141,16 @@ fun AccountCenterSettingsDialog(
 }
 
 fun getAnalyticsRange(monthYear: String, filter: String, anchorTimeMs: Long = -1L): Pair<Long, Long> {
-    val baseCalendar = Calendar.getInstance().apply {
-        try {
-            time = SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(monthYear) ?: Date()
-        } catch (_: Exception) {
-            time = Date()
-        }
-        set(Calendar.DAY_OF_MONTH, 1)
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
+    val anchor = if (anchorTimeMs > 0) anchorTimeMs else System.currentTimeMillis()
+    // Use the same period logic as Records view so both tabs show identical date ranges
+    return when (filter) {
+        "WEEKLY"  -> getPeriodRange(DisplayMode.WEEKLY, anchor)
+        "MONTHLY" -> getPeriodRange(DisplayMode.MONTHLY, anchor)
+        "3M"      -> getPeriodRange(DisplayMode.THREE_MONTHS, anchor)
+        "6M"      -> getPeriodRange(DisplayMode.SIX_MONTHS, anchor)
+        "1Y"      -> getPeriodRange(DisplayMode.ONE_YEAR, anchor)
+        else      -> getPeriodRange(DisplayMode.MONTHLY, anchor)
     }
-
-    val periodEnd = (baseCalendar.clone() as Calendar).apply {
-        set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
-        set(Calendar.HOUR_OF_DAY, 23)
-        set(Calendar.MINUTE, 59)
-        set(Calendar.SECOND, 59)
-        set(Calendar.MILLISECOND, 999)
-    }
-
-    if (filter == "WEEKLY") {
-        val endCal = if (anchorTimeMs > 0) {
-            Calendar.getInstance().apply {
-                timeInMillis = anchorTimeMs
-                set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59)
-                set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999)
-            }
-        } else periodEnd
-        val start = (endCal.clone() as Calendar).apply {
-            add(Calendar.DAY_OF_MONTH, -6)
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-        return start to endCal.timeInMillis
-    }
-
-    val start = (baseCalendar.clone() as Calendar).apply {
-        when (filter) {
-            "3M" -> add(Calendar.MONTH, -2)
-            "6M" -> add(Calendar.MONTH, -5)
-            "1Y" -> add(Calendar.MONTH, -11)
-        }
-        if (filter == "3M" || filter == "6M" || filter == "1Y") {
-            set(Calendar.DAY_OF_MONTH, 1)
-        }
-    }.timeInMillis
-
-    val end = periodEnd.timeInMillis
-
-    return start to end
 }
 
 fun shiftMonthYear(monthYear: String, amount: Int): String {

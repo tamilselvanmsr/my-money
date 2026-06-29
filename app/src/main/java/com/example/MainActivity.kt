@@ -446,7 +446,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Ver: 1.35",
+                                        "Ver: 1.34",
                                         fontSize = 11.sp,
                                         color = c.textSecondary,
                                         modifier = Modifier.fillMaxWidth()
@@ -3156,6 +3156,18 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         }
                     }
 
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilledTonalIconButton(
+                            onClick = { viewModel.copyBudgetsFromPreviousMonth() },
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = c.divider,
+                                contentColor = c.textSecondary
+                            ),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy budgets from last month", modifier = Modifier.size(18.dp))
+                        }
+
                     Button(
                         onClick = { showAddCategoryDialog = true },
                         colors = ButtonDefaults.buttonColors(
@@ -3170,6 +3182,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Add Category", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
+                    } // end Row (copy + add buttons)
                 }
             }
         }
@@ -7252,11 +7265,11 @@ fun budgetProgressColor(percent: Double, appColors: com.example.ui.theme.AppColo
 }
 
 fun resolveBudgetCategoryName(category: DisplayCategory, editedName: String): String {
-    val trimmedName = editedName.trim()
-    if (category.isCustom) {
-        return trimmedName
-    }
-    return if (trimmedName.equals(category.displayName, ignoreCase = true)) category.name else trimmedName
+    // Always use category.name as the budget key.
+    // For standard categories (even if icon/color customised), name is the enum value (e.g. "FOOD").
+    // For user-renamed categories, name is the renamed value.
+    // This ensures saveBudget and the activeBudgets lookup both use the same key.
+    return category.name
 }
 
 fun shiftAnalyticsPeriod(viewModel: FinanceViewModel, monthYear: String, timeFilter: String, amount: Int, anchorTimeMs: Long = -1L) {

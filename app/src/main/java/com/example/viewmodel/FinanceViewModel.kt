@@ -951,6 +951,34 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Copies all budgets from the previous month into the current month.
+     *  Skips categories that already have a budget for the current month. */
+    fun copyBudgetsFromPreviousMonth() {
+        viewModelScope.launch {
+            val currentMonth = _selectedMonthYear.value
+            val sdf = java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.getDefault())
+            val cal = java.util.Calendar.getInstance().apply {
+                try { time = sdf.parse(currentMonth) ?: java.util.Date() } catch (_: Exception) { time = java.util.Date() }
+                add(java.util.Calendar.MONTH, -1)
+            }
+            val prevMonth = sdf.format(cal.time)
+            val prevBudgets = repository.getAllBudgetsOnce().filter { it.monthYear == prevMonth }
+            val currentBudgets = monthlyBudgets.value
+            val currentCategories = currentBudgets.map { it.category.lowercase() }.toSet()
+            var copied = 0
+            for (prev in prevBudgets) {
+                if (!currentCategories.contains(prev.category.lowercase())) {
+                    repository.insertBudget(
+                        BudgetEntry(id = 0, category = prev.category, amountLimit = prev.amountLimit, monthYear = currentMonth)
+                    )
+                    copied++
+                }
+            }
+            if (copied > 0) _toastMessage.emit("Copied $copied budget(s) from $prevMonth")
+            else _toastMessage.emit("No new budgets to copy from $prevMonth")
+        }
+    }
+
     // Export to CSV
     fun getExcelData(): ByteArray {
         return ExcelExporter.exportToExcelBytes(allTransactions.value, allCustomCategories.value)
@@ -1814,7 +1842,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 sb.appendLine("## TRANSACTIONS")
                 sb.appendLine("Date,Title,Amount,Category,Type,Account")
                 for (tx in allTransactions.value) {
-                    if (tx.type == "BALANCE_UPDATE") continue // skip internal Balance Sync rows
                     val date = dateFormat.format(Date(tx.timestamp))
                     val title = tx.title.replace(",", ";").replace("\"", "")
                     val accountName = tx.getAccountName().replace(",", ";")
@@ -1834,7 +1861,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 context.contentResolver.openOutputStream(uri)?.use { stream ->
                     stream.write(sb.toString().toByteArray(Charsets.UTF_8))
                 }
-                val txCount = allTransactions.value.count { it.type != "BALANCE_UPDATE" }
+                val txCount = allTransactions.value.size
                 val budgetCount = budgets.size
                 _toastMessage.emit("Backup saved — ${allAccounts.value.size} accounts, $txCount transactions, $budgetCount budgets.")
             } catch (e: Exception) {

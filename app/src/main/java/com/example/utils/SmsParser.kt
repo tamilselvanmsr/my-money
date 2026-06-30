@@ -612,7 +612,17 @@ object SmsParser {
             accountRef = last4Digits, // We return just the 4 digits to associate with Account database
             sender = extractedSender,
             receiver = extractedReceiver,
-            parsedTimestamp = parsedTime
+            parsedTimestamp = parsedTime,
+            // For income SMS that also report the post-transaction balance (e.g. "Avl bal INR 30,210.12"),
+            // extract that balance so the ViewModel can create a Balance Sync snapshot alongside the income.
+            availableBalance = if (type == "INCOME") {
+                val avlPat = Pattern.compile(
+                    "(?:avl|avail\\.?|available)\\s+bal(?:ance)?\\s+(?:inr|rs\\.?|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)",
+                    Pattern.CASE_INSENSITIVE
+                )
+                val avlMatcher = avlPat.matcher(cleanBody)
+                if (avlMatcher.find()) avlMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
+            } else null
         )
     }
 

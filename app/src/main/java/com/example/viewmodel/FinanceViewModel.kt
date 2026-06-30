@@ -37,7 +37,8 @@ private data class PendingTxItem(
     val refNo: String?,
     val walletName: String,
     val parsedAvailableLimit: Double?,
-    val parsedAccountRef: String?
+    val parsedAccountRef: String?,
+    val parsedAvailableBalance: Double? = null
 )
 
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
@@ -1147,7 +1148,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     timestamp = targetTime,
                                     note = "$body [Acc: $walletName]"
                                 )
-                                pendingPass1.add(PendingTxItem(tx, incomingRef, walletName, parsed.availableLimit, parsed.accountRef))
+                                pendingPass1.add(PendingTxItem(tx, incomingRef, walletName, parsed.availableLimit, parsed.accountRef, parsed.availableBalance))
                             }
                         }
                     }
@@ -1231,6 +1232,19 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 val linkedAccount = repository.getAccountByLastFour(item.parsedAccountRef)
                                 if (linkedAccount != null) {
                                     repository.updateAccountAvailableLimit(linkedAccount.id, item.parsedAvailableLimit)
+                                }
+                            }
+                            // If the income SMS also reported an available balance (e.g. "Avl bal INR 30,210.12"),
+                            // create a Balance Sync snapshot so the balance is not lost.
+                            if (item.tx.type == "INCOME" && item.parsedAvailableBalance != null && item.parsedAccountRef != null) {
+                                val incomeAcct = repository.getAccountByLastFour(item.parsedAccountRef)
+                                if (incomeAcct != null && incomeAcct.type != "CREDIT_CARD") {
+                                    createBalanceAdjustIfNeeded(
+                                        incomeAcct, item.parsedAvailableBalance,
+                                        item.tx.timestamp + 1L,
+                                        item.tx.smsBody ?: "", item.tx.smsSender ?: "",
+                                        projectedTransactions
+                                    )
                                 }
                             }
                             matchedCount++

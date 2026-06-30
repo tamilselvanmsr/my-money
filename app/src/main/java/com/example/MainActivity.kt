@@ -1398,43 +1398,32 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     // For transfers: chip extends full width + time sits at end of chip row.
                                     // For other types: chip sits alone in the subtitle row.
                                     if (isTransfer) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
+                                        Surface(
+                                            color = acctColor.copy(alpha = 0.10f),
+                                            shape = RoundedCornerShape(20.dp),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Surface(
-                                                color = acctColor.copy(alpha = 0.10f),
-                                                shape = RoundedCornerShape(20.dp),
-                                                modifier = Modifier.weight(1f)
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                                             ) {
-                                                Row(
-                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = acctIcon,
-                                                        contentDescription = null,
-                                                        tint = acctColor,
-                                                        modifier = Modifier.size(9.dp)
-                                                    )
-                                                    val dest = tx.getTransferDestName()
-                                                    Text(
-                                                        text = if (dest != null) "${tx.getAccountName()} → $dest" else tx.getAccountName(),
-                                                        fontSize = 9.sp,
-                                                        fontWeight = FontWeight.SemiBold,
-                                                        color = acctColor,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
+                                                Icon(
+                                                    imageVector = acctIcon,
+                                                    contentDescription = null,
+                                                    tint = acctColor,
+                                                    modifier = Modifier.size(9.dp)
+                                                )
+                                                val dest = tx.getTransferDestName()
+                                                Text(
+                                                    text = if (dest != null) "${tx.getAccountName()} → $dest" else tx.getAccountName(),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = acctColor,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
                                             }
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
-                                                fontSize = 10.sp,
-                                                color = c.textTertiary
-                                            )
                                         }
                                     } else {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1506,15 +1495,12 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                             )
                                         }
                                     }
-                                    // For transfers the time is shown inside the chip row (see above)
-                                    if (!isTransfer) {
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
-                                            fontSize = 10.sp,
-                                            color = c.textTertiary
-                                        )
-                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
+                                        fontSize = 10.sp,
+                                        color = c.textTertiary
+                                    )
                                     if (isNewlyImported) {
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Surface(
@@ -5851,7 +5837,19 @@ fun EditTransactionDialog(
         mutableStateOf(if (tx.category.equals("INCOME", ignoreCase = true)) "SALARY" else tx.category)
     }
     var accountSelection by remember { mutableStateOf(tx.getAccountName()) }
-    var notesStr by remember { mutableStateOf((tx.note ?: "").replace("\\s*\\[Acc:[^]]*]".toRegex(), "").trim()) }
+    var notesStr by remember {
+        val rawNote = (tx.note ?: "").replace("\\s*\\[Acc:[^]]*]".toRegex(), "").trim()
+        // For TRANSFER entries show [To: ...] on the first line, then the SMS body below
+        val displayNote = if (tx.type == "TRANSFER") {
+            val toMatch = Regex("\\[To:[^]]+]").find(rawNote)
+            if (toMatch != null) {
+                val toTag = toMatch.value.trim()
+                val rest = rawNote.removeRange(toMatch.range).trim()
+                if (rest.isEmpty()) toTag else "$toTag\n$rest"
+            } else rawNote
+        } else rawNote
+        mutableStateOf(displayNote)
+    }
     var selectedTimestamp by remember { mutableStateOf(tx.timestamp) }
     var showWalletPicker by remember { mutableStateOf(false) }
     var showCategoryPicker by remember { mutableStateOf(false) }
@@ -5923,16 +5921,15 @@ fun EditTransactionDialog(
                                 ) {
                                     Text(
                                         text = when (t) {
-                                            "BALANCE_UPDATE" -> "BAL\nUPDATE"
+                                            "BALANCE_UPDATE" -> "Bal Sync"
                                             "DUPLICATE"      -> "DUPL."
                                             "TRANSFER"       -> "XFER"
                                             else             -> t
                                         },
-                                        fontSize = 8.sp,
+                                        fontSize = 9.sp,
                                         color = if (sel) c.accent else c.textSecondary,
                                         fontWeight = FontWeight.Bold,
-                                        textAlign = TextAlign.Center,
-                                        lineHeight = 10.sp
+                                        textAlign = TextAlign.Center
                                     )
                                 }
                             }

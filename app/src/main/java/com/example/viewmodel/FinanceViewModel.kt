@@ -133,6 +133,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         prefs.edit().putBoolean("enable_balance_sync", v).apply()
     }
 
+    // ── Running balance overlay on transaction records ─────────────────────────
+    private val _showRunningBalance = MutableStateFlow(prefs.getBoolean("show_running_balance", false))
+    val showRunningBalance: StateFlow<Boolean> = _showRunningBalance.asStateFlow()
+    fun setShowRunningBalance(v: Boolean) {
+        _showRunningBalance.value = v
+        prefs.edit().putBoolean("show_running_balance", v).apply()
+    }
+
     // ── Recently imported fingerprints (from custom-pattern scan) — session-only highlight ─────
     // Fingerprint format: "title|amount|type|timestamp". Cleared on new scan. Never persisted.
     private val _recentlyImportedFingerprints = MutableStateFlow<Set<String>>(emptySet())

@@ -446,7 +446,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Ver: 1.38",
+                                        "Ver: 1.39",
                                         fontSize = 11.sp,
                                         color = c.textSecondary,
                                         modifier = Modifier.fillMaxWidth()
@@ -590,6 +590,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     val consolidateAccounts by viewModel.consolidateAccounts.collectAsStateWithLifecycle()
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
     val recentlyImportedFingerprints by viewModel.recentlyImportedFingerprints.collectAsStateWithLifecycle()
+    val showRunningBalance by viewModel.showRunningBalance.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val decFormat = DecimalFormat("₹#,##0.00")
     
@@ -623,7 +624,48 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     } else {
         computeWalletBalances(periodTransactions, accounts, carryOverPreviousAmount = false, consolidate = consolidateAccounts)
     }
-    
+
+    // Running balance per transaction — walks the full transaction history in chronological order
+    // and records the account balance (or total across all accounts) at each tx's point in time.
+    // Only computed when the toggle is on to avoid unnecessary work.
+    val runningBalances: Map<Int, Double> = remember(txs, accounts, selectedWallet, carryOverPreviousAmount, consolidateAccounts, showRunningBalance) {
+        if (!showRunningBalance) {
+            emptyMap()
+        } else {
+            val result = mutableMapOf<Int, Double>()
+            val balMap = mutableMapOf<String, Double>()
+            for (acc in accounts) {
+                balMap[acc.name] = if (carryOverPreviousAmount) acc.balance else 0.0
+            }
+            for (tx in txs.sortedBy { it.timestamp }) {
+                val accName = tx.getAccountName(false)
+                when (tx.type) {
+                    "BALANCE_UPDATE" -> balMap[accName] = tx.amount
+                    "DUPLICATE"      -> { /* skip — no real money movement */ }
+                    "TRANSFER" -> {
+                        balMap[accName] = (balMap[accName] ?: 0.0) - tx.amount
+                        val dest = tx.getTransferDestName()
+                        if (dest != null) balMap[dest] = (balMap[dest] ?: 0.0) + tx.amount
+                    }
+                    else -> {
+                        val delta = if (tx.type == "INCOME") tx.amount else -tx.amount
+                        balMap[accName] = (balMap[accName] ?: 0.0) + delta
+                    }
+                }
+                // Only record for txs matching the current wallet filter
+                val txAccDisplay = tx.getAccountName(consolidateAccounts)
+                if (selectedWallet != "All" && txAccDisplay != selectedWallet) continue
+                val displayBal = if (selectedWallet == "All") {
+                    accounts.sumOf { acc -> balMap[acc.name] ?: 0.0 }
+                } else {
+                    balMap[tx.getAccountName(false)] ?: 0.0
+                }
+                result[tx.id] = displayBal
+            }
+            result
+        }
+    }
+
     // Filter Transactions by selected period AND selected wallet
     val monthTransactions = periodTransactions.filter { tx ->
         selectedWallet == "All" || tx.getAccountName(consolidateAccounts) == selectedWallet
@@ -820,6 +862,33 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             },
                             onClick = {
                                 viewModel.setCarryOverPreviousAmount(!carryOverPreviousAmount)
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Running Balance", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
+                                        Text("Show balance after each transaction", fontSize = 9.sp, color = c.textSecondary)
+                                    }
+                                    Switch(
+                                        checked = showRunningBalance,
+                                        onCheckedChange = { viewModel.setShowRunningBalance(it) },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = c.bg,
+                                            checkedTrackColor = c.accent
+                                        ),
+                                        modifier = Modifier.scale(0.8f)
+                                    )
+                                }
+                            },
+                            onClick = {
+                                viewModel.setShowRunningBalance(!showRunningBalance)
                             }
                         )
                         
@@ -1432,6 +1501,25 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                             fontSize = 10.sp,
                                             color = c.textTertiary
                                         )
+                                    }
+                                    // Running balance: small tinted figure below time, hidden by default
+                                    if (showRunningBalance) {
+                                        val runBal = runningBalances[tx.id]
+                                        if (runBal != null && tx.type != "DUPLICATE") {
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Surface(
+                                                color = (if (runBal >= 0) c.income else c.expense).copy(alpha = 0.12f),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = decFormat.format(runBal),
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = if (runBal >= 0) c.income else c.expense,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
                                     }
                                     if (isNewlyImported) {
                                         Spacer(modifier = Modifier.height(2.dp))
@@ -4416,18 +4504,19 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                 }
 
                                 Column(horizontalAlignment = Alignment.End) {
-                                    // bal already = (CC statement snapshot) + post-sync transactions, so:
-                                    //   creditLimit + bal  = real-time available limit (when creditLimit is known)
+                                    // When Limit-Based Balance is ON, use (availableLimit - creditLimit):
+                                    //   negative = outstanding debt (show red)
+                                    //   zero/positive = fully paid / cashback (show green)
+                                    // Otherwise use the transaction-based running balance.
                                     val useLimitBalance = acc.type == "CREDIT_CARD"
                                         && acc.showCreditLimitBalance
                                         && acc.creditLimit > 0
-                                    val primaryBal = bal
+                                    val primaryBal = if (useLimitBalance) acc.availableLimit - acc.creditLimit else bal
                                     Text(
                                         decFormat.format(primaryBal),
                                         fontWeight = FontWeight.ExtraBold,
                                         fontSize = 16.sp,
-                                        color = if (useLimitBalance) c.expense
-                                                else if (primaryBal >= 0) c.income else c.expense
+                                        color = if (primaryBal >= 0) c.income else c.expense
                                     )
                                     // acc.availableLimit is the single source of truth:
                                     // set directly from every CC Payment or CC Summary SMS,

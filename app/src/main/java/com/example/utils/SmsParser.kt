@@ -84,6 +84,23 @@ object SmsParser {
             return null
         }
 
+        // 2a-2. Outbound NEFT/IMPS/RTGS beneficiary acknowledgement.
+        //   Sent by the SENDER's bank to confirm delivery to the beneficiary account.
+        //   The user's debit was already recorded via the separate debit-notification SMS;
+        //   parsing this as a new INCOME (beneficiary account) would create a wrong account
+        //   and a phantom credit. Reject it before any further processing.
+        val isBeneficiaryAck =
+            (lowerBody.contains("credited to beneficiary") ||
+             lowerBody.contains("creditied to beneficiary") ||
+             lowerBody.contains("credit to beneficiary") ||
+             lowerBody.contains("to beneficiary ac") ||
+             lowerBody.contains("to beneficiary a/c")) &&
+            (lowerBody.contains("neft") || lowerBody.contains("imps") || lowerBody.contains("rtgs"))
+        if (isBeneficiaryAck) {
+            Log.d(TAG, "Excluded: Outbound NEFT/IMPS/RTGS beneficiary acknowledgement SMS.")
+            return null
+        }
+
         // 2b-pre. CC Summary SMS — contains "amount due" so must be routed before isBillDue.
         // e.g. "HDFC BANK Credit Card Summary ending with *1234: Total Credit Limit: Rs. 2,36,000.
         //       Available Credit Limit: Rs. 1,90,533.07. Total Outstanding Balance: Rs.45,466.93"

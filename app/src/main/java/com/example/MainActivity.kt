@@ -446,7 +446,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Ver: 1.39",
+                                        "Ver: 1.40",
                                         fontSize = 11.sp,
                                         color = c.textSecondary,
                                         modifier = Modifier.fillMaxWidth()
@@ -1493,6 +1493,19 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                             else -> c.expense
                                         }
                                     )
+                                    // Running balance: plain gray figure above timestamp, hidden by default
+                                    if (showRunningBalance) {
+                                        val runBal = runningBalances[tx.id]
+                                        if (runBal != null && tx.type != "DUPLICATE") {
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = decFormat.format(runBal),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = c.textTertiary
+                                            )
+                                        }
+                                    }
                                     // For transfers the time is shown inside the chip row (see above)
                                     if (!isTransfer) {
                                         Spacer(modifier = Modifier.height(2.dp))
@@ -1501,25 +1514,6 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                             fontSize = 10.sp,
                                             color = c.textTertiary
                                         )
-                                    }
-                                    // Running balance: small tinted figure below time, hidden by default
-                                    if (showRunningBalance) {
-                                        val runBal = runningBalances[tx.id]
-                                        if (runBal != null && tx.type != "DUPLICATE") {
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Surface(
-                                                color = (if (runBal >= 0) c.income else c.expense).copy(alpha = 0.12f),
-                                                shape = RoundedCornerShape(4.dp)
-                                            ) {
-                                                Text(
-                                                    text = decFormat.format(runBal),
-                                                    fontSize = 8.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = if (runBal >= 0) c.income else c.expense,
-                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                )
-                                            }
-                                        }
                                     }
                                     if (isNewlyImported) {
                                         Spacer(modifier = Modifier.height(2.dp))

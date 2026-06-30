@@ -887,7 +887,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val tx = TransactionEntry(
                 title = "Balance Adjustment",
                 amount = targetBalance,
-                category = "ADJUST",
+                category = "",
                 type = "BALANCE_UPDATE",
                 note = "Snapshot \u20b9${String.format("%.2f", targetBalance)} [Acc: $accountName]",
                 timestamp = System.currentTimeMillis()
@@ -1482,7 +1482,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val tx = TransactionEntry(
             title = "Balance Sync",
             amount = reportedBalance,
-            category = "ADJUST",
+            category = "",
             type = "BALANCE_UPDATE",
             smsSender = sender,
             smsBody = smsBody,

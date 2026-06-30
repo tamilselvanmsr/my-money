@@ -61,12 +61,9 @@ enum class ExpenseCategory(
     COOKING("Cooking",                 Icons.Default.Kitchen,         Color(0xFFFF7043)),
     GROCERIES("Groceries",             Icons.Default.ShoppingCart,    Color(0xFF388E3C)),
     SOFT_HOT_DRINKS("Tea & Soft Drinks", Icons.Default.LocalCafe,     Color(0xFF8D6E63)),
-    /** Kept for DB backward-compat; hidden from pickers via [CategoryResolver.BUILTIN_HIDDEN]. */
-    OUTSIDE_FOOD("Outside Food",       Icons.Default.Fastfood,        Color(0xFFFFB300)),
 
     // ── Income ───────────────────────────────────────────────────────────────
     SALARY("Salary",                   Icons.Default.AttachMoney,     Color(0xFF2E7D32), "INCOME"),
-    CC_SETTLEMENT("CC Settlement",     Icons.Default.Payment,         Color(0xFF00BFA5), "INCOME"),
     PROVIDENT_FUND("Provident Fund",   Icons.Default.AccountBalance,  Color(0xFF4527A0), "INCOME"),
     CASHBACK("Cashback",               Icons.Default.Redeem,          Color(0xFF14B8A6), "INCOME"),
     COUPONS("Coupons",                 Icons.Default.CardGiftcard,    Color(0xFFFF4081), "INCOME"),
@@ -77,9 +74,7 @@ enum class ExpenseCategory(
     REWARDS("Rewards",                 Icons.Default.MilitaryTech,    Color(0xFF76FF03), "INCOME"),
     COINS("Coins",                     Icons.Default.Savings,         Color(0xFFFBC02D), "INCOME"),
     UPI("UPI",                         Icons.Default.QrCode,          Color(0xFF0EA5E9), "INCOME"),
-    ADJUST("Balance Adjust",           Icons.Default.SwapVert,        Color(0xFF00E5FF), "INCOME"),
-    /** Kept for DB backward-compat; hidden from pickers via [CategoryResolver.BUILTIN_HIDDEN]. */
-    POCKET_MONEY_INC("Pocket Money (Received)", Icons.Default.Savings, Color(0xFF2E7D32), "INCOME");
+    INCOME_OTHERS("Other Income",       Icons.Default.Category,        Color(0xFF607D8B), "INCOME");
 
     companion object {
         /**
@@ -130,7 +125,7 @@ object CategoryResolver {
      * Category names that are kept in the enum only for DB backward-compatibility.
      * They are never shown in any picker or list.
      */
-    val BUILTIN_HIDDEN = setOf("outside_food", "pocket_money_inc", "adjust", "cc_settlement")
+    val BUILTIN_HIDDEN = setOf<String>()
 
     // ── Icon name → vector mapping ────────────────────────────────────────────
     //
@@ -211,7 +206,6 @@ object CategoryResolver {
             "pocket_money"      -> Icons.Default.Payments
             "savings"           -> Icons.Default.Savings
             "coins"             -> Icons.Default.Savings
-            "pocket_money_inc"  -> Icons.Default.Savings
             "trendindup"        -> Icons.Default.TrendingUp
             "investment"        -> Icons.Default.TrendingUp
             "accountbalance"    -> Icons.Default.AccountBalance
@@ -220,9 +214,7 @@ object CategoryResolver {
             "barchart"          -> Icons.Default.BarChart
             "etf"               -> Icons.Default.BarChart
             "payment"           -> Icons.Default.Payment
-            "cc_settlement"     -> Icons.Default.Payment
             "swapvert"          -> Icons.Default.SwapVert
-            "adjust"            -> Icons.Default.SwapVert
 
             // Rewards / cashback
             "redeem"            -> Icons.Default.Redeem
@@ -244,6 +236,7 @@ object CategoryResolver {
             "work"              -> Icons.Default.Work
             "qrcode"            -> Icons.Default.QrCode
             "upi"               -> Icons.Default.QrCode
+            "income_others"     -> Icons.Default.Category
 
             // Entertainment / lifestyle
             "localplay"         -> Icons.Default.LocalPlay
@@ -300,16 +293,6 @@ object CategoryResolver {
      * categories (e.g. "GROCERIES"), even when the custom override stored a different casing.
      */
     fun resolve(name: String, customList: List<CustomCategory>): DisplayCategory {
-        // Legacy entries stored as bare "INCOME" before per-category typing was introduced
-        if (name.equals("INCOME", ignoreCase = true)) {
-            return DisplayCategory(
-                name = ExpenseCategory.SALARY.name,
-                displayName = ExpenseCategory.SALARY.displayName,
-                icon = ExpenseCategory.SALARY.icon,
-                color = ExpenseCategory.SALARY.color,
-                type = ExpenseCategory.SALARY.type
-            )
-        }
 
         // Look for a visible (non-hidden) custom entry whose name matches
         val custom = customList.firstOrNull {

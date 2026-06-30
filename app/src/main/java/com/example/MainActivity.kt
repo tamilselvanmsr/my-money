@@ -54,6 +54,8 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -204,9 +206,11 @@ fun computeWalletBalances(
         if (snap != null && tx.timestamp <= snap.first) continue  // pre-snapshot — already accounted for
 
         if (tx.type == "TRANSFER") {
-            // Deduct from source, credit destination
-            val srcKey = tx.getAccountName(consolidate)
-            val destRaw = tx.getTransferDestName() ?: continue
+            // Deduct from source, credit destination — but only when the transfer falls
+            // AFTER that account's own snapshot (checked independently for each side).
+            val srcActual = tx.getAccountName(consolidate = false)
+            val srcKey    = tx.getAccountName(consolidate)
+            val destRaw   = tx.getTransferDestName() ?: continue
             val destKey = if (consolidate) {
                 val destAcc = accountsList.find { it.name == destRaw }
                 if (destAcc != null) when (destAcc.type) {
@@ -217,8 +221,10 @@ fun computeWalletBalances(
                     else -> "Bank Account"
                 } else destRaw
             } else destRaw
-            balances[srcKey] = (balances[srcKey] ?: 0.0) - tx.amount
-            balances[destKey] = (balances[destKey] ?: 0.0) + tx.amount
+            val srcSnap  = latestSnap[srcActual]
+            val destSnap = latestSnap[if (consolidate) destKey else destRaw]
+            if (srcSnap  == null || tx.timestamp > srcSnap.first)  balances[srcKey]  = (balances[srcKey]  ?: 0.0) - tx.amount
+            if (destSnap == null || tx.timestamp > destSnap.first) balances[destKey] = (balances[destKey] ?: 0.0) + tx.amount
             continue
         }
 
@@ -4533,6 +4539,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
         var trAmount by remember { mutableStateOf("") }
         var sourceWall by remember { mutableStateOf(activeAccounts.first().name) }
         var destWall by remember { mutableStateOf(activeAccounts.getOrNull(1)?.name ?: activeAccounts.first().name) }
+        var trTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
 
         val supportWallets = activeAccounts.map { it.name }
 
@@ -4540,7 +4547,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
             onDismissRequest = { showTransferDialog = false },
             title = { Text("Transfer Funds", fontWeight = FontWeight.Bold, color = c.text) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Text("Move funds between your accounts. Creates a single Transfer entry.", fontSize = 11.sp, color = c.textSecondary)
                     
                     OutlinedTextField(
@@ -4552,6 +4559,11 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                             focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                         ),
                         modifier = Modifier.fillMaxWidth()
+                    )
+
+                    TransactionDateTimePicker(
+                        selectedTimestamp = trTimestamp,
+                        onTimestampChange = { trTimestamp = it }
                     )
 
                     // Source Select Dropdown
@@ -4622,7 +4634,8 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                 amount = dVal,
                                 categoryName = "TRANSFER",
                                 type = "TRANSFER",
-                                note = "[Acc: $sourceWall][To: $destWall]"
+                                note = "[Acc: $sourceWall][To: $destWall]",
+                                timestamp = trTimestamp
                             )
                         }
                         showTransferDialog = false
@@ -5593,6 +5606,32 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
 }
 
 // 6. POPUP DIALOGS & UTILS
+/** Evaluate a left-to-right arithmetic expression using +, -, ×, ÷. Returns null on error. */
+private fun evalCalcExpr(expr: String): Double? {
+    if (expr.isBlank()) return null
+    // Split keeping the operator attached to the following token
+    val segments = Regex("(?<=[0-9.])[+\\-×÷]").split(expr)
+    val ops = Regex("(?<=[0-9.])[+\\-×÷]").findAll(expr).map { it.value }.toList()
+    if (segments.isEmpty()) return null
+    var result = segments[0].toDoubleOrNull() ?: return null
+    for (i in ops.indices) {
+        val next = segments.getOrNull(i + 1)?.toDoubleOrNull() ?: return null
+        result = when (ops[i]) {
+            "+" -> result + next
+            "-" -> result - next
+            "×" -> result * next
+            "÷" -> if (next != 0.0) result / next else return null
+            else -> return null
+        }
+    }
+    return result
+}
+
+/** Format a calculator result: no trailing .00 for whole numbers. */
+private fun formatCalcNum(d: Double): String =
+    if (d == kotlin.math.floor(d) && d < 1_000_000_000.0) d.toLong().toString()
+    else "%.2f".format(d)
+
 @Composable
 fun AddTransactionDialog(
     viewModel: FinanceViewModel,
@@ -5601,8 +5640,8 @@ fun AddTransactionDialog(
 ) {
     val c = LocalAppColors.current
     var title by remember { mutableStateOf("") }
-    var amountStr by remember { mutableStateOf("") }
-    var transactionType by remember { mutableStateOf("EXPENSE") } // EXPENSE, INCOME
+    var calcExpr by remember { mutableStateOf("") }
+    var transactionType by remember { mutableStateOf("EXPENSE") }
     var categorySelection by remember { mutableStateOf("FOOD") }
     var accountSelection by remember { mutableStateOf("") }
     var notesStr by remember { mutableStateOf("") }
@@ -5616,12 +5655,13 @@ fun AddTransactionDialog(
     val allCategories = CategoryResolver.getAll(customCats)
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
     val selectablesWallets = accounts.map { it.name }
-    // Auto-select first real account once accounts load
+
     LaunchedEffect(accounts) {
         if (accounts.isNotEmpty() && !accounts.any { it.name == accountSelection }) {
             accountSelection = accounts.first().name
         }
     }
+
     val filteredCats = if (transactionType == "EXPENSE") {
         allCategories.filter { it.type == "EXPENSE" }
     } else {
@@ -5630,132 +5670,307 @@ fun AddTransactionDialog(
     val selectedCategory = filteredCats.firstOrNull { it.name == categorySelection }
         ?: allCategories.firstOrNull { it.name == categorySelection }
 
-    AlertDialog(
+    // ── Calculator logic ──────────────────────────────────────────────────────
+    val hasOp = calcExpr.any { it in listOf('+', '-', '×', '÷') }
+    val endsWithOp = calcExpr.isNotEmpty() && calcExpr.last() in listOf('+', '-', '×', '÷')
+    val calcResult: Double? = if (hasOp && !endsWithOp) evalCalcExpr(calcExpr) else null
+    val resolvedAmount: Double = calcResult ?: calcExpr.toDoubleOrNull() ?: 0.0
+
+    fun onCalcKey(key: String) {
+        when (key) {
+            "C"  -> calcExpr = ""
+            "⌫"  -> if (calcExpr.isNotEmpty()) calcExpr = calcExpr.dropLast(1)
+            "="  -> {
+                val res = evalCalcExpr(calcExpr)
+                if (res != null) calcExpr = formatCalcNum(res)
+            }
+            "+", "-", "×", "÷" -> {
+                if (calcExpr.isEmpty()) return
+                calcExpr = calcExpr.trimEnd { it in listOf('+', '-', '×', '÷') } + key
+            }
+            "."  -> {
+                val lastNum = calcExpr.split(Regex("[+\\-×÷]")).last()
+                if (!lastNum.contains('.')) calcExpr += "."
+            }
+            "00" -> {
+                if (calcExpr.isEmpty()) return
+                val lastNum = calcExpr.split(Regex("[+\\-×÷]")).last()
+                if (lastNum.length < 9) calcExpr += "00"
+            }
+            else -> {
+                val lastNum = calcExpr.split(Regex("[+\\-×÷]")).last()
+                if (lastNum.length < 10) calcExpr += key
+            }
+        }
+    }
+
+    val amountColor = if (transactionType == "INCOME") c.income else c.expense
+
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("Log Cashflow", fontWeight = FontWeight.Bold, color = c.text) },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.verticalScroll(rememberScrollState())
-            ) {
-                // Type selector
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(c.text.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
-                        .padding(4.dp)
-                ) {
-                    val isExp = transactionType == "EXPENSE"
-                    Box(
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Surface(modifier = Modifier.fillMaxSize(), color = c.bg) {
+            Column(modifier = Modifier.fillMaxSize()) {
+
+                // ── Top bar ────────────────────────────────────────────────────
+                Surface(shadowElevation = 6.dp, color = c.surface) {
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isExp) c.expense else Color.Transparent)
-                            .clickable {
-                                transactionType = "EXPENSE"
-                                categorySelection = "FOOD"
-                            }
-                            .padding(8.dp),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Expense", color = if (isExp) c.text else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (!isExp) c.income else Color.Transparent)
-                            .clickable {
-                                transactionType = "INCOME"
-                                categorySelection = "SALARY"
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text)
+                        }
+                        Text(
+                            "Log Cashflow",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            color = c.text,
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center
+                        )
+                        TextButton(
+                            onClick = {
+                                if (resolvedAmount > 0.0) {
+                                    val cleanTitle = if (title.isBlank()) "Merchant Log" else title
+                                    onConfirm(
+                                        cleanTitle, resolvedAmount, categorySelection,
+                                        transactionType,
+                                        makeNoteWithAccount(notesStr, accountSelection),
+                                        selectedTimestamp
+                                    )
+                                }
                             }
-                            .padding(8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("Income", color = if (!isExp) c.text else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        ) {
+                            Text("Save", fontWeight = FontWeight.Bold, color = c.accent, fontSize = 15.sp)
+                        }
                     }
                 }
 
-                OutlinedTextField(
-                    value = amountStr,
-                    onValueChange = { amountStr = it },
-                    label = { Text("Amount (₹)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // ── Scrollable fields ──────────────────────────────────────────
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Type selector: EXPENSE / INCOME
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(c.text.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                            .padding(4.dp)
+                    ) {
+                        listOf("EXPENSE" to "Expense", "INCOME" to "Income").forEach { (type, label) ->
+                            val sel = transactionType == type
+                            val selColor = if (type == "EXPENSE") c.expense else c.income
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (sel) selColor else Color.Transparent)
+                                    .clickable {
+                                        transactionType = type
+                                        categorySelection = if (type == "EXPENSE") "FOOD" else "SALARY"
+                                    }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    label,
+                                    color = if (sel) c.text else c.textSecondary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    }
 
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Payee / Merchant") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                    // Payee / Merchant
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("Payee / Merchant") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                TransactionDateTimePicker(
-                    selectedTimestamp = selectedTimestamp,
-                    onTimestampChange = { selectedTimestamp = it }
-                )
+                    // Date & Time
+                    TransactionDateTimePicker(
+                        selectedTimestamp = selectedTimestamp,
+                        onTimestampChange = { selectedTimestamp = it }
+                    )
 
-                PickerButton(
-                    label = "Select Wallet",
-                    title = accountSelection,
-                    icon = walletIconFor(accountSelection, accounts.find { it.name == accountSelection }?.type),
-                    tint = c.accent,
-                    onClick = { showWalletPicker = true }
-                )
+                    // Wallet
+                    PickerButton(
+                        label = "Wallet",
+                        title = accountSelection.ifBlank { "Select Wallet" },
+                        icon = walletIconFor(accountSelection, accounts.find { it.name == accountSelection }?.type),
+                        tint = c.accent,
+                        onClick = { showWalletPicker = true }
+                    )
 
-                PickerButton(
-                    label = "Select Category",
-                    title = selectedCategory?.displayName ?: "Choose category",
-                    icon = selectedCategory?.icon ?: Icons.Default.Category,
-                    tint = selectedCategory?.color ?: c.accent,
-                    onClick = { showCategoryPicker = true }
-                )
+                    // Category
+                    PickerButton(
+                        label = "Category",
+                        title = selectedCategory?.displayName ?: "Choose category",
+                        icon = selectedCategory?.icon ?: Icons.Default.Category,
+                        tint = selectedCategory?.color ?: c.accent,
+                        onClick = { showCategoryPicker = true }
+                    )
 
-                OutlinedTextField(
-                    value = notesStr,
-                    onValueChange = { notesStr = it },
-                    label = { Text("Details note (Optional)") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val dAmt = amountStr.toDoubleOrNull() ?: 0.0
-                    val cleanTitle = if (title.isBlank()) "Merchant Log" else title
-                    if (dAmt > 0.0) {
-                        onConfirm(
-                            cleanTitle,
-                            dAmt,
-                            categorySelection,
-                            transactionType,
-                            makeNoteWithAccount(notesStr, accountSelection),
-                            selectedTimestamp
+                    // Notes
+                    OutlinedTextField(
+                        value = notesStr,
+                        onValueChange = { notesStr = it },
+                        label = { Text("Notes (Optional)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 1,
+                        maxLines = 3
+                    )
+                }
+
+                // ── Amount display (calculator screen) ─────────────────────────
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(c.surface)
+                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        if (hasOp) {
+                            Text(
+                                text = calcExpr,
+                                fontSize = 15.sp,
+                                color = c.textSecondary,
+                                textAlign = TextAlign.End,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Text(
+                            text = when {
+                                calcResult != null -> "= ${formatCalcNum(calcResult)}"
+                                calcExpr.isEmpty() -> "0"
+                                else               -> calcExpr
+                            }.let { if (it.startsWith("=")) "₹ $it" else "₹ $it" },
+                            fontSize = 34.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = amountColor,
+                            textAlign = TextAlign.End,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
-            ) {
-                Text("Save", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = c.text) }
-        },
-        containerColor = c.surface
-    )
+                }
 
+                HorizontalDivider(thickness = 1.dp, color = c.text.copy(alpha = 0.10f))
+
+                // ── Calculator keypad ──────────────────────────────────────────
+                // Layout: left column = operators, right grid = digits + =
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(c.surface)
+                ) {
+                    // Left column: +  -  ×  ÷  C
+                    Column(modifier = Modifier.weight(1.15f)) {
+                        listOf("+", "-", "×", "÷").forEach { op ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(57.dp)
+                                    .clickable { onCalcKey(op) }
+                                    .background(c.accent.copy(alpha = 0.11f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(op, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = c.accent)
+                            }
+                        }
+                        // C — clear
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(57.dp)
+                                .clickable { onCalcKey("C") }
+                                .background(MaterialTheme.colorScheme.error.copy(alpha = 0.13f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("C", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+
+                    // Right grid: rows of digits + ⌫ + =
+                    val numRows = listOf(
+                        listOf("7", "8", "9", "⌫"),
+                        listOf("4", "5", "6", null),
+                        listOf("1", "2", "3", null),
+                        listOf("00", "0", ".", null),
+                    )
+                    Column(modifier = Modifier.weight(3f)) {
+                        numRows.forEach { row ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(57.dp)
+                            ) {
+                                row.forEach { key ->
+                                    when {
+                                        key == null -> Spacer(modifier = Modifier.weight(1f))
+                                        else -> {
+                                            val isBack = key == "⌫"
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .fillMaxHeight()
+                                                    .clickable { onCalcKey(key) }
+                                                    .background(
+                                                        if (isBack) c.accent.copy(alpha = 0.09f)
+                                                        else Color.Transparent
+                                                    )
+                                                    .border(0.5.dp, c.text.copy(alpha = 0.08f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = key,
+                                                    fontSize = 20.sp,
+                                                    fontWeight = if (isBack) FontWeight.Bold else FontWeight.Medium,
+                                                    color = if (isBack) c.accent else c.text
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // = button — full width, accent coloured
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(57.dp)
+                                .clickable { onCalcKey("=") }
+                                .background(c.accent),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("=", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = c.bg)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Sub-dialogs ────────────────────────────────────────────────────────────
     if (showWalletPicker) {
         WalletSelectionDialog(
             walletOptions = selectablesWallets.map { walletName ->
@@ -5779,6 +5994,7 @@ fun AddTransactionDialog(
         CategorySelectionDialog(
             categories = filteredCats,
             selectedCategoryName = categorySelection,
+            clearCategoryName = if (transactionType == "INCOME") "INCOME_OTHERS" else "OTHERS",
             onSelect = {
                 categorySelection = it
                 showCategoryPicker = false
@@ -6048,6 +6264,7 @@ fun EditTransactionDialog(
         CategorySelectionDialog(
             categories = filteredCats,
             selectedCategoryName = categorySelection,
+            clearCategoryName = if (editType == "INCOME") "INCOME_OTHERS" else "OTHERS",
             onSelect = {
                 categorySelection = it
                 showCategoryPicker = false
@@ -6257,6 +6474,7 @@ private fun WalletSelectionDialog(
 private fun CategorySelectionDialog(
     categories: List<DisplayCategory>,
     selectedCategoryName: String,
+    clearCategoryName: String = "OTHERS",
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
     addActionLabel: String? = null,
@@ -6264,6 +6482,7 @@ private fun CategorySelectionDialog(
 ) {
     val c = LocalAppColors.current
     val sortedCategories = remember(categories) { categories.sortedBy { it.displayName } }
+    val clearDisplayName = categories.firstOrNull { it.name.equals(clearCategoryName, ignoreCase = true) }?.displayName ?: clearCategoryName
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Select Category", fontWeight = FontWeight.Bold, color = c.text) },
@@ -6272,15 +6491,15 @@ private fun CategorySelectionDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // "None / Remove" row — clears the category back to Others
-                val clearActive = selectedCategoryName.isBlank() || selectedCategoryName.equals("OTHERS", ignoreCase = true)
+                // "None / Remove" row — resets to the type-appropriate default category
+                val clearActive = selectedCategoryName.isBlank() || selectedCategoryName.equals(clearCategoryName, ignoreCase = true)
                 Surface(
                     color = if (clearActive) c.textTertiary.copy(alpha = 0.12f) else c.divider,
                     shape = RoundedCornerShape(16.dp),
                     border = BorderStroke(1.dp, if (clearActive) c.textTertiary else c.divider),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onSelect("OTHERS") }
+                        .clickable { onSelect(clearCategoryName) }
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -6288,7 +6507,7 @@ private fun CategorySelectionDialog(
                     ) {
                         Icon(Icons.Default.RemoveCircle, contentDescription = "None", tint = c.textTertiary, modifier = Modifier.size(24.dp))
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text("None / Others", color = c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("None / $clearDisplayName", color = c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                 }
                 sortedCategories.forEach { category ->

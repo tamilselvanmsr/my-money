@@ -248,7 +248,7 @@ object SmsParser {
                 return SmsParsingResult(
                     title = "PF Contribution",
                     amount = contribAmount,
-                    category = ExpenseCategory.ADJUST,
+                    category = ExpenseCategory.PROVIDENT_FUND,
                     type = "INCOME",
                     isGeminiParsed = false,
                     accountRef = epfoLast4,
@@ -424,7 +424,7 @@ object SmsParser {
                 availLimitMatcher.group(1)?.replace(",", "")?.toDoubleOrNull() else null
             return SmsParsingResult(
                 title = "Credit Card Payment", amount = amount,
-                category = ExpenseCategory.CC_SETTLEMENT, type = "INCOME",
+                category = ExpenseCategory.INCOME_OTHERS, type = "INCOME",
                 isGeminiParsed = false, accountRef = last4Digits,
                 sender = accountRef, receiver = "Credit Card Payment",
                 parsedTimestamp = parsedTime, availableLimit = parsedAvailableLimit
@@ -520,9 +520,13 @@ object SmsParser {
                     when {
                         lowerBody.contains("refund") || lowerTitleText.contains("refund") -> ExpenseCategory.REFUNDS
                         lowerTitleText.contains("cashback") || lowerBody.contains("cashback") -> ExpenseCategory.CASHBACK
-                        lowerBody.contains("upi") || lowerBody.contains("by upi") || lowerBody.contains("via upi") || lowerTitleText.contains("upi") -> ExpenseCategory.UPI
-                        lowerTitleText.contains("pocket money") || lowerTitleText.contains("allowance") -> ExpenseCategory.POCKET_MONEY_INC
-                        else -> ExpenseCategory.SALARY
+                        // UPI / VPA transfers — detect any of: "upi", "vpa", "@" handle in title, or VPA ID pattern
+                        lowerBody.contains("upi") || lowerBody.contains("vpa") ||
+                            lowerTitleText.contains("upi") || lowerTitleText.contains("@") -> ExpenseCategory.UPI
+                        lowerTitleText.contains("pocket money") || lowerTitleText.contains("allowance") -> ExpenseCategory.INCOME_OTHERS
+                        // Explicit salary keyword → SALARY; everything else → INCOME_OTHERS
+                        lowerBody.contains("salary") || lowerTitleText.contains("salary") -> ExpenseCategory.SALARY
+                        else -> ExpenseCategory.INCOME_OTHERS
                     }
                 }
                 else -> {
@@ -900,7 +904,7 @@ object SmsParser {
                 return SmsParsingResult(
                     title = "CC Summary",
                     amount = effectiveOutstanding ?: 0.0,
-                    category = ExpenseCategory.ADJUST,
+                    category = ExpenseCategory.INCOME_OTHERS,
                     type = "INCOME",
                     isGeminiParsed = false,
                     accountRef = ccRef,
@@ -1028,7 +1032,7 @@ object SmsParser {
         return SmsParsingResult(
             title = "Balance Update",
             amount = firstBal,
-            category = ExpenseCategory.ADJUST,
+            category = ExpenseCategory.INCOME_OTHERS,
             type = "INCOME",
             isGeminiParsed = false,
             accountRef = firstRef,

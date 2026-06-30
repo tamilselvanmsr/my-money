@@ -5861,7 +5861,7 @@ fun EditTransactionDialog(
     val allCategories = CategoryResolver.getAll(customCats)
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
     val selectablesWallets = accounts.map { it.name }
-    val isBalanceUpdate = tx.type == "BALANCE_UPDATE"
+    val isNoCategoryType = editType == "TRANSFER" || editType == "BALANCE_UPDATE" || editType == "DUPLICATE"
     val filteredCats = when (editType) {
         "INCOME" -> allCategories.filter { it.type == "INCOME" }
         else -> allCategories.filter { it.type == "EXPENSE" }
@@ -5891,47 +5891,30 @@ fun EditTransactionDialog(
                 Column {
                     Text("TRANSACTION TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                     Spacer(modifier = Modifier.height(4.dp))
-                    if (isBalanceUpdate) {
-                        // Type is locked for balance snapshots — changing it would corrupt balance tracking
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(c.textTertiary.copy(alpha = 0.08f))
-                                .border(1.dp, c.divider, RoundedCornerShape(8.dp))
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Lock, contentDescription = null, tint = c.textTertiary, modifier = Modifier.size(13.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("BALANCE_UPDATE — type locked", fontSize = 11.sp, color = c.textTertiary, fontWeight = FontWeight.Medium)
-                        }
-                    } else {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("EXPENSE", "INCOME", "TRANSFER", "DUPLICATE", "BALANCE_UPDATE").forEach { t ->
-                                val sel = editType == t
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .background(if (sel) c.accent.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-                                        .border(1.dp, if (sel) c.accent else c.divider, RoundedCornerShape(8.dp))
-                                        .clickable { editType = t }
-                                        .padding(6.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = when (t) {
-                                            "BALANCE_UPDATE" -> "Bal Sync"
-                                            "DUPLICATE"      -> "DUPL."
-                                            "TRANSFER"       -> "XFER"
-                                            else             -> t
-                                        },
-                                        fontSize = 9.sp,
-                                        color = if (sel) c.accent else c.textSecondary,
-                                        fontWeight = FontWeight.Bold,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("EXPENSE", "INCOME", "TRANSFER", "DUPLICATE", "BALANCE_UPDATE").forEach { t ->
+                            val sel = editType == t
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(if (sel) c.accent.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                    .border(1.dp, if (sel) c.accent else c.divider, RoundedCornerShape(8.dp))
+                                    .clickable { editType = t }
+                                    .padding(6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = when (t) {
+                                        "BALANCE_UPDATE" -> "BAL SYNC"
+                                        "DUPLICATE"      -> "DUPL"
+                                        "TRANSFER"       -> "XFER"
+                                        else             -> t
+                                    },
+                                    fontSize = 9.sp,
+                                    color = if (sel) c.accent else c.textSecondary,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center
+                                )
                             }
                         }
                     }
@@ -5960,21 +5943,7 @@ fun EditTransactionDialog(
                     onClick = { showWalletPicker = true }
                 )
 
-                if (isBalanceUpdate) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(c.textTertiary.copy(alpha = 0.08f))
-                            .border(1.dp, c.divider, RoundedCornerShape(8.dp))
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Lock, contentDescription = null, tint = c.textTertiary, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("ADJUST — category locked", fontSize = 11.sp, color = c.textTertiary, fontWeight = FontWeight.Medium)
-                    }
-                } else {
+                if (!isNoCategoryType) {
                     PickerButton(
                         label = "Category",
                         title = selectedCategory?.displayName ?: "Choose category",
@@ -5994,8 +5963,8 @@ fun EditTransactionDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Apply-to-all-payees toggle (opt-in, only when category is not OTHERS)
-                if (!isBalanceUpdate && title.isNotBlank() && !categorySelection.equals("OTHERS", ignoreCase = true)) {
+                // Apply-to-all-payees toggle (opt-in, only for EXPENSE/INCOME when category is not OTHERS)
+                if (!isNoCategoryType && title.isNotBlank() && !categorySelection.equals("OTHERS", ignoreCase = true)) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -6303,6 +6272,25 @@ private fun CategorySelectionDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // "None / Remove" row — clears the category back to Others
+                val clearActive = selectedCategoryName.isBlank() || selectedCategoryName.equals("OTHERS", ignoreCase = true)
+                Surface(
+                    color = if (clearActive) c.textTertiary.copy(alpha = 0.12f) else c.divider,
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, if (clearActive) c.textTertiary else c.divider),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect("OTHERS") }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.RemoveCircle, contentDescription = "None", tint = c.textTertiary, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("None / Others", color = c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                }
                 sortedCategories.forEach { category ->
                     val active = selectedCategoryName == category.name
                     Surface(

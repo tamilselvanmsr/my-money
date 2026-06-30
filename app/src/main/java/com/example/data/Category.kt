@@ -130,7 +130,7 @@ object CategoryResolver {
      * Category names that are kept in the enum only for DB backward-compatibility.
      * They are never shown in any picker or list.
      */
-    val BUILTIN_HIDDEN = setOf("outside_food", "pocket_money_inc")
+    val BUILTIN_HIDDEN = setOf("outside_food", "pocket_money_inc", "adjust", "cc_settlement")
 
     // ── Icon name → vector mapping ────────────────────────────────────────────
     //

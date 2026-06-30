@@ -5840,14 +5840,17 @@ fun AddTransactionDialog(
                 }
 
                 // ── Amount display (calculator screen) ─────────────────────────
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(c.surface)
                         .padding(horizontal = 20.dp, vertical = 10.dp),
-                    contentAlignment = Alignment.CenterEnd
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(horizontalAlignment = Alignment.End) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.End
+                    ) {
                         if (hasOp) {
                             Text(
                                 text = calcExpr,
@@ -5860,10 +5863,10 @@ fun AddTransactionDialog(
                         }
                         Text(
                             text = when {
-                                calcResult != null -> "= ${formatCalcNum(calcResult)}"
-                                calcExpr.isEmpty() -> "0"
-                                else               -> calcExpr
-                            }.let { if (it.startsWith("=")) "₹ $it" else "₹ $it" },
+                                calcResult != null -> "₹ = ${formatCalcNum(calcResult)}"
+                                calcExpr.isEmpty() -> "₹ 0"
+                                else               -> "₹ $calcExpr"
+                            },
                             fontSize = 34.sp,
                             fontWeight = FontWeight.Bold,
                             color = amountColor,
@@ -5872,50 +5875,62 @@ fun AddTransactionDialog(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    // ⌫ backspace button anchored to display row
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(c.accent.copy(alpha = 0.12f))
+                            .clickable { onCalcKey("⌫") },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("⌫", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = c.accent)
+                    }
                 }
 
                 HorizontalDivider(thickness = 1.dp, color = c.text.copy(alpha = 0.10f))
 
                 // ── Calculator keypad ──────────────────────────────────────────
-                // Layout: left column = operators, right grid = digits + =
+                // Left column: operators (5 rows) | Right: 3 digit columns (4 rows) + = row
+                // All cells use the same border to give a uniform grid appearance.
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(c.surface)
                 ) {
-                    // Left column: +  -  ×  ÷  C
+                    // Left column: +  -  ×  ÷  C  (5 rows, same height as right)
                     Column(modifier = Modifier.weight(1.15f)) {
-                        listOf("+", "-", "×", "÷").forEach { op ->
+                        listOf("+", "-", "×", "÷", "C").forEach { op ->
+                            val isC = op == "C"
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(57.dp)
                                     .clickable { onCalcKey(op) }
-                                    .background(c.accent.copy(alpha = 0.11f)),
+                                    .background(
+                                        if (isC) MaterialTheme.colorScheme.error.copy(alpha = 0.13f)
+                                        else c.accent.copy(alpha = 0.11f)
+                                    )
+                                    .border(0.5.dp, c.text.copy(alpha = 0.08f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(op, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = c.accent)
+                                Text(
+                                    text = op,
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isC) MaterialTheme.colorScheme.error else c.accent
+                                )
                             }
-                        }
-                        // C — clear
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(57.dp)
-                                .clickable { onCalcKey("C") }
-                                .background(MaterialTheme.colorScheme.error.copy(alpha = 0.13f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("C", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
                         }
                     }
 
-                    // Right grid: rows of digits + ⌫ + =
+                    // Right grid: 3 digit columns × 4 rows, then full-width =
                     val numRows = listOf(
-                        listOf("7", "8", "9", "⌫"),
-                        listOf("4", "5", "6", null),
-                        listOf("1", "2", "3", null),
-                        listOf("00", "0", ".", null),
+                        listOf("7", "8", "9"),
+                        listOf("4", "5", "6"),
+                        listOf("1", "2", "3"),
+                        listOf("00", "0", "."),
                     )
                     Column(modifier = Modifier.weight(3f)) {
                         numRows.forEach { row ->
@@ -5925,41 +5940,33 @@ fun AddTransactionDialog(
                                     .height(57.dp)
                             ) {
                                 row.forEach { key ->
-                                    when {
-                                        key == null -> Spacer(modifier = Modifier.weight(1f))
-                                        else -> {
-                                            val isBack = key == "⌫"
-                                            Box(
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .fillMaxHeight()
-                                                    .clickable { onCalcKey(key) }
-                                                    .background(
-                                                        if (isBack) c.accent.copy(alpha = 0.09f)
-                                                        else Color.Transparent
-                                                    )
-                                                    .border(0.5.dp, c.text.copy(alpha = 0.08f)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = key,
-                                                    fontSize = 20.sp,
-                                                    fontWeight = if (isBack) FontWeight.Bold else FontWeight.Medium,
-                                                    color = if (isBack) c.accent else c.text
-                                                )
-                                            }
-                                        }
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight()
+                                            .clickable { onCalcKey(key) }
+                                            .background(Color.Transparent)
+                                            .border(0.5.dp, c.text.copy(alpha = 0.08f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = key,
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = c.text
+                                        )
                                     }
                                 }
                             }
                         }
-                        // = button — full width, accent coloured
+                        // = button — full width, accent fill
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(57.dp)
                                 .clickable { onCalcKey("=") }
-                                .background(c.accent),
+                                .background(c.accent)
+                                .border(0.5.dp, c.text.copy(alpha = 0.08f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Text("=", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = c.bg)
@@ -6364,7 +6371,7 @@ fun TransactionDateTimePicker(
                         },
                         calendar.get(Calendar.HOUR_OF_DAY),
                         calendar.get(Calendar.MINUTE),
-                        true
+                        false  // AM/PM (12-hour) mode
                     ).show()
                 },
                 modifier = Modifier.weight(1f)

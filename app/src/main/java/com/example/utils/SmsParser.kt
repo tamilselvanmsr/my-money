@@ -900,6 +900,20 @@ object SmsParser {
             (lowerBody.contains(" bal ") && lowerBody.contains("a/c"))
         if (!isBalanceSms) return null
 
+        // ── Transaction SMS with appended balance info — NOT a pure balance update ──────
+        // Pattern: "INR X,XX,XXX deposited / credited … for NEFT/IMPS/UPI … Avl bal INR Y,YY,YYY"
+        // The "Avl bal" here is just post-transaction info shown by the bank, not the
+        // primary content of the SMS.  Let the income / expense parser handle it instead.
+        val hasTransactionAction = lowerBody.contains("deposited") ||
+            lowerBody.contains("credited") ||
+            lowerBody.contains("debited") ||
+            lowerBody.contains("transferred")
+        val hasPaymentChannel = lowerBody.contains("neft") ||
+            lowerBody.contains("imps") ||
+            lowerBody.contains("upi") ||
+            lowerBody.contains("rtgs")
+        if (hasTransactionAction && hasPaymentChannel) return null
+
         val allPairs = mutableListOf<Pair<String, Double>>()
 
         // Multi-account format: "XXXXXX2045 INR 2204.092Cr, XXXXXXX8660 INR 100Cr"

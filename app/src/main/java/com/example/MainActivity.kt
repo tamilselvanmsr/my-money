@@ -446,7 +446,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Ver: 1.37",
+                                        "Ver: 1.38",
                                         fontSize = 11.sp,
                                         color = c.textSecondary,
                                         modifier = Modifier.fillMaxWidth()
@@ -1326,33 +1326,73 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Spacer(modifier = Modifier.height(3.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Surface(
-                                            color = acctColor.copy(alpha = 0.10f),
-                                            shape = RoundedCornerShape(20.dp)
+                                    // For transfers: chip extends full width + time sits at end of chip row.
+                                    // For other types: chip sits alone in the subtitle row.
+                                    if (isTransfer) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            Surface(
+                                                color = acctColor.copy(alpha = 0.10f),
+                                                shape = RoundedCornerShape(20.dp),
+                                                modifier = Modifier.weight(1f)
                                             ) {
-                                                Icon(
-                                                    imageVector = acctIcon,
-                                                    contentDescription = null,
-                                                    tint = acctColor,
-                                                    modifier = Modifier.size(9.dp)
-                                                )
-                                                Text(
-                                                    text = if (isTransfer) {
-                                                        val dest = tx.getTransferDestName()
-                                                        if (dest != null) "${tx.getAccountName()} → $dest" else tx.getAccountName()
-                                                    } else tx.getAccountName(),
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = acctColor,
-                                                    maxLines = if (isTransfer) 2 else 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = acctIcon,
+                                                        contentDescription = null,
+                                                        tint = acctColor,
+                                                        modifier = Modifier.size(9.dp)
+                                                    )
+                                                    val dest = tx.getTransferDestName()
+                                                    Text(
+                                                        text = if (dest != null) "${tx.getAccountName()} → $dest" else tx.getAccountName(),
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = acctColor,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
+                                                fontSize = 10.sp,
+                                                color = c.textTertiary
+                                            )
+                                        }
+                                    } else {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Surface(
+                                                color = acctColor.copy(alpha = 0.10f),
+                                                shape = RoundedCornerShape(20.dp)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = acctIcon,
+                                                        contentDescription = null,
+                                                        tint = acctColor,
+                                                        modifier = Modifier.size(9.dp)
+                                                    )
+                                                    Text(
+                                                        text = tx.getAccountName(),
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = acctColor,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1384,12 +1424,15 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                             else -> c.expense
                                         }
                                     )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
-                                        fontSize = 10.sp,
-                                        color = c.textTertiary
-                                    )
+                                    // For transfers the time is shown inside the chip row (see above)
+                                    if (!isTransfer) {
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
+                                            fontSize = 10.sp,
+                                            color = c.textTertiary
+                                        )
+                                    }
                                     if (isNewlyImported) {
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Surface(
@@ -4629,7 +4672,6 @@ fun AccountScreen(viewModel: FinanceViewModel) {
         var editType by remember(acc) { mutableStateOf(acc.type) }
         var editCreditLimit by remember(acc) { mutableStateOf(if (acc.creditLimit > 0) acc.creditLimit.toString() else "") }
         var editShowCreditLimitBalance by remember(acc) { mutableStateOf(acc.showCreditLimitBalance) }
-        var blockOnDelete by remember(acc) { mutableStateOf(false) }
 
         val types = listOf("CASH", "BANK", "CREDIT_CARD", "WALLET")
 
@@ -4734,32 +4776,13 @@ fun AccountScreen(viewModel: FinanceViewModel) {
             },
             confirmButton = {
                 Column {
-                    // Block toggle row shown before the action buttons
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { blockOnDelete = !blockOnDelete }
-                            .padding(horizontal = 4.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = blockOnDelete,
-                            onCheckedChange = { blockOnDelete = it },
-                            modifier = Modifier.size(20.dp),
-                            colors = CheckboxDefaults.colors(checkedColor = c.accent)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text("Block future SMS imports for this account", fontSize = 11.sp, color = c.textSecondary)
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    // Row 1: Cancel + Delete (destructive)
+                    // Cancel + Delete (destructive) — Cancel is compact so Delete Account doesn't wrap
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         OutlinedButton(
                             onClick = { selectedAccountForEdit = null },
-                            modifier = Modifier.weight(1f),
                             border = BorderStroke(1.dp, c.divider),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text)
                         ) {
@@ -4767,14 +4790,13 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                         }
                         Button(
                             onClick = {
-                                if (blockOnDelete) viewModel.setAccountSmsTrackingBlocked(acc, true)
                                 viewModel.deleteAccount(acc.id)
                                 selectedAccountForEdit = null
                             },
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.buttonColors(containerColor = c.expense, contentColor = Color.White)
                         ) {
-                            Text("Delete Account", fontWeight = FontWeight.Bold)
+                            Text("Delete Account", fontWeight = FontWeight.Bold, maxLines = 1)
                         }
                     }
                     Spacer(Modifier.height(8.dp))
@@ -5805,7 +5827,7 @@ fun EditTransactionDialog(
                         }
                     } else {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("EXPENSE", "INCOME", "DUPLICATE", "BALANCE_UPDATE").forEach { t ->
+                            listOf("EXPENSE", "INCOME", "TRANSFER", "DUPLICATE", "BALANCE_UPDATE").forEach { t ->
                                 val sel = editType == t
                                 Box(
                                     modifier = Modifier
@@ -5817,11 +5839,17 @@ fun EditTransactionDialog(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = if (t == "BALANCE_UPDATE") "BAL_UPDATE" else t,
-                                        fontSize = 9.sp,
+                                        text = when (t) {
+                                            "BALANCE_UPDATE" -> "BAL\nUPDATE"
+                                            "DUPLICATE"      -> "DUPL."
+                                            "TRANSFER"       -> "XFER"
+                                            else             -> t
+                                        },
+                                        fontSize = 8.sp,
                                         color = if (sel) c.accent else c.textSecondary,
                                         fontWeight = FontWeight.Bold,
-                                        textAlign = TextAlign.Center
+                                        textAlign = TextAlign.Center,
+                                        lineHeight = 10.sp
                                     )
                                 }
                             }

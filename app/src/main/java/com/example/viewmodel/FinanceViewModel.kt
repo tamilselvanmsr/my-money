@@ -1152,20 +1152,59 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         }
                     }
 
-                    // ── PASS 1 post: detect UPI transfer pairs (same refNo, same amount, EXPENSE↔INCOME) ──
+                    // ── PASS 1 post: pair EXPENSE↔INCOME as TRANSFER ────────────────────────
+                    // Priority 1 — same reference number (UPI, IMPS): most reliable.
+                    // Priority 2 — cross-bank NEFT/RTGS: refs differ between banks, so match
+                    //   by same amount + timestamps within 4 hours + different accounts +
+                    //   the expense SMS explicitly mentions the income account's last 4 digits
+                    //   (e.g. "to the credit of A/c XXXXX9553") AND a bank-channel keyword.
                     val usedInPass1 = mutableSetOf<Int>()
                     for (i in pendingPass1.indices) {
                         if (i in usedInPass1) continue
                         val item = pendingPass1[i]
-                        val matchIdx: Int? = if (item.refNo != null && item.tx.type in listOf("EXPENSE", "INCOME")) {
-                            pendingPass1.indices.firstOrNull { j ->
-                                j != i && j !in usedInPass1 &&
-                                pendingPass1[j].refNo == item.refNo &&
-                                pendingPass1[j].tx.amount == item.tx.amount &&
-                                pendingPass1[j].tx.type != item.tx.type &&
-                                pendingPass1[j].tx.type in listOf("EXPENSE", "INCOME")
-                            }
-                        } else null
+
+                        val matchIdx: Int? = if (item.tx.type !in listOf("EXPENSE", "INCOME")) {
+                            null
+                        } else {
+                            // Priority 1: same ref number
+                            val refMatch = if (item.refNo != null) {
+                                pendingPass1.indices.firstOrNull { j ->
+                                    j != i && j !in usedInPass1 &&
+                                    pendingPass1[j].refNo == item.refNo &&
+                                    pendingPass1[j].tx.amount == item.tx.amount &&
+                                    pendingPass1[j].tx.type != item.tx.type &&
+                                    pendingPass1[j].tx.type in listOf("EXPENSE", "INCOME")
+                                }
+                            } else null
+
+                            // Priority 2: cross-bank NEFT/RTGS — no shared ref number
+                            val crossBankMatch = if (refMatch == null) {
+                                pendingPass1.indices.firstOrNull { j ->
+                                    j != i && j !in usedInPass1 &&
+                                    pendingPass1[j].tx.amount == item.tx.amount &&
+                                    pendingPass1[j].tx.type != item.tx.type &&
+                                    pendingPass1[j].tx.type in listOf("EXPENSE", "INCOME") &&
+                                    pendingPass1[j].walletName != item.walletName &&
+                                    kotlin.math.abs(pendingPass1[j].tx.timestamp - item.tx.timestamp) < 4 * 60 * 60 * 1000L &&
+                                    run {
+                                        // Safety: expense SMS must explicitly name the destination
+                                        // account digits AND contain a bank-transfer channel keyword.
+                                        // This prevents accidental pairing of coincidental equal-amount
+                                        // income+expense transactions.
+                                        val expItem = if (item.tx.type == "EXPENSE") item else pendingPass1[j]
+                                        val incItem = if (item.tx.type == "INCOME") item else pendingPass1[j]
+                                        val expBody = expItem.tx.smsBody?.lowercase() ?: ""
+                                        val incRef  = incItem.parsedAccountRef ?: ""
+                                        val hasChannel = expBody.contains("neft") || expBody.contains("imps") ||
+                                            expBody.contains("rtgs") || expBody.contains("mobile bank") ||
+                                            expBody.contains("net bank")
+                                        incRef.length >= 3 && expBody.contains(incRef) && hasChannel
+                                    }
+                                }
+                            } else null
+
+                            refMatch ?: crossBankMatch
+                        }
 
                         if (matchIdx != null) {
                             usedInPass1 += i

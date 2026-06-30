@@ -446,7 +446,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Ver: 1.40",
+                                        "Ver: 1.41",
                                         fontSize = 11.sp,
                                         color = c.textSecondary,
                                         modifier = Modifier.fillMaxWidth()

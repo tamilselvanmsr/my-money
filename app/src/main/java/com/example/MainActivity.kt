@@ -5863,7 +5863,7 @@ fun AddTransactionDialog(
                         }
                         Text(
                             text = when {
-                                calcResult != null -> "₹ = ${formatCalcNum(calcResult)}"
+                                calcResult != null -> "₹ ${formatCalcNum(calcResult)}"
                                 calcExpr.isEmpty() -> "₹ 0"
                                 else               -> "₹ $calcExpr"
                             },
@@ -6322,6 +6322,16 @@ fun TransactionDateTimePicker(
 ) {
     val c = LocalAppColors.current
     val context = LocalContext.current
+    // Use a themed context so the native pickers match the app's light/dark mode and
+    // AM/PM buttons get proper selection highlight (Material Light gives white bg + coloured chip).
+    val isDark = isSystemInDarkTheme()
+    val dialogContext = remember(isDark, context) {
+        android.view.ContextThemeWrapper(
+            context,
+            if (isDark) android.R.style.Theme_Material_Dialog
+            else        android.R.style.Theme_Material_Light_Dialog
+        )
+    }
     val dateLabel = remember(selectedTimestamp) {
         SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(selectedTimestamp))
     }
@@ -6336,7 +6346,7 @@ fun TransactionDateTimePicker(
                 onClick = {
                     val calendar = Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
                     DatePickerDialog(
-                        context,
+                        dialogContext,
                         { _, year, month, dayOfMonth ->
                             val updated = Calendar.getInstance().apply {
                                 timeInMillis = selectedTimestamp
@@ -6360,7 +6370,7 @@ fun TransactionDateTimePicker(
                 onClick = {
                     val calendar = Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
                     TimePickerDialog(
-                        context,
+                        dialogContext,
                         { _, hourOfDay, minute ->
                             val updated = Calendar.getInstance().apply {
                                 timeInMillis = selectedTimestamp

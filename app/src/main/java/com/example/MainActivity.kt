@@ -203,7 +203,12 @@ fun computeWalletBalances(
         if (tx.type == "DUPLICATE" || tx.type == "BALANCE_UPDATE") continue
         val actualName = tx.getAccountName(consolidate = false)
         val snap = latestSnap[actualName]
-        if (snap != null && tx.timestamp <= snap.first) continue  // pre-snapshot — already accounted for
+        // For TRANSFER we skip the outer source-account guard: the TRANSFER branch below checks
+        // each side (source AND destination) independently against its own snapshot.
+        // Without this exception, a BALANCE_UPDATE on the source account (e.g. HDFC Balance Sync)
+        // would silently discard the entire transfer — including the destination credit — even when
+        // the destination account (e.g. Indian Bank) has no snapshot that covers this transfer.
+        if (tx.type != "TRANSFER" && snap != null && tx.timestamp <= snap.first) continue  // pre-snapshot
 
         if (tx.type == "TRANSFER") {
             // Deduct from source, credit destination — but only when the transfer falls

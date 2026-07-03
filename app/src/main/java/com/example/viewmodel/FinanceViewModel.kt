@@ -1949,12 +1949,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
                 // ── TRANSACTIONS section ──────────────────────────
                 sb.appendLine("## TRANSACTIONS")
-                sb.appendLine("Date,Title,Amount,Category,Type,Account")
+                sb.appendLine("Date,Title,Amount,Category,Type,Account,Note")
                 for (tx in allTransactions.value) {
                     val date = dateFormat.format(Date(tx.timestamp))
                     val title = tx.title.replace(",", ";").replace("\"", "")
                     val accountName = tx.getAccountName().replace(",", ";")
-                    sb.appendLine("${date},${title},${tx.amount},${tx.category},${tx.type},${accountName}")
+                    // Preserve the full note so [To: dest] on transfers is not lost on restore
+                    val note = (tx.note ?: "").replace(",", ";").replace("\"", "").replace("\n", " | ")
+                    sb.appendLine("${date},${title},${tx.amount},${tx.category},${tx.type},${accountName},${note}")
                 }
                 sb.appendLine()
 
@@ -2027,12 +2029,19 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             }
                         }
                         section == "TRANSACTIONS" -> {
-                            // Date,Title,Amount,Category,Type,Account — split on first 5 commas only
-                            val parts = trimmed.split(",", limit = 6)
-                            if (parts.size == 6) {
+                            // Date,Title,Amount,Category,Type,Account[,Note] — 6 or 7 columns
+                            val parts = trimmed.split(",", limit = 7)
+                            if (parts.size >= 6) {
                                 val timestamp = try {
                                     dateFormat.parse(parts[0].trim())?.time ?: System.currentTimeMillis()
                                 } catch (e: Exception) { System.currentTimeMillis() }
+                                // If a Note column is present use it directly (it already contains
+                                // [Acc: ...] and [To: ...] tags); otherwise reconstruct from Account.
+                                val note = if (parts.size >= 7 && parts[6].trim().isNotBlank()) {
+                                    parts[6].trim()
+                                } else {
+                                    "[Acc: ${parts[5].trim()}]"
+                                }
                                 repository.insertTransaction(
                                     TransactionEntry(
                                         title = parts[1].trim(),
@@ -2040,7 +2049,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                         category = parts[3].trim(),
                                         type = parts[4].trim(),
                                         timestamp = timestamp,
-                                        note = "[Acc: ${parts[5].trim()}]"
+                                        note = note
                                     )
                                 )
                                 txRestored++

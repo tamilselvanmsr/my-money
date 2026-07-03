@@ -199,20 +199,15 @@ fun computeWalletBalances(
 
     // Step 3 — apply regular transactions that occurred AFTER the snapshot.
     // Pre-snapshot transactions are already baked into the snapshot amount.
-    // Exception: manually-added transactions (no SMS sender) are ALWAYS applied
-    // because the Balance Sync SMS cannot have captured a transaction the user
-    // entered after the snapshot was recorded.
     for (tx in transactions) {
         if (tx.type == "DUPLICATE" || tx.type == "BALANCE_UPDATE") continue
-        val isManual = tx.smsSender == null && tx.smsBody == null
         val actualName = tx.getAccountName(consolidate = false)
         val snap = latestSnap[actualName]
-        if (!isManual && snap != null && tx.timestamp <= snap.first) continue  // pre-snapshot — already accounted for
+        if (snap != null && tx.timestamp <= snap.first) continue  // pre-snapshot — already accounted for
 
         if (tx.type == "TRANSFER") {
             // Deduct from source, credit destination — but only when the transfer falls
             // AFTER that account's own snapshot (checked independently for each side).
-            // Manual transfers bypass the snapshot check entirely on both sides.
             val srcActual = tx.getAccountName(consolidate = false)
             val srcKey    = tx.getAccountName(consolidate)
             val destRaw   = tx.getTransferDestName() ?: continue
@@ -228,8 +223,8 @@ fun computeWalletBalances(
             } else destRaw
             val srcSnap  = latestSnap[srcActual]
             val destSnap = latestSnap[if (consolidate) destKey else destRaw]
-            if (isManual || srcSnap  == null || tx.timestamp > srcSnap.first)  balances[srcKey]  = (balances[srcKey]  ?: 0.0) - tx.amount
-            if (isManual || destSnap == null || tx.timestamp > destSnap.first) balances[destKey] = (balances[destKey] ?: 0.0) + tx.amount
+            if (srcSnap  == null || tx.timestamp > srcSnap.first)  balances[srcKey]  = (balances[srcKey]  ?: 0.0) - tx.amount
+            if (destSnap == null || tx.timestamp > destSnap.first) balances[destKey] = (balances[destKey] ?: 0.0) + tx.amount
             continue
         }
 

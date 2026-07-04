@@ -20,6 +20,11 @@ fun isDuplicateImportedTransaction(
 ): Boolean {
     // 1. Exact SMS body match — same physical SMS re-scanned.
     if (existing.smsBody == incomingSmsBody) {
+        // A BALANCE_UPDATE record with the same SMS body must NOT block re-importing
+        // the SMS as INCOME/EXPENSE after the parser's classification changes (e.g. a
+        // "Received! INR X ... Avl bal INR Y" SMS that was previously mis-classified as
+        // a Balance Sync and has since been deleted or corrected).
+        if (existing.type == "BALANCE_UPDATE" && incomingType != "BALANCE_UPDATE") return false
         return true
     }
 

@@ -440,38 +440,32 @@ object SmsParser {
         if (upiVpaMatcher.find()) {
             titleText = upiVpaMatcher.group(1) ?: ""
         } else {
-            // Pre-clean payeeBody to remove common transaction, bank, and card details.
-            // Use cleanBody (original casing) so the extracted title preserves the case
-            // exactly as it appears in the SMS (e.g. "IMPS -M Tamilselvan" not "imps -m tamilselvan").
-            // All cleanup patterns use IGNORE_CASE so they still match regardless of casing.
-            var payeeBody = cleanBody
+            // Pre-clean payeeBody to remove common transaction, bank, and card details
+            var payeeBody = lowerBody
             
             // 1. Remove "spent on your <bank/card> card ending at <digits>" or variants and "from <bank/card> a/c <digits>" or variants
-            payeeBody = payeeBody.replace("(?:spent on|from)\\s+(?:your\\s+)?(?:[a-zA-Z0-9\\s]+)?(?:card|credit card|debit card|acc|account|a/c|bank|acct)\\s*(?:a/c|acc|card)?\\s*(?:ending with|ending in|ending|ended with|ended|at|with)?\\s*[xX*\\s-]*\\d{3,4}".toRegex(RegexOption.IGNORE_CASE), "")
+            payeeBody = payeeBody.replace("(?:spent on|from)\\s+(?:your\\s+)?(?:[a-zA-Z0-9\\s]+)?(?:card|credit card|debit card|acc|account|a/c|bank|acct)\\s*(?:a/c|acc|card)?\\s*(?:ending with|ending in|ending|ended with|ended|at|with)?\\s*[xX*\\s-]*\\d{3,4}".toRegex(), "")
             
             // 3. Remove standalone "a/c <digits> debited/credited"
-            payeeBody = payeeBody.replace("a/c\\.?\\s*(?:no\\.?)?\\s*[xX*\\s-]*\\d{3,4}\\s*(?:debited|spent|paid|received|charged|credited|sent|withdrawn|transfer|transferred|deducted|has been|is)?".toRegex(RegexOption.IGNORE_CASE), "")
+            payeeBody = payeeBody.replace("a/c\\.?\\s*(?:no\\.?)?\\s*[xX*\\s-]*\\d{3,4}\\s*(?:debited|spent|paid|received|charged|credited|sent|withdrawn|transfer|transferred|deducted|has been|is)?".toRegex(), "")
             
             // 4. Remove common "debited by <amount>" or "credited by <amount>" or "debited for <amount>" or standalone amounts
-            payeeBody = payeeBody.replace("(?:debited|credited|spent|paid|received|sent|withdrawn)\\s+(?:by|for|of)?\\s*(?:rs\\.?\\s*)?\\d+(?:\\.\\d+)?".toRegex(RegexOption.IGNORE_CASE), "")
-            payeeBody = payeeBody.replace("(?:rs\\.?\\s*)?\\d+(?:\\.\\d+)?".toRegex(RegexOption.IGNORE_CASE), "")
+            payeeBody = payeeBody.replace("(?:debited|credited|spent|paid|received|sent|withdrawn)\\s+(?:by|for|of)?\\s*(?:rs\\.?\\s*)?\\d+(?:\\.\\d+)?".toRegex(), "")
+            payeeBody = payeeBody.replace("(?:rs\\.?\\s*)?\\d+(?:\\.\\d+)?".toRegex(), "")
             
             // 5. Remove date references like "on date 19apr26" or "on date 14jun26" or "dated 14/06/26" (using precise character set without spaces to prevent greedily consuming payee name)
-            payeeBody = payeeBody.replace("on\\s+date\\s+[a-zA-Z0-9/.-]+".toRegex(RegexOption.IGNORE_CASE), "")
-            payeeBody = payeeBody.replace("dated\\s+[a-zA-Z0-9/.-]+".toRegex(RegexOption.IGNORE_CASE), "")
+            payeeBody = payeeBody.replace("on\\s+date\\s+[a-zA-Z0-9/.-]+".toRegex(), "")
+            payeeBody = payeeBody.replace("dated\\s+[a-zA-Z0-9/.-]+".toRegex(), "")
 
-            // Re-ordered keywords from longest/most-specific to shortest/least-specific.
-            // CASE_INSENSITIVE so keywords like "For", "From", "Towards" are matched regardless of casing.
+            // Re-ordered keywords from longest/most-specific to shortest/least-specific
             val vendorPattern = Pattern.compile(
-                "(?:transferred to|received from|spent on|paid to|transfer to|trf to|towards|merchant|info:|from|for|at|to)\\s+([a-zA-Z0-9\\s\\.\\-\\'&_]+)",
-                Pattern.CASE_INSENSITIVE
+                "(?:transferred to|received from|spent on|paid to|transfer to|trf to|towards|merchant|info:|from|for|at|to)\\s+([a-zA-Z0-9\\s\\.\\-\\'&_]+)"
             )
             val vendorMatcher = vendorPattern.matcher(payeeBody)
             if (vendorMatcher.find()) {
                 val rawVendor = vendorMatcher.group(1)?.trim() ?: ""
-                // Clean up delimiters using word boundaries instead of plain string split.
-                // IGNORE_CASE so "Avl", "Bal", "For" etc. are recognised as delimiter words.
-                val cleanParts = rawVendor.split("\\b(on|by|using|with|via|for|against|card|account|txn|ref|refno|ref\\.no|dated|at|transfer|if|call|dial|contact|help|link|click|visit|balance|bal|limit|avl)\\b".toRegex(RegexOption.IGNORE_CASE))
+                // Clean up delimiters using word boundaries instead of plain string split
+                val cleanParts = rawVendor.split("\\b(on|by|using|with|via|for|against|card|account|txn|ref|refno|ref\\.no|dated|at|transfer|if|call|dial|contact|help|link|click|visit|balance|bal|limit|avl)\\b".toRegex())
                 val intermediateTitle = cleanParts.firstOrNull()?.trim() ?: ""
                 titleText = intermediateTitle
             }
@@ -506,14 +500,8 @@ object SmsParser {
 
             if (titleText.isEmpty() || titleText.length > 45 || titleText.length <= 2) {
                 titleText = if (type == "EXPENSE") "Merchant Store" else "${bankName} Transfer"
-            } else if (!titleText.contains("Mobile", ignoreCase = true) &&
-                       !titleText.contains("IMPS",   ignoreCase = true) &&
-                       !titleText.contains("NEFT",   ignoreCase = true) &&
-                       !titleText.contains("RTGS",   ignoreCase = true) &&
-                       !titleText.contains("UPI",    ignoreCase = true)) {
-                // Apply title case only for non-mode-specific formats to keep exact casing
-                // (mode + payee names like "IMPS -M Tamilselvan" are already correctly cased
-                //  because payeeBody is derived from cleanBody, not lowerBody).
+            } else if (!titleText.contains("Mobile") && !titleText.contains("IMPS") && !titleText.contains("NEFT") && !titleText.contains("RTGS") && !titleText.contains("UPI")) {
+                // Apply title case only for non-mode specific formats to keep exact masked number / mode casing
                 titleText = titleText.split(" ").filter { it.isNotEmpty() }.joinToString(" ") { word ->
                     word.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
                 }
@@ -958,6 +946,11 @@ object SmsParser {
             lowerBody.contains("upi") ||
             lowerBody.contains("rtgs")
         if (hasTransactionAction && hasPaymentChannel) return null
+
+        // "Received!" prefix = UPI/payment receipt notification (PhonePe, BHIM, GPay style).
+        // Always a transaction SMS — return null so the income/expense parser handles it,
+        // regardless of whether a payment channel keyword (UPI/IMPS) is present.
+        if (lowerBody.trimStart().startsWith("received!")) return null
 
         val allPairs = mutableListOf<Pair<String, Double>>()
 

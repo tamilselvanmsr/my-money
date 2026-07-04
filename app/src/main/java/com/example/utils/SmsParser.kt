@@ -933,12 +933,14 @@ object SmsParser {
 
         // ── Transaction SMS with appended balance info — NOT a pure balance update ──────
         // Pattern: "INR X,XX,XXX deposited / credited … for NEFT/IMPS/UPI … Avl bal INR Y,YY,YYY"
+        //          "Received! INR 2,960.00 in HDFC Bank A/c xx1234 … Avl bal INR 15,233.12"
         // The "Avl bal" here is just post-transaction info shown by the bank, not the
         // primary content of the SMS.  Let the income / expense parser handle it instead.
         val hasTransactionAction = lowerBody.contains("deposited") ||
             lowerBody.contains("credited") ||
             lowerBody.contains("debited") ||
-            lowerBody.contains("transferred")
+            lowerBody.contains("transferred") ||
+            lowerBody.contains("received")   // e.g. "Received! INR X in A/c … Avl bal INR Y"
         val hasPaymentChannel = lowerBody.contains("neft") ||
             lowerBody.contains("imps") ||
             lowerBody.contains("upi") ||

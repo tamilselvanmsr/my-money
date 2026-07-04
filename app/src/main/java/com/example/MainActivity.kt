@@ -648,7 +648,10 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
             for (acc in accounts) {
                 balMap[acc.name] = if (carryOverPreviousAmount) acc.balance else 0.0
             }
-            for (tx in txs.sortedBy { it.timestamp }) {
+            // Secondary sort: BALANCE_UPDATE must come after INCOME/EXPENSE at the same timestamp,
+            // because the balance update reflects the final state after the income/expense is applied.
+            // Without this, a same-timestamp pair can double-count the amount.
+            for (tx in txs.sortedWith(compareBy({ it.timestamp }, { if (it.type == "BALANCE_UPDATE") 1 else 0 }))) {
                 val accName = tx.getAccountName(false)
                 when (tx.type) {
                     "BALANCE_UPDATE" -> balMap[accName] = tx.amount
@@ -666,8 +669,12 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                 // Only record for txs matching the current wallet filter
                 val txAccDisplay = tx.getAccountName(consolidateAccounts)
                 if (selectedWallet != "All" && txAccDisplay != selectedWallet) continue
-                // Always show the individual account's own running balance, regardless of the wallet filter
-                result[tx.id] = balMap[tx.getAccountName(false)] ?: 0.0
+                val displayBal = if (selectedWallet == "All") {
+                    accounts.sumOf { acc -> balMap[acc.name] ?: 0.0 }
+                } else {
+                    balMap[tx.getAccountName(false)] ?: 0.0
+                }
+                result[tx.id] = displayBal
             }
             result
         }

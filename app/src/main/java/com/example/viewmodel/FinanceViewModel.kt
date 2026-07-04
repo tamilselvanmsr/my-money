@@ -1968,13 +1968,24 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     val cat = b.category.replace(",", ";")
                     sb.appendLine("${cat},${b.amountLimit},${b.monthYear}")
                 }
+                sb.appendLine()
+
+                // ── CUSTOM CATEGORIES section ─────────────────────
+                sb.appendLine("## CUSTOM_CATEGORIES")
+                sb.appendLine("Name,IconName,ColorHex")
+                for (cc in allCustomCategories.value) {
+                    val name = cc.name.replace(",", ";")
+                    val icon = cc.iconName.replace(",", ";")
+                    sb.appendLine("${name},${icon},${cc.colorHex}")
+                }
 
                 context.contentResolver.openOutputStream(uri)?.use { stream ->
                     stream.write(sb.toString().toByteArray(Charsets.UTF_8))
                 }
                 val txCount = allTransactions.value.size
                 val budgetCount = budgets.size
-                _toastMessage.emit("Backup saved — ${allAccounts.value.size} accounts, $txCount transactions, $budgetCount budgets.")
+                val customCatCount = allCustomCategories.value.size
+                _toastMessage.emit("Backup saved — ${allAccounts.value.size} accounts, $txCount transactions, $budgetCount budgets, $customCatCount custom categories.")
             } catch (e: Exception) {
                 Log.e(TAG, "Export backup failed: ${e.message}", e)
                 _toastMessage.emit("Export failed: ${e.message}")
@@ -1998,11 +2009,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 var accountsRestored = 0
                 var txRestored = 0
                 var budgetsRestored = 0
+                var customCatsRestored = 0
 
                 // Wipe existing data
                 repository.clearTransactions()
                 repository.clearBudgets()
                 repository.clearAccounts()
+                repository.clearCustomCategories()
                 createdAccountsCache.clear()
 
                 for (line in lines) {
@@ -2012,8 +2025,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         trimmed.isBlank() ||
                         trimmed.startsWith("Name,") ||
                         trimmed.startsWith("Date,") ||
-                        trimmed.startsWith("Category,") -> { /* header / blank – skip */ }
-                        section == "ACCOUNTS" -> {
+                        trimmed.startsWith("Category,") -> { /* header / blank – skip */ }                        section == "ACCOUNTS" -> {
                             val cols = trimmed.split(",")
                             if (cols.size >= 5) {
                                 repository.insertAccount(
@@ -2069,9 +2081,24 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 budgetsRestored++
                             }
                         }
+                        section == "CUSTOM_CATEGORIES" -> {
+                            // Name,IconName,ColorHex
+                            val parts = trimmed.split(",", limit = 3)
+                            if (parts.size == 3) {
+                                repository.insertCustomCategory(
+                                    CustomCategory(
+                                        id = 0,
+                                        name = parts[0].trim(),
+                                        iconName = parts[1].trim(),
+                                        colorHex = parts[2].trim()
+                                    )
+                                )
+                                customCatsRestored++
+                            }
+                        }
                     }
                 }
-                _toastMessage.emit("Restored $accountsRestored accounts, $txRestored transactions and $budgetsRestored budgets.")
+                _toastMessage.emit("Restored $accountsRestored accounts, $txRestored transactions, $budgetsRestored budgets and $customCatsRestored custom categories.")
             } catch (e: Exception) {
                 Log.e(TAG, "Restore backup failed: ${e.message}", e)
                 _toastMessage.emit("Restore failed: ${e.message}")

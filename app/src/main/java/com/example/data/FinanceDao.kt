@@ -86,6 +86,9 @@ interface FinanceDao {
     @Query("DELETE FROM custom_categories WHERE id = :id")
     suspend fun deleteCustomCategoryById(id: Int)
 
+    @Query("DELETE FROM custom_categories")
+    suspend fun clearAllCustomCategories()
+
     // Recurring Transactions
     @Query("SELECT * FROM recurring_transactions")
     fun getAllRecurringTransactions(): Flow<List<RecurringTransaction>>

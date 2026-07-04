@@ -947,11 +947,6 @@ object SmsParser {
             lowerBody.contains("rtgs")
         if (hasTransactionAction && hasPaymentChannel) return null
 
-        // "Received!" prefix = UPI/payment receipt notification (PhonePe, BHIM, GPay style).
-        // Always a transaction SMS — return null so the income/expense parser handles it,
-        // regardless of whether a payment channel keyword (UPI/IMPS) is present.
-        if (lowerBody.trimStart().startsWith("received!")) return null
-
         val allPairs = mutableListOf<Pair<String, Double>>()
 
         // Multi-account format: "XXXXXX1234 INR 2204.092Cr, XXXXXXX5678 INR 100Cr"

@@ -95,6 +95,10 @@ class FinanceRepository(private val financeDao: FinanceDao) {
         financeDao.deleteCustomCategoryById(id)
     }
 
+    suspend fun clearCustomCategories() {
+        financeDao.clearAllCustomCategories()
+    }
+
     // Recurring Transactions
     val allRecurringTransactions: Flow<List<RecurringTransaction>> = financeDao.getAllRecurringTransactions()
 

@@ -3213,7 +3213,9 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
     val budgetCategoryNames = activeBudgets.map { it.category.lowercase() }.toSet()
 
     // Initialize / reset order: budget-set categories first (alpha), then others (alpha)
-    if (categoryOrderKeys.isEmpty() || categoryOrderKeys.any { key -> baseCategories.none { it.name == key } }) {
+    if (categoryOrderKeys.isEmpty() ||
+        categoryOrderKeys.any { key -> baseCategories.none { it.name == key } } ||
+        baseCategories.any { cat -> cat.name !in categoryOrderKeys }) {
         val withBudget = baseCategories.filter { budgetCategoryNames.contains(it.name.lowercase()) }.sortedBy { it.displayName }
         val withoutBudget = baseCategories.filter { !budgetCategoryNames.contains(it.name.lowercase()) }.sortedBy { it.displayName }
         categoryOrderKeys = (withBudget + withoutBudget).map { it.name }

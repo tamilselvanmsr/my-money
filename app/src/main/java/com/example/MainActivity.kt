@@ -1333,7 +1333,20 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             color = c.textSecondary
                         )
                         
-                        val dateNet = txList.filter { it.type != "DUPLICATE" && it.type != "BALANCE_UPDATE" && it.type != "TRANSFER" }.sumOf { if (it.type == "INCOME") it.amount else -it.amount }
+                        val dateNet = txList.sumOf { tx ->
+                            when {
+                                tx.type == "DUPLICATE" || tx.type == "BALANCE_UPDATE" -> 0.0
+                                tx.type == "TRANSFER" -> {
+                                    if (selectedWallet != "All") {
+                                        val destRaw = tx.getTransferDestName()
+                                        val destDisplay = if (consolidateAccounts) consolidateAccountName(destRaw ?: "") else (destRaw ?: "")
+                                        if (destDisplay == selectedWallet) tx.amount else -tx.amount
+                                    } else 0.0
+                                }
+                                tx.type == "INCOME" -> tx.amount
+                                else -> -tx.amount
+                            }
+                        }
                         Text(
                             text = (if (dateNet >= 0) "+" else "") + decFormat.format(dateNet),
                             fontSize = 11.sp,
@@ -1425,11 +1438,21 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                             )
                                         }
                                         Spacer(modifier = Modifier.height(3.dp))
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                        val dest = tx.getTransferDestName()
+                                        val chipText = if (dest != null) "${tx.getAccountName()} → $dest" else tx.getAccountName()
+                                        val chipFontSizeState = remember(chipText) { mutableStateOf(9.sp) }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            // Chip: weight(fill=false) — Row measures non-weighted time first,
+                                            // then chip gets the remaining width as its max constraint.
+                                            // fill=false means the pill still wraps its content (no stretching).
+                                            // Font auto-shrinks via onTextLayout instead of showing "...".
                                             Surface(
                                                 color = acctColor.copy(alpha = 0.10f),
                                                 shape = RoundedCornerShape(20.dp),
-                                                modifier = Modifier.weight(1f)
+                                                modifier = Modifier.weight(1f, fill = false)
                                             ) {
                                                 Row(
                                                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
@@ -1437,43 +1460,44 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                                 ) {
                                                     Icon(imageVector = acctIcon, contentDescription = null, tint = acctColor, modifier = Modifier.size(9.dp))
                                                     Spacer(modifier = Modifier.width(4.dp))
-                                                    val dest = tx.getTransferDestName()
-                                                    val chipText = if (dest != null) "${tx.getAccountName()} → $dest" else tx.getAccountName()
-                                                    var chipFontSize by remember(chipText) { mutableStateOf(9f) }
                                                     Text(
                                                         text = chipText,
-                                                        fontSize = chipFontSize.sp,
+                                                        fontSize = chipFontSizeState.value,
                                                         fontWeight = FontWeight.SemiBold,
                                                         color = acctColor,
                                                         maxLines = 1,
-                                                        softWrap = false,
                                                         overflow = TextOverflow.Clip,
-                                                        onTextLayout = { layoutResult ->
-                                                            if (layoutResult.hasVisualOverflow && chipFontSize > 6f) {
-                                                                chipFontSize = (chipFontSize * 0.85f).coerceAtLeast(6f)
+                                                        softWrap = false,
+                                                        onTextLayout = { result ->
+                                                            if (result.hasVisualOverflow && chipFontSizeState.value.value > 5f) {
+                                                                chipFontSizeState.value = (chipFontSizeState.value.value * 0.85f).sp
                                                             }
                                                         }
                                                     )
                                                 }
                                             }
-                                            // Running balance + time outside the chip
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            if (showRunningBalance) {
-                                                val runBal = runningBalances[tx.id]
-                                                if (runBal != null) {
-                                                    Text(text = decFormat.format(runBal), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = c.textTertiary)
-                                                    Spacer(modifier = Modifier.width(4.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            // Time group: NO weight — non-weighted items are measured first,
+                                            // guaranteeing balance + time are always fully visible.
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (showRunningBalance) {
+                                                    val runBal = runningBalances[tx.id]
+                                                    if (runBal != null) {
+                                                        Text(text = decFormat.format(runBal), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                    }
                                                 }
-                                            }
-                                            Text(
-                                                text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
-                                                fontSize = 10.sp,
-                                                color = c.textTertiary
-                                            )
-                                            if (isNewlyImported) {
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Surface(color = c.income.copy(alpha = 0.15f), shape = RoundedCornerShape(4.dp)) {
-                                                    Text("NEW", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = c.income, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                                Text(
+                                                    text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
+                                                    fontSize = 10.sp,
+                                                    color = c.textTertiary,
+                                                    maxLines = 1
+                                                )
+                                                if (isNewlyImported) {
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Surface(color = c.income.copy(alpha = 0.15f), shape = RoundedCornerShape(4.dp)) {
+                                                        Text("NEW", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = c.income, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                                    }
                                                 }
                                             }
                                         }
@@ -1553,8 +1577,8 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                                     Text(
                                                         text = decFormat.format(runBal),
                                                         fontSize = 9.sp,
-                                                        fontWeight = FontWeight.SemiBold,
-                                                        color = c.textTertiary
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = c.textSecondary
                                                     )
                                                     Spacer(modifier = Modifier.width(4.dp))
                                                 }

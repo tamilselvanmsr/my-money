@@ -1403,55 +1403,92 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     }
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = tx.title,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        color = c.text,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Spacer(modifier = Modifier.height(3.dp))
-                                    // For transfers: chip extends full width + time sits at end of chip row.
-                                    // For other types: chip sits alone in the subtitle row.
-                                    if (isTransfer) {
-                                        Surface(
-                                            color = acctColor.copy(alpha = 0.10f),
-                                            shape = RoundedCornerShape(20.dp),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                if (isTransfer) {
+                                    // Transfer: right side is a Column so title+amount sits above the full-width chip
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = tx.title,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = c.text,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "⇄ " + decFormat.format(tx.amount),
+                                                fontWeight = FontWeight.ExtraBold,
+                                                fontSize = 15.sp,
+                                                color = Color(0xFF3B82F6)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(3.dp))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Surface(
+                                                color = acctColor.copy(alpha = 0.10f),
+                                                shape = RoundedCornerShape(20.dp),
+                                                modifier = Modifier.weight(1f)
                                             ) {
-                                                Icon(
-                                                    imageVector = acctIcon,
-                                                    contentDescription = null,
-                                                    tint = acctColor,
-                                                    modifier = Modifier.size(9.dp)
-                                                )
-                                                val dest = tx.getTransferDestName()
-                                                val chipText = if (dest != null) "${tx.getAccountName()} → $dest" else tx.getAccountName()
-                                                var chipFontSize by remember(chipText) { mutableStateOf(9f) }
-                                                Text(
-                                                    text = chipText,
-                                                    fontSize = chipFontSize.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = acctColor,
-                                                    maxLines = 1,
-                                                    softWrap = false,
-                                                    overflow = TextOverflow.Clip,
-                                                    onTextLayout = { layoutResult ->
-                                                        if (layoutResult.hasVisualOverflow && chipFontSize > 6f) {
-                                                            chipFontSize = (chipFontSize * 0.85f).coerceAtLeast(6f)
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(imageVector = acctIcon, contentDescription = null, tint = acctColor, modifier = Modifier.size(9.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    val dest = tx.getTransferDestName()
+                                                    val chipText = if (dest != null) "${tx.getAccountName()} → $dest" else tx.getAccountName()
+                                                    var chipFontSize by remember(chipText) { mutableStateOf(9f) }
+                                                    Text(
+                                                        text = chipText,
+                                                        fontSize = chipFontSize.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = acctColor,
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        overflow = TextOverflow.Clip,
+                                                        onTextLayout = { layoutResult ->
+                                                            if (layoutResult.hasVisualOverflow && chipFontSize > 6f) {
+                                                                chipFontSize = (chipFontSize * 0.85f).coerceAtLeast(6f)
+                                                            }
                                                         }
-                                                    }
-                                                )
+                                                    )
+                                                }
+                                            }
+                                            // Running balance + time outside the chip
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            if (showRunningBalance) {
+                                                val runBal = runningBalances[tx.id]
+                                                if (runBal != null) {
+                                                    Text(text = decFormat.format(runBal), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = c.textTertiary)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                }
+                                            }
+                                            Text(
+                                                text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
+                                                fontSize = 10.sp,
+                                                color = c.textTertiary
+                                            )
+                                            if (isNewlyImported) {
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Surface(color = c.income.copy(alpha = 0.15f), shape = RoundedCornerShape(4.dp)) {
+                                                    Text("NEW", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = c.income, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                                }
                                             }
                                         }
-                                    } else {
+                                    }
+                                } else {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = tx.title,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = c.text,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(3.dp))
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Surface(
                                                 color = acctColor.copy(alpha = 0.10f),
@@ -1480,71 +1517,68 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                             }
                                         }
                                     }
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = when (tx.type) {
-                                            "INCOME" -> "+" + decFormat.format(tx.amount)
-                                            "DUPLICATE" -> "DUP"
-                                            "TRANSFER" -> "⇄ " + decFormat.format(tx.amount)
-                                            "BALANCE_UPDATE" -> {
-                                                val a = tx.amount
-                                                when {
-                                                    a >= 1_000_000 -> "\u20b9${String.format("%.1f", a / 1_000_000)}M"
-                                                    a >= 1_000 -> "\u20b9${String.format("%.1f", a / 1_000)}K"
-                                                    else -> "\u20b9${a.toInt()}"
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(
+                                            text = when (tx.type) {
+                                                "INCOME" -> "+" + decFormat.format(tx.amount)
+                                                "DUPLICATE" -> "DUP"
+                                                "BALANCE_UPDATE" -> {
+                                                    val a = tx.amount
+                                                    when {
+                                                        a >= 1_000_000 -> "\u20b9${String.format("%.1f", a / 1_000_000)}M"
+                                                        a >= 1_000 -> "\u20b9${String.format("%.1f", a / 1_000)}K"
+                                                        else -> "\u20b9${a.toInt()}"
+                                                    }
+                                                }
+                                                else -> "-" + decFormat.format(tx.amount)
+                                            },
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 15.sp,
+                                            color = when (tx.type) {
+                                                "INCOME" -> c.income
+                                                "DUPLICATE" -> c.textTertiary
+                                                "BALANCE_UPDATE" -> c.textTertiary
+                                                else -> c.expense
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.End
+                                        ) {
+                                            if (showRunningBalance) {
+                                                val runBal = runningBalances[tx.id]
+                                                if (runBal != null && tx.type != "DUPLICATE") {
+                                                    Text(
+                                                        text = decFormat.format(runBal),
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = c.textTertiary
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
                                                 }
                                             }
-                                            else -> "-" + decFormat.format(tx.amount)
-                                        },
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 15.sp,
-                                        color = when (tx.type) {
-                                            "INCOME" -> c.income
-                                            "DUPLICATE" -> c.textTertiary
-                                            "TRANSFER" -> Color(0xFF3B82F6)
-                                            "BALANCE_UPDATE" -> c.textTertiary
-                                            else -> c.expense
-                                        }
-                                    )
-                                    // Running balance + time on the same row so card height never increases
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.End
-                                    ) {
-                                        if (showRunningBalance) {
-                                            val runBal = runningBalances[tx.id]
-                                            if (runBal != null && tx.type != "DUPLICATE") {
-                                                Text(
-                                                    text = decFormat.format(runBal),
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = c.textTertiary
-                                                )
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                            }
-                                        }
-                                        Text(
-                                            text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
-                                            fontSize = 10.sp,
-                                            color = c.textTertiary
-                                        )
-                                    }
-                                    if (isNewlyImported) {
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Surface(
-                                            color = c.income.copy(alpha = 0.15f),
-                                            shape = RoundedCornerShape(4.dp)
-                                        ) {
                                             Text(
-                                                "NEW",
-                                                fontSize = 8.sp,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                color = c.income,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
+                                                fontSize = 10.sp,
+                                                color = c.textTertiary
                                             )
+                                        }
+                                        if (isNewlyImported) {
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Surface(
+                                                color = c.income.copy(alpha = 0.15f),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    "NEW",
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = c.income,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }

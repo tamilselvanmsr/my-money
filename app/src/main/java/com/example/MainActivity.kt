@@ -666,12 +666,8 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                 // Only record for txs matching the current wallet filter
                 val txAccDisplay = tx.getAccountName(consolidateAccounts)
                 if (selectedWallet != "All" && txAccDisplay != selectedWallet) continue
-                val displayBal = if (selectedWallet == "All") {
-                    accounts.sumOf { acc -> balMap[acc.name] ?: 0.0 }
-                } else {
-                    balMap[tx.getAccountName(false)] ?: 0.0
-                }
-                result[tx.id] = displayBal
+                // Always show the individual account's own running balance, regardless of the wallet filter
+                result[tx.id] = balMap[tx.getAccountName(false)] ?: 0.0
             }
             result
         }
@@ -1493,25 +1489,30 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                             else -> c.expense
                                         }
                                     )
-                                    // Running balance: plain gray figure above timestamp, hidden by default
-                                    if (showRunningBalance) {
-                                        val runBal = runningBalances[tx.id]
-                                        if (runBal != null && tx.type != "DUPLICATE") {
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = decFormat.format(runBal),
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = c.textTertiary
-                                            )
-                                        }
-                                    }
+                                    // Running balance + time on the same row so card height never increases
                                     Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
-                                        fontSize = 10.sp,
-                                        color = c.textTertiary
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        if (showRunningBalance) {
+                                            val runBal = runningBalances[tx.id]
+                                            if (runBal != null && tx.type != "DUPLICATE") {
+                                                Text(
+                                                    text = decFormat.format(runBal),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = c.textTertiary
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                            }
+                                        }
+                                        Text(
+                                            text = SystemDateFormat.getTimeFormat(context).format(Date(tx.timestamp)),
+                                            fontSize = 10.sp,
+                                            color = c.textTertiary
+                                        )
+                                    }
                                     if (isNewlyImported) {
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Surface(

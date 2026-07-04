@@ -144,6 +144,18 @@ fun makeNoteWithAccount(plainNote: String?, accountName: String): String {
     return if (clean.isEmpty()) "[Acc: $accountName]" else "$clean [Acc: $accountName]"
 }
 
+/** Applies the same consolidation rules as getAccountName(consolidate=true) to a raw name string. */
+fun consolidateAccountName(raw: String): String {
+    val lower = raw.lowercase()
+    return when {
+        lower.contains("card") || lower.contains("credit") -> "Credit Card"
+        lower.contains("bank") || lower.contains("sbi") || lower.contains("hdfc") || lower.contains("icici") || lower.contains("axis") || lower.contains("pnb") -> "Bank Account"
+        lower.contains("cash") -> "Cash Wallet"
+        lower.contains("wallet") -> "Digital Wallet"
+        else -> "Bank Account"
+    }
+}
+
 // Base balances helper
 fun computeWalletBalances(
     transactions: List<TransactionEntry>,
@@ -683,13 +695,25 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
 
     // Filter Transactions by selected period AND selected wallet
     val monthTransactions = periodTransactions.filter { tx ->
-        selectedWallet == "All" || tx.getAccountName(consolidateAccounts) == selectedWallet
+        selectedWallet == "All" ||
+        tx.getAccountName(consolidateAccounts) == selectedWallet ||
+        (tx.type == "TRANSFER" && run {
+            val destRaw = tx.getTransferDestName() ?: return@run false
+            val destDisplay = if (consolidateAccounts) consolidateAccountName(destRaw) else destRaw
+            destDisplay == selectedWallet
+        })
     }
     val searchableTransactions = if (searchQuery.isBlank()) {
         monthTransactions
     } else {
         txs.filter { tx ->
-            selectedWallet == "All" || tx.getAccountName(consolidateAccounts) == selectedWallet
+            selectedWallet == "All" ||
+            tx.getAccountName(consolidateAccounts) == selectedWallet ||
+            (tx.type == "TRANSFER" && run {
+                val destRaw = tx.getTransferDestName() ?: return@run false
+                val destDisplay = if (consolidateAccounts) consolidateAccountName(destRaw) else destRaw
+                destDisplay == selectedWallet
+            })
         }
     }
     val visibleTransactions = searchableTransactions.filter { tx ->

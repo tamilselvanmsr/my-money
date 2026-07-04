@@ -681,11 +681,16 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                 }
                 // Only record for txs matching the current wallet filter
                 val txAccDisplay = tx.getAccountName(consolidateAccounts)
-                if (selectedWallet != "All" && txAccDisplay != selectedWallet) continue
-                val displayBal = if (selectedWallet == "All") {
-                    accounts.sumOf { acc -> balMap[acc.name] ?: 0.0 }
-                } else {
-                    balMap[tx.getAccountName(false)] ?: 0.0
+                val destRawForBal = tx.getTransferDestName()
+                val isInboundTransfer = tx.type == "TRANSFER" && destRawForBal != null && run {
+                    val destDisplay = if (consolidateAccounts) consolidateAccountName(destRawForBal) else destRawForBal
+                    destDisplay == selectedWallet
+                }
+                if (selectedWallet != "All" && txAccDisplay != selectedWallet && !isInboundTransfer) continue
+                val displayBal = when {
+                    selectedWallet == "All" -> accounts.sumOf { acc -> balMap[acc.name] ?: 0.0 }
+                    isInboundTransfer      -> balMap[destRawForBal!!] ?: 0.0
+                    else                   -> balMap[tx.getAccountName(false)] ?: 0.0
                 }
                 result[tx.id] = displayBal
             }
@@ -1428,13 +1433,21 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                                     modifier = Modifier.size(9.dp)
                                                 )
                                                 val dest = tx.getTransferDestName()
+                                                val chipText = if (dest != null) "${tx.getAccountName()} → $dest" else tx.getAccountName()
+                                                var chipFontSize by remember(chipText) { mutableStateOf(9f) }
                                                 Text(
-                                                    text = if (dest != null) "${tx.getAccountName()} → $dest" else tx.getAccountName(),
-                                                    fontSize = 9.sp,
+                                                    text = chipText,
+                                                    fontSize = chipFontSize.sp,
                                                     fontWeight = FontWeight.SemiBold,
                                                     color = acctColor,
                                                     maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
+                                                    softWrap = false,
+                                                    overflow = TextOverflow.Clip,
+                                                    onTextLayout = { layoutResult ->
+                                                        if (layoutResult.hasVisualOverflow && chipFontSize > 6f) {
+                                                            chipFontSize = (chipFontSize * 0.85f).coerceAtLeast(6f)
+                                                        }
+                                                    }
                                                 )
                                             }
                                         }

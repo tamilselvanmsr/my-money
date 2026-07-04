@@ -274,7 +274,8 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     var currentTab by remember { mutableStateOf(AppTab.DASHBOARD) }
     val dashboardListState = rememberLazyListState()
     val fabAlpha by animateFloatAsState(
-        targetValue = if (currentTab == AppTab.DASHBOARD && dashboardListState.isScrollInProgress) 0f else 1f,
+        targetValue = if (currentTab == AppTab.DASHBOARD &&
+            dashboardListState.canScrollBackward && dashboardListState.canScrollForward) 0f else 1f,
         animationSpec = tween(durationMillis = 250),
         label = "FabAlpha"
     )
@@ -906,32 +907,6 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             }
                         )
                         
-                        DropdownMenuItem(
-                            text = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text("Show Balance Figures", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
-                                        Text("Turn off to hide amounts for privacy", fontSize = 9.sp, color = c.textSecondary)
-                                    }
-                                    Switch(
-                                        checked = showTotal,
-                                        onCheckedChange = { viewModel.setShowTotal(it) },
-                                        colors = SwitchDefaults.colors(
-                                            checkedThumbColor = c.bg,
-                                            checkedTrackColor = c.accent
-                                        ),
-                                        modifier = Modifier.scale(0.8f).testTag("menu_show_total_switch")
-                                    )
-                                }
-                            },
-                            onClick = {
-                                viewModel.setShowTotal(!showTotal)
-                            }
-                        )
                         HorizontalDivider(color = c.divider, thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
                         DropdownMenuItem(
                             text = {
@@ -1036,7 +1011,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         // Monthly Income Tracker
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                             Surface(
                                 shape = CircleShape,
                                 color = c.income.copy(alpha = 0.15f),
@@ -1064,7 +1039,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                         }
 
                         // Monthly Expense Tracker
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End, modifier = Modifier.weight(1f)) {
                             Surface(
                                 shape = CircleShape,
                                 color = c.expense.copy(alpha = 0.15f),

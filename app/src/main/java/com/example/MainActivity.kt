@@ -3610,23 +3610,23 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             )
                         }
                     ) {
-                        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-                            Row(verticalAlignment = Alignment.Top) {
-                                Surface(shape = CircleShape, color = cat.color.copy(alpha = 0.15f), modifier = Modifier.size(52.dp)) {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(shape = CircleShape, color = cat.color.copy(alpha = 0.15f), modifier = Modifier.size(42.dp)) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Icon(imageVector = cat.icon, contentDescription = cat.name, tint = cat.color, modifier = Modifier.size(26.dp))
+                                        Icon(imageVector = cat.icon, contentDescription = cat.name, tint = cat.color, modifier = Modifier.size(22.dp))
                                     }
                                 }
-                                Spacer(modifier = Modifier.width(12.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text,
+                                        Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.text,
                                             modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("${compactCurrency(catSpend)} / ${compactCurrency(limit)}", fontSize = 13.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
+                                        Text("${compactCurrency(catSpend)} / ${compactCurrency(limit)}", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
                                         Box {
-                                            IconButton(onClick = { showCategoryMenuFor = cat.name }, modifier = Modifier.size(28.dp)) {
-                                                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = c.textSecondary, modifier = Modifier.size(16.dp))
+                                            IconButton(onClick = { showCategoryMenuFor = cat.name }, modifier = Modifier.size(24.dp)) {
+                                                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = c.textSecondary, modifier = Modifier.size(14.dp))
                                             }
                                             DropdownMenu(
                                                 expanded = showCategoryMenuFor == cat.name,
@@ -3644,26 +3644,27 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                             }
                                         }
                                     }
-                                    Text(
-                                        text = "Remaining: ${compactCurrency(remaining)}",
-                                        fontSize = 12.sp,
-                                        color = if (remaining < 0) c.expense else c.income
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        LinearProgressIndicator(
-                                            progress = ratio.toFloat().coerceIn(0f, 1f),
-                                            color = progressColor,
-                                            trackColor = c.text.copy(alpha = 0.05f),
-                                            modifier = Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Remaining: ${compactCurrency(remaining)}",
+                                            fontSize = 11.sp,
+                                            color = if (remaining < 0) c.expense else c.income
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
                                         Text(
                                             text = "${String.format(Locale.getDefault(), "%.1f", percent)}%",
-                                            fontSize = 13.sp, fontWeight = FontWeight.Bold, color = progressColor,
-                                            modifier = Modifier.widthIn(min = 44.dp), textAlign = TextAlign.End
+                                            fontSize = 11.sp, fontWeight = FontWeight.Bold, color = progressColor
                                         )
                                     }
+                                    LinearProgressIndicator(
+                                        progress = ratio.toFloat().coerceIn(0f, 1f),
+                                        color = progressColor,
+                                        trackColor = c.text.copy(alpha = 0.05f),
+                                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
+                                    )
                                 }
                             }
                         }
@@ -3682,6 +3683,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         val txMonth = sdfMonth.format(Date(it.timestamp))
                         txMonth == rawMonthYear && it.type == "INCOME" && it.category.equals(cat.name, ignoreCase = true)
                     }.sumOf { it.amount }
+                    val catExpense = monthExpenses.filter { it.category.equals(cat.name, ignoreCase = true) }.sumOf { it.amount }
                     Surface(
                         color = c.surface,
                         shape = RoundedCornerShape(16.dp),
@@ -3708,8 +3710,12 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                     }
                                 }
                             } else {
-                                Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text,
-                                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    if (catExpense > 0) {
+                                        Text("${compactCurrency(catExpense)} spent", fontSize = 12.sp, color = c.expense, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             OutlinedButton(

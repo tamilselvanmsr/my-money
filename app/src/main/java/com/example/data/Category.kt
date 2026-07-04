@@ -61,6 +61,7 @@ enum class ExpenseCategory(
     COOKING("Cooking",                 Icons.Default.Kitchen,         Color(0xFFFF7043)),
     GROCERIES("Groceries",             Icons.Default.ShoppingCart,    Color(0xFF388E3C)),
     SOFT_HOT_DRINKS("Tea & Soft Drinks", Icons.Default.LocalCafe,     Color(0xFF8D6E63)),
+    BEAUTY("Beauty",                   Icons.Default.Spa,             Color(0xFFAD1457)),
 
     // ── Income ───────────────────────────────────────────────────────────────
     SALARY("Salary",                   Icons.Default.AttachMoney,     Color(0xFF2E7D32), "INCOME"),

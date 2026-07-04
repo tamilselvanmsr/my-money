@@ -3344,7 +3344,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
             .sumOf { it.amountLimit }
         val globalBudgetSpend = monthExpenses.sumOf { it.amount }
         
-        if (activeCategoryTypeTab == "EXPENSE") {
+        if (activeCategoryTypeTab == "EXPENSE" && globalBudgetLimit > 0) {
             item {
                 val percent = if (globalBudgetLimit > 0) (globalBudgetSpend / globalBudgetLimit * 100) else 0.0
                 val progressFraction = if (globalBudgetLimit > 0) (globalBudgetSpend / globalBudgetLimit).toFloat().coerceIn(0f, 1f) else 0f
@@ -3610,23 +3610,23 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             )
                         }
                     ) {
-                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(shape = CircleShape, color = cat.color.copy(alpha = 0.15f), modifier = Modifier.size(42.dp)) {
+                                Surface(shape = CircleShape, color = cat.color.copy(alpha = 0.15f), modifier = Modifier.size(46.dp)) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Icon(imageVector = cat.icon, contentDescription = cat.name, tint = cat.color, modifier = Modifier.size(22.dp))
+                                        Icon(imageVector = cat.icon, contentDescription = cat.name, tint = cat.color, modifier = Modifier.size(24.dp))
                                     }
                                 }
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.text,
+                                        Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text,
                                             modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("${compactCurrency(catSpend)} / ${compactCurrency(limit)}", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
+                                        Text("${compactCurrency(catSpend)} / ${compactCurrency(limit)}", fontSize = 13.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
                                         Box {
-                                            IconButton(onClick = { showCategoryMenuFor = cat.name }, modifier = Modifier.size(24.dp)) {
-                                                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = c.textSecondary, modifier = Modifier.size(14.dp))
+                                            IconButton(onClick = { showCategoryMenuFor = cat.name }, modifier = Modifier.size(26.dp)) {
+                                                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = c.textSecondary, modifier = Modifier.size(15.dp))
                                             }
                                             DropdownMenu(
                                                 expanded = showCategoryMenuFor == cat.name,
@@ -3651,12 +3651,12 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                     ) {
                                         Text(
                                             text = "Remaining: ${compactCurrency(remaining)}",
-                                            fontSize = 11.sp,
+                                            fontSize = 12.sp,
                                             color = if (remaining < 0) c.expense else c.income
                                         )
                                         Text(
                                             text = "${String.format(Locale.getDefault(), "%.1f", percent)}%",
-                                            fontSize = 11.sp, fontWeight = FontWeight.Bold, color = progressColor
+                                            fontSize = 12.sp, fontWeight = FontWeight.Bold, color = progressColor
                                         )
                                     }
                                     LinearProgressIndicator(
@@ -3693,37 +3693,37 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             .clickable { showEditCategoryDialog = cat }
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Surface(shape = CircleShape, color = cat.color.copy(alpha = 0.15f), modifier = Modifier.size(52.dp)) {
+                            Surface(shape = CircleShape, color = cat.color.copy(alpha = 0.15f), modifier = Modifier.size(46.dp)) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(imageVector = cat.icon, contentDescription = cat.name, tint = cat.color, modifier = Modifier.size(26.dp))
+                                    Icon(imageVector = cat.icon, contentDescription = cat.name, tint = cat.color, modifier = Modifier.size(24.dp))
                                 }
                             }
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
                             if (activeCategoryTypeTab == "INCOME") {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     if (catIncome > 0) {
-                                        Text("${compactCurrency(catIncome)} received", fontSize = 12.sp, color = c.income, fontWeight = FontWeight.SemiBold)
+                                        Text("${compactCurrency(catIncome)} received", fontSize = 11.sp, color = c.income, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             } else {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     if (catExpense > 0) {
-                                        Text("${compactCurrency(catExpense)} spent", fontSize = 12.sp, color = c.expense, fontWeight = FontWeight.SemiBold)
+                                        Text("${compactCurrency(catExpense)} spent", fontSize = 11.sp, color = c.expense, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             OutlinedButton(
                                 onClick = { showBudgetAmountDialog = cat },
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = c.accent),
                                 border = BorderStroke(1.dp, c.accent.copy(alpha = 0.6f)),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.height(32.dp)
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp)
                             ) {
                                 Text(if (activeCategoryTypeTab == "INCOME") "Set Expected" else "Set Budget", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }

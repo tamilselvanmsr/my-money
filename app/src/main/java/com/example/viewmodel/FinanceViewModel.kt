@@ -851,6 +851,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun setBackupFrequency(freq: String) {
         _backupFrequency.value = freq
         prefs.edit().putString("backup_frequency", freq).apply()
+        com.example.utils.BackupScheduler.schedule(getApplication(), freq)
     }
 
     /**
@@ -1067,7 +1068,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun executeRestore(item: BackupItem, onComplete: (Boolean, String?) -> Unit) {
+    fun executeRestore(item: BackupItem, cleanRestore: Boolean = false, onComplete: (Boolean, String?) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val content: String = if (item.contentUri != null) {
@@ -1075,6 +1076,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         ?.bufferedReader()?.readText() ?: ""
                 } else {
                     item.file?.readText() ?: ""
+                }
+                if (cleanRestore) {
+                    repository.clearTransactions()
+                    repository.clearBudgets()
+                    repository.clearAccounts()
+                    repository.clearCustomCategories()
+                    createdAccountsCache.clear()
                 }
                 if (content.trimStart().startsWith("{")) {
                     restoreFromJsonContent(content, onComplete)

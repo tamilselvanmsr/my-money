@@ -321,11 +321,6 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
         }
     }
 
-    // Trigger auto-backup if frequency interval has elapsed since last backup
-    LaunchedEffect(Unit) {
-        viewModel.checkAndTriggerAutoBackup()
-    }
-
     // Theme-aware palette constants (switch with dark/light mode)
     val darkBg = c.bg
     val cardSurface = c.surface
@@ -842,15 +837,11 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 .border(1.dp, c.border, RoundedCornerShape(8.dp))
                                 .width(220.dp)
                         ) {
-                        DropdownMenuItem(
-                            text = {
-                                Text("DISPLAY MODE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
-                            },
-                            onClick = {},
-                            enabled = false,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)
-                        )
-                        
+                        // Header (non-interactive label — no min-height needed)
+                        Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+                            Text("DISPLAY MODE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
+                        }
+
                         val modes = listOf(
                             DisplayMode.DAILY to "Daily View",
                             DisplayMode.WEEKLY to "Weekly View",
@@ -859,33 +850,24 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             DisplayMode.SIX_MONTHS to "6 Months View",
                             DisplayMode.ONE_YEAR to "1 Year View"
                         )
-                        
+
                         modes.forEach { (mode, label) ->
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(label, color = c.text, fontSize = 13.sp)
-                                        if (activeMode == mode) {
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = "Selected",
-                                                tint = c.accent,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.setDisplayMode(mode)
+                                        showFilterMenu = false
                                     }
-                                },
-                                onClick = {
-                                    viewModel.setDisplayMode(mode)
-                                    showFilterMenu = false
-                                },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                                modifier = Modifier.testTag("filter_mode_${mode.name.lowercase()}")
-                            )
+                                    .padding(horizontal = 12.dp, vertical = 7.dp)
+                                    .testTag("filter_mode_${mode.name.lowercase()}")
+                            ) {
+                                Text(label, color = if (activeMode == mode) c.accent else c.text, fontSize = 13.sp,
+                                    fontWeight = if (activeMode == mode) FontWeight.Bold else FontWeight.Normal)
+                                if (activeMode == mode) Icon(Icons.Default.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(15.dp))
+                            }
                         }
                         
                         HorizontalDivider(color = c.divider, thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
@@ -5185,7 +5167,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
-                                .weight(1f)
+                                .fillMaxWidth()
                                 .height(48.dp)
                                 .testTag("scan_device_sms_button")
                         ) {
@@ -5204,46 +5186,37 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                 )
                             }
                         }
-                        // Bal Sync toggle
-                        var showBalSyncInfo by remember { mutableStateOf(false) }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                "Bal\nSync",
-                                fontSize = 10.sp,
-                                lineHeight = 13.sp,
-                                color = c.textSecondary,
-                                textAlign = TextAlign.Center
-                            )
-                            IconButton(
-                                onClick = { showBalSyncInfo = true },
-                                modifier = Modifier.size(20.dp)
-                            ) {
-                                Icon(Icons.Default.Info, contentDescription = "Bal Sync info", tint = c.textSecondary, modifier = Modifier.size(14.dp))
-                            }
-                            Switch(
-                                checked = enableBalanceSync,
-                                onCheckedChange = { viewModel.setEnableBalanceSync(it) },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = c.accent,
-                                    checkedTrackColor = c.accent.copy(alpha = 0.35f),
-                                    uncheckedThumbColor = c.textSecondary,
-                                    uncheckedTrackColor = c.divider
-                                )
-                            )
+                    }
+                    // Bal Sync toggle — separate compact row below the scan button
+                    var showBalSyncInfo by remember { mutableStateOf(false) }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.End,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    ) {
+                        Text("Balance Sync", fontSize = 11.sp, color = c.textSecondary)
+                        IconButton(onClick = { showBalSyncInfo = true }, modifier = Modifier.size(22.dp)) {
+                            Icon(Icons.Default.Info, contentDescription = "Bal Sync info", tint = c.textSecondary, modifier = Modifier.size(13.dp))
                         }
-                        if (showBalSyncInfo) {
-                            AlertDialog(
-                                onDismissRequest = { showBalSyncInfo = false },
-                                title = { Text("Balance Sync", fontWeight = FontWeight.Bold) },
-                                text = { Text("Reads bank balance SMS to anchor your account's current balance, fixing any drift from manual entries. When enabled, the reported balance is stored as a snapshot and only transactions after that point affect your running balance.") },
-                                confirmButton = {
-                                    TextButton(onClick = { showBalSyncInfo = false }) { Text("Got it") }
-                                }
+                        Switch(
+                            checked = enableBalanceSync,
+                            onCheckedChange = { viewModel.setEnableBalanceSync(it) },
+                            modifier = Modifier.scale(0.8f),
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = c.accent,
+                                checkedTrackColor = c.accent.copy(alpha = 0.35f),
+                                uncheckedThumbColor = c.textSecondary,
+                                uncheckedTrackColor = c.divider
                             )
-                        }
+                        )
+                    }
+                    if (showBalSyncInfo) {
+                        AlertDialog(
+                            onDismissRequest = { showBalSyncInfo = false },
+                            title = { Text("Balance Sync", fontWeight = FontWeight.Bold) },
+                            text = { Text("Reads bank balance SMS to anchor your account's current balance, fixing any drift from manual entries. When enabled, the reported balance is stored as a snapshot and only transactions after that point affect your running balance.") },
+                            confirmButton = { TextButton(onClick = { showBalSyncInfo = false }) { Text("Got it") } }
+                        )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     // Wallets & PF scan button
@@ -7513,49 +7486,49 @@ fun BackupDialog(
     
 if (restoreConfirmItem != null) {
         val backupItem = restoreConfirmItem!!
-        var understandCheckbox by remember { mutableStateOf(false) }
-        
+        var cleanRestore by remember { mutableStateOf(false) }
+
         AlertDialog(
             onDismissRequest = { restoreConfirmItem = null },
-            title = { Text("Confirm Restore", fontWeight = FontWeight.Bold, color = c.text) },
+            title = { Text("Restore Backup", fontWeight = FontWeight.Bold, color = c.text) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "You are about to restore a backup from ${
-                            if (backupItem.isGoogleStorage) "Google Drive" else "Local Storage"
-                        } created on ${
-                            java.text.SimpleDateFormat("MMM dd, yyyy HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(backupItem.timestamp))
+                        "Restoring backup from ${
+                            java.text.SimpleDateFormat("MMM dd, yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(backupItem.timestamp))
                         }.",
-                        color = c.text,
-                        fontSize = 13.sp
+                        color = c.text, fontSize = 13.sp
                     )
-                    
+
+                    // Merge info (default behaviour)
                     Surface(
-                        color = c.expense.copy(alpha = 0.1f),
-                        border = BorderStroke(1.dp, c.expense.copy(alpha = 0.4f)),
+                        color = c.accent.copy(alpha = 0.08f),
+                        border = BorderStroke(1.dp, c.accent.copy(alpha = 0.3f)),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            "WARNING: This will permanently overwrite all your current accounts, transactions, custom categories, and budgets.",
-                            color = c.expense,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
+                            "By default only missing records are added — your existing data is kept intact.",
+                            color = c.accent, fontSize = 11.sp,
                             modifier = Modifier.padding(10.dp)
                         )
                     }
-                    
+
+                    // Clean restore toggle
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.clickable { understandCheckbox = !understandCheckbox }
+                        modifier = Modifier.clickable { cleanRestore = !cleanRestore }
                     ) {
                         Checkbox(
-                            checked = understandCheckbox,
-                            onCheckedChange = { understandCheckbox = it },
+                            checked = cleanRestore,
+                            onCheckedChange = { cleanRestore = it },
                             colors = CheckboxDefaults.colors(checkedColor = c.expense)
                         )
-                        Text("I understand and want to proceed", color = c.text, fontSize = 12.sp)
+                        Column {
+                            Text("Clean restore (replace all data)", color = if (cleanRestore) c.expense else c.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Wipes current records before restoring", color = c.textSecondary, fontSize = 10.sp)
+                        }
                     }
                 }
             },
@@ -7563,30 +7536,28 @@ if (restoreConfirmItem != null) {
                 Button(
                     onClick = {
                         val itemToRestore = backupItem
+                        val doClean = cleanRestore
                         restoreConfirmItem = null
                         isRestoring = true
                         coroutineScope.launch {
-                            delay(1200)
-                            viewModel.executeRestore(itemToRestore) { success, errMsg ->
+                            delay(600)
+                            viewModel.executeRestore(itemToRestore, doClean) { success, errMsg ->
                                 isRestoring = false
                                 if (success) {
                                     Toast.makeText(context, "Backup restored successfully!", Toast.LENGTH_LONG).show()
                                 } else {
-                                    Toast.makeText(context, "Failed to restore backup: ${errMsg ?: "Unknown error"}", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Failed to restore: ${errMsg ?: "Unknown error"}", Toast.LENGTH_LONG).show()
                                 }
                             }
                         }
                     },
-                    enabled = understandCheckbox,
-                    colors = ButtonDefaults.buttonColors(containerColor = c.expense)
+                    colors = ButtonDefaults.buttonColors(containerColor = if (cleanRestore) c.expense else c.accent)
                 ) {
-                    Text("Restore Data")
+                    Text(if (cleanRestore) "Replace All Data" else "Merge Restore")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { restoreConfirmItem = null }) {
-                    Text("Cancel", color = c.text)
-                }
+                TextButton(onClick = { restoreConfirmItem = null }) { Text("Cancel", color = c.text) }
             },
             containerColor = c.surface
         )
@@ -7675,11 +7646,11 @@ fun RestoreBackupDialog(
 
                 Spacer(Modifier.height(16.dp))
 
-                // ── Warning banner ────────────────────────────────────────
+                // ── Info banner ────────────────────────────────────────
                 Surface(
-                    color = c.expense.copy(0.08f),
+                    color = c.accent.copy(0.08f),
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, c.expense.copy(0.35f)),
+                    border = BorderStroke(1.dp, c.accent.copy(0.3f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -7687,13 +7658,13 @@ fun RestoreBackupDialog(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.Top
                     ) {
-                        Icon(Icons.Default.Warning, contentDescription = null, tint = c.expense, modifier = Modifier.size(18.dp).padding(top = 1.dp))
+                        Icon(Icons.Default.Info, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp).padding(top = 1.dp))
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("Destructive Action", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.expense)
+                            Text("Merge Restore (non-destructive)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.accent)
                             Text(
-                                "This will permanently replace ALL existing accounts and transactions with the backup contents.",
+                                "Only records missing from your current data are added. Existing accounts and transactions are preserved.",
                                 fontSize = 11.sp,
-                                color = c.expense.copy(0.85f)
+                                color = c.accent.copy(0.85f)
                             )
                         }
                     }

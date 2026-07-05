@@ -134,10 +134,10 @@ object PdfExporter {
 
         // Monthly overview mini-table
         cv.drawText("Monthly Overview", M, y, paint(10f, C_BG_DARK, bold = true))
-        y += 12f
+        y += 22f
         val colM = floatArrayOf(M, M + 90f, M + 200f, M + 310f, M + 420f)
         drawTableHeader(cv, y, colM, arrayOf("Month", "Income", "Expense", "Net", "Grand Total"))
-        y += 18f
+        y += 20f
 
         sections.sortedByDescending { it.month }.forEach { s ->
             ensureSpace(16f)
@@ -148,7 +148,7 @@ object PdfExporter {
             cv.drawText(fmtAmt(s.expense),                  colM[2], y, paint(9f, C_EXP, bold = true))
             cv.drawText(fmtAmt(s.net),                      colM[3], y, paint(9f, netColor, bold = true))
             cv.drawText(fmtAmt(s.closingBalance),           colM[4], y, paint(9f, gcColor, bold = true))
-            y += 16f
+            y += 18f
             cv.drawLine(M, y - 4f, PW - M, y - 4f, p(C_DIVIDER, strokeWidth = 0.5f))
         }
 
@@ -185,12 +185,12 @@ object PdfExporter {
             }
 
             ensureSpace(20f + accounts.size * 18f)
-            y += 8f
+            y += 14f
             cv.drawText("Account Balances", M, y, paint(10f, C_BG_DARK, bold = true))
-            y += 12f
+            y += 22f
             val colA = floatArrayOf(M, M + 185f, M + 290f, M + 400f)
             drawTableHeader(cv, y, colA, arrayOf("Account", "Type", "Current Balance", "Income / Expense"))
-            y += 18f
+            y += 20f
             accounts.forEach { acc ->
                 ensureSpace(16f)
                 val bal = computedBal[acc.name] ?: acc.balance
@@ -207,7 +207,7 @@ object PdfExporter {
                 cv.drawText(typeLabel,           colA[1], y, paint(8.5f, C_MUTED))
                 cv.drawText(fmtAmt(bal),         colA[2], y, paint(8.5f, balColor, bold = true))
                 cv.drawText("${fmtAmt(inc)} / ${fmtAmt(exp)}", colA[3], y, paint(8.5f, C_TEXT))
-                y += 16f
+                y += 18f
                 cv.drawLine(M, y - 4f, PW - M, y - 4f, p(C_DIVIDER, strokeWidth = 0.5f))
             }
         }
@@ -246,29 +246,29 @@ object PdfExporter {
             }
 
             // Transaction table
-            ensureSpace(38f)
-            cv.drawRoundRect(RectF(M, y, PW - M, y + 22f), 8f, 8f, p(C_BG_MID))
-            cv.drawText("Transactions (${s.transactions.size})", M + 10f, y + 15f, paint(10f, C_WHITE, bold = true))
-            y += 30f
+            ensureSpace(46f)
+            cv.drawRoundRect(RectF(M, y, PW - M, y + 26f), 8f, 8f, p(C_BG_MID))
+            cv.drawText("Transactions (${s.transactions.size})", M + 10f, y + 18f, paint(10f, C_WHITE, bold = true))
+            y += 38f
 
             val txCols = floatArrayOf(M, M + 62f, M + 107f, M + 267f, M + 377f, M + 462f)
             drawTableHeader(cv, y, txCols, arrayOf("Date", "Time", "Payee", "Wallet", "Category", "Amount"))
-            y += 18f
+            y += 20f
 
             s.transactions.forEachIndexed { idx, tx ->
-                ensureSpace(16f)
+                ensureSpace(18f)
                 val resolved = CategoryResolver.resolve(tx.category, customCategories)
                 val isInc = tx.type == "INCOME"
                 val alt   = idx % 2 != 0
 
-                // Row background
+                // Row background (18px tall, 2px breathing room above/below text)
                 val rowBg = when {
                     isInc && alt  -> C_INC_ALT
                     isInc         -> C_INC_BG
                     !isInc && alt -> C_EXP_ALT
                     else          -> C_EXP_BG
                 }
-                cv.drawRect(M, y - 11f, PW - M, y + 5f, p(rowBg))
+                cv.drawRect(M, y - 13f, PW - M, y + 5f, p(rowBg))
 
                 val amtColor = if (isInc) C_INC else C_EXP
                 cv.drawText(dateFormat.format(Date(tx.timestamp)),              txCols[0], y, paint(8.5f, C_TEXT))
@@ -280,7 +280,7 @@ object PdfExporter {
                     fmtAmt(if (isInc) tx.amount else -tx.amount),
                     txCols[5], y, paint(8.5f, amtColor, bold = true)
                 )
-                y += 16f
+                y += 18f
             }
 
             // Monthly totals

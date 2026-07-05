@@ -14,8 +14,8 @@ android {
     applicationId = "com.aistudio.personalfinance.qzmxwy"
     minSdk = 24
     targetSdk = 36
-    versionCode = 71
-    versionName = "1.71"
+    versionCode = 68
+    versionName = "1.68"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -87,6 +87,7 @@ dependencies {
   implementation(libs.androidx.lifecycle.viewmodel.compose)
   // implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.documentfile)
+  implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   // implementation(libs.coil.compose)

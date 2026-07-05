@@ -46,6 +46,17 @@ fun isDuplicateImportedTransaction(
         }
     }
 
+    // 3b. EXPENSE re-scan when a TRANSFER already covers the source account.
+    //     When backup is restored the TRANSFER entry has smsBody=null (not in CSV), so checks
+    //     1 and 2 cannot fire. The [Acc: ...] tag in the note IS preserved, so we use it.
+    if (incomingType == "EXPENSE" && existing.type == "TRANSFER") {
+        if (existing.amount == incomingAmount &&
+            existing.note?.contains("[Acc: $incomingAccountName]") == true &&
+            abs(existing.timestamp - incomingTimestamp) < DUPLICATE_MATCH_WINDOW_MS) {
+            return true
+        }
+    }
+
     // 4. Core-fields match within 60-second window (same amount + type + title + account).
     val sameCoreFields = existing.amount == incomingAmount &&
         existing.type == incomingType &&

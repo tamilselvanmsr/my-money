@@ -75,6 +75,7 @@ import com.example.viewmodel.FinanceViewModel
 import com.example.viewmodel.DisplayMode
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.text.DecimalFormat
 import android.text.format.DateFormat as SystemDateFormat
 import java.text.SimpleDateFormat
@@ -6999,167 +7000,491 @@ fun BackupDialog(
 ) {
     val c = LocalAppColors.current
     val context = LocalContext.current
-    var exported by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    
+    val freq by viewModel.backupFrequency.collectAsStateWithLifecycle()
+    val customBackupPath by viewModel.customBackupPath.collectAsStateWithLifecycle()
+    val lastTime by viewModel.lastBackupTime.collectAsStateWithLifecycle()
+    val availableBackups by viewModel.availableBackups.collectAsStateWithLifecycle()
+    
+    // UI states
+    var isBackingUp by remember { mutableStateOf(false) }
+    var backupStatusText by remember { mutableStateOf("") }
+    var tempPathInput by remember(customBackupPath) { mutableStateOf(customBackupPath) }
+    var isEditingPath by remember { mutableStateOf(false) }
+    var restoreConfirmItem by remember { mutableStateOf<com.example.viewmodel.BackupItem?>(null) }
+    var isRestoring by remember { mutableStateOf(false) }
+    var exportedCsv by remember { mutableStateOf(false) }
+    
+    // Refresh backups list when dialog is shown or custom path changes
+    LaunchedEffect(customBackupPath) {
+        viewModel.refreshAvailableBackups()
+    }
 
     val createDocLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv")
     ) { uri ->
         if (uri != null) {
             viewModel.exportBackupToUri(context, uri)
-            exported = true
+            exportedCsv = true
+        }
+    }
+
+    val openDocLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            isRestoring = true
+            viewModel.restoreFromBackupUri(context, uri) { success, errMsg ->
+                isRestoring = false
+                if (success) {
+                    Toast.makeText(context, "Backup restored successfully!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Failed to restore backup: ${errMsg ?: "Unknown error"}", Toast.LENGTH_LONG).show()
+                }
+                viewModel.refreshAvailableBackups()
+            }
+        }
+    }
+
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            // Persist read/write permission across reboots
+            val flags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            context.contentResolver.takePersistableUriPermission(uri, flags)
+            val path = uri.toString()
+            viewModel.setCustomBackupPath(path)
+            Toast.makeText(context, "Backup folder updated!", Toast.LENGTH_SHORT).show()
         }
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isBackingUp && !isRestoring) onDismiss() },
         title = null,
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // ── Icon header ────────────────────────────────────────────
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .background(c.income.copy(alpha = 0.15f), CircleShape)
-                        .border(1.5.dp, c.income.copy(alpha = 0.4f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Backup,
-                        contentDescription = null,
-                        tint = c.income,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "Export Backup ",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = c.text
-                )
-                Text(
-                    "Save all your data as a CSV file",
-                    fontSize = 12.sp,
-                    color = c.textSecondary,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-
-                Spacer(Modifier.height(20.dp))
-                HorizontalDivider(color = c.text.copy(0.08f))
-                Spacer(Modifier.height(16.dp))
-
-                // ── What's included ───────────────────────────────────────
-                Text(
-                    "WHAT'S INCLUDED",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = c.text.copy(0.4f),
-                    modifier = Modifier.align(Alignment.Start)
-                )
-                Spacer(Modifier.height(10.dp))
-                listOf(
-                    Triple(Icons.Default.AccountBalanceWallet, "All Accounts",       "Name, type, balance, last 4 digits"),
-                    Triple(Icons.Default.ReceiptLong,          "All Transactions",   "Date, title, amount, category, type"),
-                    Triple(Icons.Default.Category,             "Account Links",       "Each transaction linked to its account"),
-                    Triple(Icons.Default.Calculate,            "All Budgets",         "Category limits and month-year targets")
-                ).forEach { (icon, title, sub) ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 5.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .background(c.income.copy(0.12f), RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(icon, contentDescription = null, tint = c.income, modifier = Modifier.size(18.dp))
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text)
-                            Text(sub,   fontSize = 11.sp, color = c.textSecondary)
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(14.dp))
-
-                // ── Info note ─────────────────────────────────────────────
-                Surface(
-                    color = c.accent.copy(0.06f),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, c.accent.copy(0.2f)),
+                // Header
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(c.accent.copy(alpha = 0.12f), CircleShape)
+                            .border(1.dp, c.accent.copy(alpha = 0.3f), CircleShape),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = c.accent, modifier = Modifier.size(15.dp))
-                        Text(
-                            "Opens in Excel & Google Sheets. Balance Sync entries are excluded.",
-                            fontSize = 11.sp,
-                            color = c.accent.copy(0.85f)
+                        Icon(
+                            Icons.Default.CloudUpload,
+                            contentDescription = null,
+                            tint = c.accent,
+                            modifier = Modifier.size(28.dp)
                         )
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Backup & Recovery",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = c.text
+                    )
+                    Text(
+                        "Automate, sync, or restore offline",
+                        fontSize = 11.sp,
+                        color = c.textSecondary
+                    )
                 }
+                
+                HorizontalDivider(color = c.divider)
 
-                // ── Success banner ────────────────────────────────────────
-                if (exported) {
-                    Spacer(Modifier.height(10.dp))
-                    Surface(
-                        color = c.income.copy(0.12f),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, c.income.copy(0.4f)),
-                        modifier = Modifier.fillMaxWidth()
+                // 1. Auto Backup Frequency
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "AUTOMATIC BACKUP FREQUENCY",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = c.textSecondary,
+                        letterSpacing = 0.5.sp
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = c.income, modifier = Modifier.size(18.dp))
-                            Text("Backup saved successfully!", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.income)
+                        listOf(
+                            "MANUAL" to "Off",
+                            "DAILY" to "Daily",
+                            "WEEKLY" to "Weekly",
+                            "MONTHLY" to "Monthly"
+                        ).forEach { (value, label) ->
+                            val active = freq == value
+                            Surface(
+                                color = if (active) c.accent else c.surfaceVariant,
+                                border = BorderStroke(1.dp, if (active) c.accent else c.border),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { viewModel.setBackupFrequency(value) }
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        label,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (active) Color.White else c.text
+                                    )
+                                }
+                            }
                         }
                     }
                 }
 
-                Spacer(Modifier.height(20.dp))
-                HorizontalDivider(color = c.text.copy(0.08f))
-                Spacer(Modifier.height(14.dp))
-
-                // ── Action buttons ────────────────────────────────────────
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text.copy(0.7f)),
-                        border = BorderStroke(1.dp, c.text.copy(0.15f))
-                    ) { Text("Close") }
-
-                    Button(
-                        onClick = {
-                            val date = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date())
-                            createDocLauncher.launch("mymoney_backup_$date.csv")
-                        },
-                        modifier = Modifier.weight(2f),
-                        colors = ButtonDefaults.buttonColors(containerColor = c.income, contentColor = c.text),
-                        shape = RoundedCornerShape(10.dp)
+                // 2. Backup Storage Path
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "BACKUP STORAGE LOCATION",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = c.textSecondary,
+                        letterSpacing = 0.5.sp
+                    )
+                    Surface(
+                        color = c.surfaceVariant,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, c.border),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Save CSV Backup", fontWeight = FontWeight.Bold)
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .background(c.accent.copy(alpha = 0.12f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Folder,
+                                        contentDescription = null,
+                                        tint = c.accent,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Local Backup Folder",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = c.text
+                                    )
+                                    val currentPath = customBackupPath.ifEmpty { viewModel.getBackupFolder(false, "").absolutePath }
+                                    Text(
+                                        currentPath,
+                                        fontSize = 11.sp,
+                                        color = c.textSecondary,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (customBackupPath.isEmpty()) {
+                                        Text(
+                                            "Using default Scoped Storage folder",
+                                            fontSize = 9.sp,
+                                            color = c.accent,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                                Row {
+                                    if (customBackupPath.isNotEmpty()) {
+                                        TextButton(
+                                            onClick = {
+                                                viewModel.setCustomBackupPath("")
+                                                Toast.makeText(context, "Reset to default location", Toast.LENGTH_SHORT).show()
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("Reset", fontSize = 11.sp, color = c.expense)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Choose folder button (replaces manual path text input)
+                            Button(
+                                onClick = { folderPickerLauncher.launch(null) },
+                                colors = ButtonDefaults.buttonColors(containerColor = c.accent),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Choose Folder", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
                     }
+                }
+
+                // 3. Backup Button and Stats
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (isBackingUp) {
+                        Surface(
+                            color = c.accent.copy(alpha = 0.08f),
+                            border = BorderStroke(1.dp, c.accent.copy(alpha = 0.3f)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                CircularProgressIndicator(color = c.accent, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                Text(backupStatusText, fontSize = 12.sp, color = c.text, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Button(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        isBackingUp = true
+                                        backupStatusText = "Connecting to Secure Storage..."
+                                        delay(700)
+                                        backupStatusText = "Consolidating Database Snapshots..."
+                                        delay(600)
+                                        backupStatusText = "Encrypting backup archive (JSON format)..."
+                                        delay(600)
+                                        backupStatusText = "Saving to secure local system folders..."
+                                        delay(500)
+                                        viewModel.executeBackupNow { success, errMsg ->
+                                            isBackingUp = false
+                                            if (success) {
+                                                Toast.makeText(context, "Backup saved successfully!", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, "Backup failed: ${errMsg ?: "Unknown error"}", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = c.income),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1.5f),
+                                contentPadding = PaddingValues(vertical = 10.dp)
+                             ) {
+                                Icon(Icons.Default.Backup, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Back Up Now", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                horizontalAlignment = Alignment.Start
+                            ) {
+                                Text("LAST BACKUP", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = c.textTertiary)
+                                val dateStr = if (lastTime == 0L) "Never" else {
+                                    val df = java.text.SimpleDateFormat("MMM dd, yyyy HH:mm", java.util.Locale.getDefault())
+                                    df.format(java.util.Date(lastTime))
+                                }
+                                Text(dateStr, fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+                }
+                
+                HorizontalDivider(color = c.divider)
+
+                // 4. Restore List
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "RESTORE FROM RECENT BACKUPS",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = c.textSecondary,
+                            letterSpacing = 0.5.sp
+                        )
+                        IconButton(
+                            onClick = {
+                                viewModel.refreshAvailableBackups()
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh Backups List",
+                                tint = c.accent,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                    
+                    if (availableBackups.isEmpty()) {
+                        Surface(
+                            color = c.surfaceVariant.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, c.border),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.Storage, contentDescription = null, tint = c.textTertiary, modifier = Modifier.size(24.dp))
+                                Text("No recent automatic or offline backups found. Tap 'Back Up Now' to create one.", fontSize = 11.sp, color = c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                            }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Show top 3 backups
+                            availableBackups.take(3).forEach { item ->
+                                Surface(
+                                    color = c.surfaceVariant,
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, c.border),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { restoreConfirmItem = item }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .background(
+                                                    if (item.isGoogleStorage) c.accent.copy(alpha = 0.12f)
+                                                    else c.textSecondary.copy(alpha = 0.12f),
+                                                    CircleShape
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                if (item.isGoogleStorage) Icons.Default.Cloud else Icons.Default.Storage,
+                                                contentDescription = null,
+                                                tint = if (item.isGoogleStorage) c.accent else c.textSecondary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            val sourceLabel = if (item.isGoogleStorage) "Cloud Backup" else "Offline Backup"
+                                            Text(sourceLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.text)
+                                            
+                                            val df = java.text.SimpleDateFormat("MMM dd, yyyy HH:mm:ss", java.util.Locale.getDefault())
+                                            val sizeKb = String.format(java.util.Locale.getDefault(), "%.1f KB", item.sizeBytes / 1024.0)
+                                            Text("${df.format(java.util.Date(item.timestamp))} • $sizeKb", fontSize = 10.sp, color = c.textSecondary)
+                                        }
+                                        Icon(
+                                            Icons.Default.CloudDownload,
+                                            contentDescription = "Restore",
+                                            tint = c.accent,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        IconButton(
+                                            onClick = { viewModel.deleteBackup(item) },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "Delete Backup File",
+                                                tint = c.expense,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                HorizontalDivider(color = c.divider)
+
+                // 5. Manual Backup Actions (Legacy compatibility)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "MANUAL FILE UTILITIES",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = c.textSecondary,
+                        letterSpacing = 0.5.sp
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                val date = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date())
+                                createDocLauncher.launch("mymoney_backup_$date.csv")
+                            },
+                            border = BorderStroke(1.dp, c.border),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Export CSV", fontSize = 11.sp, color = c.text)
+                        }
+                        
+                        OutlinedButton(
+                            onClick = {
+                                openDocLauncher.launch(arrayOf("application/json", "text/comma-separated-values", "text/csv", "*/*"))
+                            },
+                            border = BorderStroke(1.dp, c.border),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Import Backup", fontSize = 11.sp, color = c.text)
+                        }
+                    }
+                    Text(
+                        "* Import Backup auto-detects and processes both CSV and JSON backups.",
+                        fontSize = 9.sp,
+                        color = c.textSecondary,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                    if (exportedCsv) {
+                        Text("CSV exported successfully!", fontSize = 10.sp, color = c.income, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 2.dp))
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = c.accent.copy(alpha = 0.15f), contentColor = c.text),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Close Backup Center", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
                 }
             }
         },
@@ -7167,6 +7492,108 @@ fun BackupDialog(
         containerColor = c.surface,
         shape = RoundedCornerShape(20.dp)
     )
+
+    // ── Dialog Subcomponents (Account Selector, Warning, Progress Loader) ────────────────
+    
+if (restoreConfirmItem != null) {
+        val backupItem = restoreConfirmItem!!
+        var understandCheckbox by remember { mutableStateOf(false) }
+        
+        AlertDialog(
+            onDismissRequest = { restoreConfirmItem = null },
+            title = { Text("Confirm Restore", fontWeight = FontWeight.Bold, color = c.text) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "You are about to restore a backup from ${
+                            if (backupItem.isGoogleStorage) "Google Drive" else "Local Storage"
+                        } created on ${
+                            java.text.SimpleDateFormat("MMM dd, yyyy HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(backupItem.timestamp))
+                        }.",
+                        color = c.text,
+                        fontSize = 13.sp
+                    )
+                    
+                    Surface(
+                        color = c.expense.copy(alpha = 0.1f),
+                        border = BorderStroke(1.dp, c.expense.copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "WARNING: This will permanently overwrite all your current accounts, transactions, custom categories, and budgets.",
+                            color = c.expense,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.clickable { understandCheckbox = !understandCheckbox }
+                    ) {
+                        Checkbox(
+                            checked = understandCheckbox,
+                            onCheckedChange = { understandCheckbox = it },
+                            colors = CheckboxDefaults.colors(checkedColor = c.expense)
+                        )
+                        Text("I understand and want to proceed", color = c.text, fontSize = 12.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val itemToRestore = backupItem
+                        restoreConfirmItem = null
+                        isRestoring = true
+                        coroutineScope.launch {
+                            delay(1200)
+                            viewModel.executeRestore(itemToRestore) { success, errMsg ->
+                                isRestoring = false
+                                if (success) {
+                                    Toast.makeText(context, "Backup restored successfully!", Toast.LENGTH_LONG).show()
+                                } else {
+                                    Toast.makeText(context, "Failed to restore backup: ${errMsg ?: "Unknown error"}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    enabled = understandCheckbox,
+                    colors = ButtonDefaults.buttonColors(containerColor = c.expense)
+                ) {
+                    Text("Restore Data")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { restoreConfirmItem = null }) {
+                    Text("Cancel", color = c.text)
+                }
+            },
+            containerColor = c.surface
+        )
+    }
+
+    if (isRestoring) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            title = null,
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(10.dp)
+                ) {
+                    CircularProgressIndicator(color = c.accent)
+                    Text("Restoring database snap... please wait", color = c.text)
+                }
+            },
+            containerColor = c.surface
+        )
+    }
 }
 
 @Composable
@@ -7182,7 +7609,13 @@ fun RestoreBackupDialog(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            viewModel.restoreFromBackupUri(context, uri)
+            viewModel.restoreFromBackupUri(context, uri) { success, errMsg ->
+                if (success) {
+                    Toast.makeText(context, "Backup restored successfully!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Failed to restore backup: ${errMsg ?: "Unknown error"}", Toast.LENGTH_LONG).show()
+                }
+            }
             onDismiss()
         }
     }

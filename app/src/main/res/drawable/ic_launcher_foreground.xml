@@ -5,50 +5,43 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!--
-        Wallet icon — matching the in-app AccountBalanceWallet icon
-        Safe zone: x 18-90, y 28-90
-    -->
+    <!-- Safe zone: x 18-90, y 28-90 -->
 
-    <!-- Wallet body (white fill) -->
+    <!-- Back Card (Gold/Yellow Accent Card showing out of the wallet) -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M28,46 Q18,46 18,56 L18,80 Q18,90 28,90 L80,90 Q90,90 90,80 L90,56 Q90,46 80,46 Z"/>
+        android:fillColor="#FFD54F"
+        android:pathData="M38,32 Q36,32 36,34 L36,54 L84,54 L84,36 Q84,32 80,32 Z"/>
 
-    <!-- Top flap — cyan accent colour -->
+    <!-- Front Card (Teal/Cyan Accent Card showing out of the wallet) -->
     <path
         android:fillColor="#00E5FF"
-        android:pathData="M28,28 Q18,28 18,38 L18,54 L90,54 L90,38 Q90,28 80,28 Z"/>
+        android:pathData="M28,38 Q26,38 26,40 L26,58 L76,58 L76,42 Q76,38 72,38 Z"/>
 
-    <!-- Divider line between flap and body -->
+    <!-- Wallet Leather Body Back Layer (gives depth shadow) -->
     <path
-        android:strokeColor="#00E5FF"
-        android:strokeWidth="2"
-        android:fillColor="#00000000"
-        android:pathData="M18,54 L90,54"/>
+        android:fillColor="#1E293B"
+        android:pathData="M20,52 H88 C92,52 94,54 94,58 V84 C94,88 92,90 88,90 H20 C16,90 14,88 14,84 V58 C14,54 16,52 20,52 Z"/>
 
-    <!-- Card pocket (right side, light teal fill) -->
+    <!-- Wallet Front Pocket Flap (slightly overlapping dark leather) -->
     <path
-        android:fillColor="#B2EBF2"
-        android:pathData="M60,60 Q56,60 56,64 L56,82 Q56,86 60,86 L82,86 Q88,86 88,82 L88,64 Q88,60 84,60 Z"/>
+        android:fillColor="#334155"
+        android:pathData="M20,56 H88 V86 C88,88 86,90 84,90 H24 C22,90 20,88 20,86 Z"/>
 
-    <!-- Coin chip inside pocket -->
+    <!-- Minimalist diagonal wallet fold accent/stitching effect -->
     <path
-        android:fillColor="#00E5FF"
-        android:pathData="M72,73 m -8,0 a 8,8 0 1,0 16,0 a 8,8 0 1,0 -16,0"/>
-
-    <!-- Card lines on left area of body -->
-    <path
-        android:strokeColor="#90A4AE"
-        android:strokeWidth="4"
+        android:strokeColor="#64748B"
+        android:strokeWidth="1.5"
         android:strokeLineCap="round"
         android:fillColor="#00000000"
-        android:pathData="M26,66 L46,66"/>
+        android:pathData="M24,86 H84"/>
+
+    <!-- Metal clasp / Golden circular lock on the wallet pocket -->
     <path
-        android:strokeColor="#90A4AE"
-        android:strokeWidth="4"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M26,76 L40,76"/>
+        android:fillColor="#FFB300"
+        android:pathData="M54,65 m -6,0 a 6,6 0 1,0 12,0 a 6,6 0 1,0 -12,0"/>
+
+    <path
+        android:fillColor="#FFE082"
+        android:pathData="M54,65 m -3,0 a 3,3 0 1,0 6,0 a 3,3 0 1,0 -6,0"/>
 
 </vector>

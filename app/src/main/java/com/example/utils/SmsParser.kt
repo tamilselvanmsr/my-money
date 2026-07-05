@@ -374,7 +374,7 @@ object SmsParser {
         // NOTE: bare "-" is excluded from the prefix list — it falsely matched date
         //       separators (e.g. "22-May-2026" captured "2026" as the account ref).
         val last4Pattern = Pattern.compile(
-            "(?i)(?:a/c|acct|acc|account|card|ending in|ending with|ending|ended with|ended|vpa|xx|\\*+|no\\.?)\\s*(?:no\\.?\\s*)?([xX*]*\\d{3,4})\\b"
+            "(?i)(?:a/c|\\bac\\b|acct|acc|account|card|ending in|ending with|ending|ended with|ended|vpa|xx|\\*+|no\\.?)\\s*(?:no\\.?\\s*)?([xX*]*\\d{3,4})\\b"
         )
         val last4Matcher = last4Pattern.matcher(lowerBody)
         var last4Digits: String? = null
@@ -446,8 +446,8 @@ object SmsParser {
             // 1. Remove "spent on your <bank/card> card ending at <digits>" or variants and "from <bank/card> a/c <digits>" or variants
             payeeBody = payeeBody.replace("(?:spent on|from)\\s+(?:your\\s+)?(?:[a-zA-Z0-9\\s]+)?(?:card|credit card|debit card|acc|account|a/c|bank|acct)\\s*(?:a/c|acc|card)?\\s*(?:ending with|ending in|ending|ended with|ended|at|with)?\\s*[xX*\\s-]*\\d{3,4}".toRegex(), "")
             
-            // 3. Remove standalone "a/c <digits> debited/credited"
-            payeeBody = payeeBody.replace("a/c\\.?\\s*(?:no\\.?)?\\s*[xX*\\s-]*\\d{3,4}\\s*(?:debited|spent|paid|received|charged|credited|sent|withdrawn|transfer|transferred|deducted|has been|is)?".toRegex(), "")
+            // 3. Remove standalone "a/c" or "ac <digits> debited/credited"
+            payeeBody = payeeBody.replace("(?:a/c|\\bac\\b)\\.?\\s*(?:no\\.?)?\\s*[xX*\\s-]*\\d{3,4}\\s*(?:debited|spent|paid|received|charged|credited|sent|withdrawn|transfer|transferred|deducted|has been|is)?".toRegex(), "")
             
             // 4. Remove common "debited by <amount>" or "credited by <amount>" or "debited for <amount>" or standalone amounts
             payeeBody = payeeBody.replace("(?:debited|credited|spent|paid|received|sent|withdrawn)\\s+(?:by|for|of)?\\s*(?:rs\\.?\\s*)?\\d+(?:\\.\\d+)?".toRegex(), "")

@@ -17,7 +17,7 @@ object SmsFilterUtility {
     // - explicit patterns like a/c, acct, ending in, card, ending, xx, etc. followed by 3-4 digits (with optional stars/x)
     // We STRICTLY do not match standalone 3 or 4 digit numbers to avoid misclassifying years (like 2026) or dates.
     private val ACC_CARD_PATTERN = Pattern.compile(
-        "(?i)(?:a/c|acct|acc|account|card|ending in|ending with|ending|ended with|ended|vpa|xx|\\*+|-|no\\.?)\\s*(?:no\\.?\\s*)?([xX*]*\\d{3,4})\\b"
+        "(?i)(?:a/c|\\bac\\b|acct|acc|account|card|ending in|ending with|ending|ended with|ended|vpa|xx|\\*+|-|no\\.?)\\s*(?:no\\.?\\s*)?([xX*]*\\d{3,4})\\b"
     )
 
     /**

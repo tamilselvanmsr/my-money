@@ -14,8 +14,8 @@ android {
     applicationId = "com.aistudio.personalfinance.qzmxwy"
     minSdk = 24
     targetSdk = 36
-    versionCode = 69
-    versionName = "1.69"
+    versionCode = 70
+    versionName = "1.70"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

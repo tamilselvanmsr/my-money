@@ -299,8 +299,11 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     var showAppMenu by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
+    var showNotificationsPanel by remember { mutableStateOf(false) }
+    var selectedNotification by remember { mutableStateOf<com.example.viewmodel.AppNotification?>(null) }
     
     val toastMessage = viewModel.toastMessage
+    val notifications by viewModel.notifications.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val requestNotificationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -361,6 +364,33 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                     }
                 },
                 actions = {
+                    // ── Notification bell ─────────────────────────────────────
+                    val unreadCount = notifications.count { !it.isRead }
+                    BadgedBox(
+                        badge = {
+                            if (unreadCount > 0) Badge(
+                                containerColor = Color(0xFFE53935)
+                            ) {
+                                Text(
+                                    if (unreadCount > 99) "99+" else unreadCount.toString(),
+                                    fontSize = 9.sp, fontWeight = FontWeight.Bold
+                                )
+                            }
+                        },
+                        modifier = Modifier.padding(end = 4.dp)
+                    ) {
+                        IconButton(onClick = {
+                            showNotificationsPanel = true
+                            viewModel.markAllNotificationsRead()
+                        }) {
+                            Icon(
+                                imageVector = if (unreadCount > 0) Icons.Default.Notifications else Icons.Default.NotificationsNone,
+                                contentDescription = "Notifications",
+                                tint = if (unreadCount > 0) c.accent else c.textSecondary
+                            )
+                        }
+                    }
+                    // ── Hamburger / overflow menu ─────────────────────────────
                     Box {
                         IconButton(
                             onClick = { showAppMenu = true },
@@ -597,6 +627,119 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
         RestoreBackupDialog(
             viewModel = viewModel,
             onDismiss = { showRestoreDialog = false }
+        )
+    }
+
+    // ── Notification panel ──────────────────────────────────────────────────
+    if (showNotificationsPanel) {
+        Dialog(
+            onDismissRequest = { showNotificationsPanel = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.94f)
+                    .fillMaxHeight(0.75f),
+                shape = RoundedCornerShape(16.dp),
+                color = c.surface,
+                tonalElevation = 4.dp
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Header
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(c.bg)
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Notifications, contentDescription = null, tint = c.accent, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Notifications", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, modifier = Modifier.weight(1f))
+                        if (notifications.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.markAllNotificationsRead() }, modifier = Modifier.size(36.dp)) {
+                                Icon(Icons.Default.DoneAll, contentDescription = "Mark all read", tint = c.income, modifier = Modifier.size(18.dp))
+                            }
+                            IconButton(onClick = { viewModel.deleteAllNotifications() }, modifier = Modifier.size(36.dp)) {
+                                Icon(Icons.Default.DeleteSweep, contentDescription = "Delete all", tint = Color(0xFFE53935), modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        IconButton(onClick = { showNotificationsPanel = false }, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = c.textSecondary, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    HorizontalDivider(color = c.divider)
+                    if (notifications.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.NotificationsNone, contentDescription = null, tint = c.textSecondary, modifier = Modifier.size(48.dp))
+                                Spacer(Modifier.height(8.dp))
+                                Text("No notifications", color = c.textSecondary, fontSize = 14.sp)
+                            }
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(notifications, key = { it.id }) { notif ->
+                                val df = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { selectedNotification = notif }
+                                        .background(if (!notif.isRead) c.accentDim.copy(alpha = 0.18f) else Color.Transparent)
+                                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(top = 5.dp)
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(if (!notif.isRead) c.accent else Color.Transparent)
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(notif.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = c.text)
+                                        Text(notif.message, fontSize = 12.sp, color = c.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Text(df.format(Date(notif.timestamp)), fontSize = 10.sp, color = c.textSecondary, modifier = Modifier.padding(top = 2.dp))
+                                    }
+                                    IconButton(onClick = { viewModel.deleteNotification(notif.id) }, modifier = Modifier.size(32.dp)) {
+                                        Icon(Icons.Default.Close, contentDescription = "Delete", tint = c.textSecondary, modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                                HorizontalDivider(color = c.divider, thickness = 0.5.dp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Notification detail popup ───────────────────────────────────────────
+    selectedNotification?.let { notif ->
+        val df = SimpleDateFormat("dd MMM yyyy, hh:mm:ss a", Locale.getDefault())
+        AlertDialog(
+            onDismissRequest = { selectedNotification = null },
+            containerColor = c.surface,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Info, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(notif.title, fontWeight = FontWeight.Bold, color = c.text, fontSize = 15.sp)
+                }
+            },
+            text = {
+                Column {
+                    Text(notif.message, color = c.text, fontSize = 14.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text(df.format(Date(notif.timestamp)), fontSize = 11.sp, color = c.textSecondary)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedNotification = null }) {
+                    Text("OK", color = c.accent)
+                }
+            }
         )
     }
 }

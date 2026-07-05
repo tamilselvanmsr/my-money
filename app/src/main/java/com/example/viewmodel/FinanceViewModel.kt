@@ -31,6 +31,15 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
+/** In-app notification surfaced in the bell-icon popup. */
+data class AppNotification(
+    val id: Long = System.currentTimeMillis(),
+    val title: String,
+    val message: String,
+    val timestamp: Long = System.currentTimeMillis(),
+    val isRead: Boolean = false
+)
+
 /** Represents a backup file available for restore. */
 data class BackupItem(
     val file: java.io.File? = null,
@@ -832,6 +841,19 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val _toastMessage = MutableSharedFlow<String>()
     val toastMessage = _toastMessage.asSharedFlow()
 
+    // ── In-app notification centre ─────────────────────────────────────────────
+    private val _notifications = MutableStateFlow<List<AppNotification>>(emptyList())
+    val notifications: StateFlow<List<AppNotification>> = _notifications.asStateFlow()
+
+    fun addNotification(title: String, message: String) {
+        _notifications.update { prev -> listOf(AppNotification(id = System.currentTimeMillis(), title = title, message = message)) + prev }
+    }
+    fun markAllNotificationsRead() {
+        _notifications.update { list -> list.map { it.copy(isRead = true) } }
+    }
+    fun deleteAllNotifications() { _notifications.value = emptyList() }
+    fun deleteNotification(id: Long) { _notifications.update { list -> list.filter { it.id != id } } }
+
     private val _backupString = MutableStateFlow<String?>(null)
     val backupString: StateFlow<String?> = _backupString.asStateFlow()
 
@@ -877,7 +899,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         if (now - last >= intervalMs) {
             executeBackupNow { success, _ ->
                 if (success) {
-                    viewModelScope.launch { _toastMessage.emit("Auto-backup complete ($freq)") }
+                    viewModelScope.launch { _toastMessage.emit("Auto-backup complete ($freq)"); addNotification("Auto-Backup", "Backup completed ($freq).") }
                 }
             }
         }
@@ -1626,8 +1648,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 }
                 if (matchedCount > 0) {
                     _toastMessage.emit("Successfully imported $matchedCount transactions from your Inbox!")
+                    addNotification("SMS Import", "Imported $matchedCount new transaction(s) from your Inbox.")
                 } else {
                     _toastMessage.emit("Scan complete. No new transaction messages found.")
+                    addNotification("SMS Scan", "Scan complete — no new transactions found.")
                 }
                 cleanupEmptyDefaultAccounts()
             } catch (e: Exception) {

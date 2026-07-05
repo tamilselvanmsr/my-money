@@ -97,7 +97,7 @@ class SmsReceiver : BroadcastReceiver() {
                                             dao.insertTransaction(snapTx)
                                         }
                                         withContext(Dispatchers.Main) {
-                                            Toast.makeText(context, "MyMoney: CC limits updated for ${limitAcc.name}", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "AutoLedger: CC limits updated for ${limitAcc.name}", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }

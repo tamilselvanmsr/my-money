@@ -8,6 +8,20 @@ private const val DUPLICATE_MATCH_WINDOW_MS = 60_000L
 // only when checking whether an INCOME is the receiver leg of an existing TRANSFER.
 private const val CROSS_BANK_TRANSFER_WINDOW_MS = 4 * 60 * 60 * 1000L  // 4 hours
 
+// Wider window for matching manual entries (no smsBody) against newly-parseable SMS patterns.
+// A manual entry for April 18 and an SMS with timestamp extracted as "18/04/26 00:00" may
+// be several hours apart — 24 h is the safe outer bound.
+private const val MANUAL_ENTRY_DUPLICATE_WINDOW_MS = 24 * 60 * 60 * 1000L  // 24 hours
+
+/**
+ * Normalises a transaction title before comparison: strips trailing UPI reference noise
+ * (e.g. "Cred Club. Upi: ." → "Cred Club") introduced by older parser versions.
+ */
+private fun normalizeTitle(t: String): String =
+    t.split(Regex("\\bupi\\b", RegexOption.IGNORE_CASE))[0]
+        .trimEnd('.', ',', ':', ';', ' ')
+        .trim()
+
 fun isDuplicateImportedTransaction(
     existing: TransactionEntry,
     incomingSmsBody: String,
@@ -58,10 +72,20 @@ fun isDuplicateImportedTransaction(
     }
 
     // 4. Core-fields match within 60-second window (same amount + type + title + account).
+    //    Title is normalised to strip legacy UPI-reference noise before comparing.
     val sameCoreFields = existing.amount == incomingAmount &&
         existing.type == incomingType &&
-        existing.title.equals(incomingTitle, ignoreCase = true) &&
+        normalizeTitle(existing.title).equals(normalizeTitle(incomingTitle), ignoreCase = true) &&
         existing.getAccountName().equals(incomingAccountName, ignoreCase = true)
 
-    return sameCoreFields && abs(existing.timestamp - incomingTimestamp) < DUPLICATE_MATCH_WINDOW_MS
+    if (sameCoreFields && abs(existing.timestamp - incomingTimestamp) < DUPLICATE_MATCH_WINDOW_MS) return true
+
+    // 4b. Wider 24-hour window for records with no stored SMS body (manually entered or old
+    //     backup format). A newly-parseable SMS pattern (e.g. "ending at N") may produce a
+    //     transaction matching a manual entry that was backed up — their timestamps differ by
+    //     hours (user entry time vs SMS date), so the 60-second window above misses them.
+    if (sameCoreFields && existing.smsBody == null &&
+        abs(existing.timestamp - incomingTimestamp) < MANUAL_ENTRY_DUPLICATE_WINDOW_MS) return true
+
+    return false
 }

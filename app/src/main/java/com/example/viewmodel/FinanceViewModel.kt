@@ -618,8 +618,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun deleteAccount(accountId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             createdAccountsCache.clear() // prevent stale cache from blocking account recreation
+            val acc = repository.getAccountById(accountId)
             repository.deleteAccount(accountId)
+            val accName = acc?.name ?: accountId
             _toastMessage.emit("Account and its records deleted.")
+            addNotification("Account Deleted", "Account '$accName' and its records were deleted.")
         }
     }
 
@@ -760,6 +763,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
          repository.insertAccount(newAcObj)
          Log.d(TAG, "Created account dynamically from parsed SMS: $validatedNameLabel")
          createdAccountsCache[last4Ref] = validatedNameLabel
+         addNotification("Account Auto-Created", "New $acType account detected: $validatedNameLabel (last 4: $actualLast4)")
          return validatedNameLabel
      }
 
@@ -1648,10 +1652,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 }
                 if (matchedCount > 0) {
                     _toastMessage.emit("Successfully imported $matchedCount transactions from your Inbox!")
-                    addNotification("SMS Import", "Imported $matchedCount new transaction(s) from your Inbox.")
+                    addNotification("SMS Import", "Imported $matchedCount new transaction(s) from your Inbox (expenses, incomes, transfers & balance updates).")
                 } else {
                     _toastMessage.emit("Scan complete. No new transaction messages found.")
-                    addNotification("SMS Scan", "Scan complete — no new transactions found.")
                 }
                 cleanupEmptyDefaultAccounts()
             } catch (e: Exception) {
@@ -1808,6 +1811,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         )
         repository.insertTransaction(tx)
         projectedTransactions.add(tx)
+        addNotification("Balance Sync", "Balance updated for ${account.name}: ₹${String.format("%.2f", reportedBalance)}")
         return true
     }
 
@@ -2403,6 +2407,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             }
 
             _toastMessage.emit("Merged from backup: +$txRestored transactions, +$accountsRestored accounts, +$budgetsRestored budgets, +$customCatsRestored categories. Existing records kept.")
+            addNotification("Backup Restored", "Merged +$txRestored transactions, +$accountsRestored accounts, +$budgetsRestored budgets.")
             withContext(Dispatchers.Main) { onComplete(true, null) }
         } catch (e: Exception) {
             Log.e(TAG, "restoreFromJsonContent failed: ${e.message}", e)
@@ -2490,6 +2495,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
             _toastMessage.emit("Merged from backup: +$txRestored transactions, +$accountsRestored accounts, +$budgetsRestored budgets, +$customCatsRestored categories. Existing records kept.")
+            addNotification("Backup Restored", "Merged +$txRestored transactions, +$accountsRestored accounts, +$budgetsRestored budgets.")
             withContext(Dispatchers.Main) { onComplete(true, null) }
         } catch (e: Exception) {
             Log.e(TAG, "restoreFromCsvLines failed: ${e.message}", e)

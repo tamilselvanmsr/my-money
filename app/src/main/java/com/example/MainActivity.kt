@@ -355,7 +355,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "MyMoney",
+                            text = "AutoLedger",
                             fontWeight = FontWeight.Bold,
                             fontSize = 21.sp,
                             letterSpacing = 0.5.sp,

@@ -399,8 +399,8 @@ object SmsParser {
 
             t.contains("starbucks") || t.contains("mcdonald") || t.contains("swiggy") ||
                 t.contains("zomato") || t.contains("food") || t.contains("restaurant") ||
-                t.contains("eats") || t.contains("cafe") || t.contains("pizza") || t.contains("hotel")
-            lowerBody.contains("canteen") || lowerBody.contains("bakery") -> ExpenseCategory.FOOD
+                t.contains("eats") || t.contains("cafe") || t.contains("pizza") || t.contains("hotel") ||
+                lowerBody.contains("canteen") || lowerBody.contains("bakery") -> ExpenseCategory.FOOD
 
             t.contains("gas") || t.contains("petrol") || t.contains("fuel") || t.contains("agencies") ||
                 lowerBody.contains("fuel station") || lowerBody.contains("petrol bunk") -> ExpenseCategory.FUEL

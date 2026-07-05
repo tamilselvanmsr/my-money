@@ -19,7 +19,10 @@ fun isDuplicateImportedTransaction(
     incomingAccountName: String
 ): Boolean {
     // 1. Exact SMS body match — same physical SMS re-scanned.
-    if (existing.smsBody == incomingSmsBody) return true
+    //    A BALANCE_UPDATE entry stored from the same SMS (e.g. "Balance Sync" created from an
+    //    HDFC "Received!" notification that also carries "Avl bal") must NOT block the same SMS
+    //    from being later imported as a real INCOME/EXPENSE transaction.
+    if (existing.smsBody == incomingSmsBody && existing.type != "BALANCE_UPDATE") return true
 
     // 2. Reference-number match.
     val existingReference = SmsParser.getReferenceNumber(existing.smsBody)

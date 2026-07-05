@@ -5150,6 +5150,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
+                    var showBalSyncInfo by remember { mutableStateOf(false) }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -5167,7 +5168,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .weight(1f)
                                 .height(48.dp)
                                 .testTag("scan_device_sms_button")
                         ) {
@@ -5186,29 +5187,31 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                 )
                             }
                         }
-                    }
-                    // Bal Sync toggle — separate compact row below the scan button
-                    var showBalSyncInfo by remember { mutableStateOf(false) }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.End,
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                    ) {
-                        Text("Balance Sync", fontSize = 11.sp, color = c.textSecondary)
-                        IconButton(onClick = { showBalSyncInfo = true }, modifier = Modifier.size(22.dp)) {
-                            Icon(Icons.Default.Info, contentDescription = "Bal Sync info", tint = c.textSecondary, modifier = Modifier.size(13.dp))
-                        }
-                        Switch(
-                            checked = enableBalanceSync,
-                            onCheckedChange = { viewModel.setEnableBalanceSync(it) },
-                            modifier = Modifier.scale(0.8f),
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = c.accent,
-                                checkedTrackColor = c.accent.copy(alpha = 0.35f),
-                                uncheckedThumbColor = c.textSecondary,
-                                uncheckedTrackColor = c.divider
+                        // Compact Bal Sync column — label + info icon above scaled switch
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.width(68.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Bal Sync", fontSize = 9.sp, color = c.textSecondary, maxLines = 1)
+                                IconButton(onClick = { showBalSyncInfo = true }, modifier = Modifier.size(16.dp)) {
+                                    Icon(Icons.Default.Info, contentDescription = "Bal Sync info", tint = c.textSecondary, modifier = Modifier.size(10.dp))
+                                }
+                            }
+                            Switch(
+                                checked = enableBalanceSync,
+                                onCheckedChange = { viewModel.setEnableBalanceSync(it) },
+                                modifier = Modifier
+                                    .scale(0.65f)
+                                    .height(24.dp),
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = c.accent,
+                                    checkedTrackColor = c.accent.copy(alpha = 0.35f),
+                                    uncheckedThumbColor = c.textSecondary,
+                                    uncheckedTrackColor = c.divider
+                                )
                             )
-                        )
+                        }
                     }
                     if (showBalSyncInfo) {
                         AlertDialog(

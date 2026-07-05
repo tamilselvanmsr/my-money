@@ -48,12 +48,13 @@ object SmsParser {
         val lowerBody = cleanBody.lowercase()
         Log.d(TAG, "Parsing: '$cleanBody' from '$senderId'")
 
-        // 1. Header — only verified -S / -T senders
-        if (!senderId.isNullOrBlank()) {
-            val upper = senderId.trim().uppercase()
-            if (!upper.endsWith("-S") && !upper.endsWith("-T")) {
-                Log.d(TAG, "Excluded: sender '$senderId' is not -S/-T"); return null
-            }
+        // 1. Header — only verified -S / -T senders (TRAI DLT transactional format)
+        if (senderId.isNullOrBlank()) {
+            Log.d(TAG, "Excluded: sender is null/blank"); return null
+        }
+        val upper = senderId.trim().uppercase()
+        if (!upper.endsWith("-S") && !upper.endsWith("-T")) {
+            Log.d(TAG, "Excluded: sender '$senderId' is not -S/-T"); return null
         }
 
         // 2. Hard exclusions (non-bypassable)
@@ -231,7 +232,7 @@ object SmsParser {
     // Note: bare "-" is intentionally excluded — it falsely matched date separators (e.g. "22-May-2026").
     private fun extractAccountRef(lower: String): String? {
         val m = Pattern.compile(
-            "(?i)(?:a/c|\\bac\\b|acct|acc|account|card|ending in|ending with|ending|ended with|ended|vpa|xx|\\*+|no\\.?)\\s*(?:no\\.?\\s*)?([xX*]*\\d{3,4})\\b"
+            "(?i)(?:a/c|\\bac\\b|acct|acc|account|card|ending in|ending with|ending at|ending|ended with|ended|vpa|xx|\\*+|no\\.?)\\s*(?:no\\.?\\s*)?([xX*]*\\d{3,4})\\b"
         ).matcher(lower)
         if (!m.find()) return null
         val digits = (m.group(1) ?: "").replace("[^0-9]".toRegex(), "")
@@ -321,7 +322,7 @@ object SmsParser {
 
         // Scrub noise: card/account refs, verb+amount pairs, standalone amounts, date strings
         var payeeBody = lowerBody
-        payeeBody = payeeBody.replace("(?:spent on|from)\\s+(?:your\\s+)?(?:[a-zA-Z0-9\\s]+)?(?:card|credit card|debit card|acc|account|a/c|bank|acct)\\s*(?:a/c|acc|card)?\\s*(?:ending with|ending in|ending|ended with|ended|at|with)?\\s*[xX*\\s-]*\\d{3,4}".toRegex(), "")
+        payeeBody = payeeBody.replace("(?:spent on|from)\\s+(?:your\\s+)?(?:[a-zA-Z0-9\\s]+)?(?:card|credit card|debit card|acc|account|a/c|bank|acct)\\s*(?:a/c|acc|card)?\\s*(?:ending with|ending in|ending at|ending|ended with|ended|at|with)?\\s*[xX*\\s-]*\\d{3,4}".toRegex(), "")
         payeeBody = payeeBody.replace("(?:a/c|\\bac\\b)\\.?\\s*(?:no\\.?)?\\s*[xX*\\s-]*\\d{3,4}\\s*(?:debited|spent|paid|received|charged|credited|sent|withdrawn|transfer|transferred|deducted|has been|is)?".toRegex(), "")
         payeeBody = payeeBody.replace("(?:debited|credited|spent|paid|received|sent|withdrawn)\\s+(?:by|for|of)?\\s*(?:rs\\.?\\s*)?\\d+(?:\\.\\d+)?".toRegex(), "")
         payeeBody = payeeBody.replace("(?:rs\\.?\\s*)?\\d+(?:\\.\\d+)?".toRegex(), "")
@@ -335,10 +336,10 @@ object SmsParser {
         ).matcher(payeeBody)
         if (vendorMatcher.find()) {
             val raw = vendorMatcher.group(1)?.trim() ?: ""
-            val parts = raw.split("\\b(on|by|using|with|via|for|against|card|account|txn|ref|refno|ref\\.no|dated|at|transfer|if|call|dial|contact|help|link|click|visit|balance|bal|limit|avl)\\b".toRegex())
+            val parts = raw.split("\\b(on|by|using|with|via|for|against|card|account|txn|ref|refno|ref\\.no|dated|at|transfer|if|call|dial|contact|help|link|click|visit|balance|bal|limit|avl|upi)\\b".toRegex())
             title = parts.firstOrNull()?.trim() ?: ""
         }
-        title = title.replace("\\d+".toRegex(), "").trim()
+        title = title.replace("\\d+".toRegex(), "").trimEnd('.', ',', ':', ';').trim()
 
         // Fallback: payment channel + mobile number (IMPS/NEFT/RTGS/UPI)
         if (title.isEmpty() || title.length <= 2 || title.lowercase() in listOf("merchant store", "bank transfer")) {

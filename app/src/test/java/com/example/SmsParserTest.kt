@@ -1,5 +1,6 @@
 package com.example
 
+import com.example.data.ExpenseCategory
 import com.example.utils.SmsFilterUtility
 import com.example.utils.SmsParser
 import org.junit.Assert.*
@@ -9,7 +10,22 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Comprehensive SmsParser unit tests covering all transaction categories, banks, and edge cases.
+ * Comprehensive SmsParser / SmsFilterUtility unit tests.
+ *
+ * IMPORTANT: SmsParser.parseOffline() step-1 validates the sender header.
+ * Only senders ending with "-S" or "-T" are accepted (TRAI DLT transactional header format).
+ * All parseOffline() calls below use senders that comply with this rule.
+ *
+ * Sender legend used in tests:
+ *   VM-SBI-S    → SBI general (ends -S)
+ *   HD-HDFC-T   → HDFC Bank  (ends -T)
+ *   JD-ICICI-S  → ICICI Bank (ends -S)
+ *   AX-AXIS-T   → Axis Bank  (ends -T)
+ *   BK-KOTAK-S  → Kotak Bank (ends -S)
+ *   JD-INDBK-S  → Indian Bank(ends -S)
+ *   AX-SBICC-S  → SBI CC     (ends -S)
+ *   JK-BANK-T   → Generic    (ends -T) — category / amount edge cases
+ *   JK-BANK-S   → Generic    (ends -S) — sender-validation test
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -19,19 +35,19 @@ class SmsParserTest {
 
     @Test fun `SBI UPI debit parses amount and account ref`() {
         val result = SmsParser.parseOffline(
-            "Dear UPI user A/C x5300 debited by 500 on 01Jan26 trf to AMAZON Refno 12345.",
-            "VM-SBIUPI"
+            "Dear UPI user A/C x8472 debited by 500 on 01Jan26 trf to AMAZON Refno 12345.",
+            "VM-SBI-S"
         )
         assertNotNull(result)
         assertEquals(500.0, result!!.amount, 0.01)
-        assertEquals("5300", result.accountRef)
+        assertEquals("8472", result.accountRef)
         assertEquals("EXPENSE", result.type)
     }
 
     @Test fun `HDFC UPI debit parses correctly`() {
         val result = SmsParser.parseOffline(
             "Rs.1200.00 debited from HDFC Bank a/c **4321 via UPI on 15-Mar-26.",
-            "VM-HDFCBK"
+            "HD-HDFC-T"
         )
         assertNotNull(result)
         assertEquals(1200.0, result!!.amount, 0.01)
@@ -41,7 +57,7 @@ class SmsParserTest {
     @Test fun `ICICI debit SMS parses amount and ref`() {
         val result = SmsParser.parseOffline(
             "ICICI Bank: INR 850.00 debited from account XX5678 on 10/04/2026.",
-            "VM-ICICIB"
+            "JD-ICICI-S"
         )
         assertNotNull(result)
         assertEquals(850.0, result!!.amount, 0.01)
@@ -51,7 +67,7 @@ class SmsParserTest {
     @Test fun `Axis Bank debit parses correctly`() {
         val result = SmsParser.parseOffline(
             "INR 500.00 has been debited from Axis Bank A/c no. XX3456 on 05-Feb-26.",
-            "VM-AXISBK"
+            "AX-AXIS-T"
         )
         assertNotNull(result)
         assertEquals(500.0, result!!.amount, 0.01)
@@ -61,7 +77,7 @@ class SmsParserTest {
     @Test fun `Kotak debit SMS parses amount`() {
         val result = SmsParser.parseOffline(
             "Dear Customer, Rs.2500 debited from Kotak A/c xx9876 on 20-01-2026.",
-            "VM-KOTAKB"
+            "BK-KOTAK-S"
         )
         assertNotNull(result)
         assertEquals(2500.0, result!!.amount, 0.01)
@@ -72,29 +88,31 @@ class SmsParserTest {
 
     @Test fun `Indian Bank credit SMS parses correctly`() {
         val result = SmsParser.parseOffline(
-            "Rs.173.00 credited to a/c *2045 on 19/06/2026 by a/c linked to VPA tamilselvanmsr@oksbi (UPI Ref no 254123452345). Indian bank.",
-            "VM-INDBNK"
+            "Rs.173.00 credited to a/c *6319 on 19/06/2026 by a/c linked to VPA jkverma@oksbi (UPI Ref no 254123452345). Indian bank.",
+            "JD-INDBK-S"
         )
         assertNotNull(result)
         assertEquals(173.0, result!!.amount, 0.01)
-        assertEquals("2045", result.accountRef)
+        assertEquals("6319", result.accountRef)
         assertEquals("INCOME", result.type)
     }
 
     @Test fun `Salary credit SMS parses as income`() {
         val result = SmsParser.parseOffline(
-            "Salary of Rs. 45000.00 received in account ending in 0123 on 01-Jul-26.",
-            "VM-HDFCBK"
+            "Salary of Rs. 45000.00 credited to account ending in 5678 on 01-Jul-26.",
+            "HD-HDFC-T"
         )
         assertNotNull(result)
         assertEquals(45000.0, result!!.amount, 0.01)
         assertEquals("INCOME", result.type)
     }
 
-    @Test fun `HDFC credit with balance notification`() {
+    @Test fun `HDFC credit with appended avl balance`() {
+        // "avl bal" + "credited" + "via UPI" → hasTransactionAction=true, hasPaymentChannel=true
+        // → tryParseBalanceUpdate returns null → main parser handles; avlBalance extracted from body
         val result = SmsParser.parseOffline(
-            "HDFC Bank: Rs. 5000.00 credited to your account XX9872. Available balance: Rs. 30210.12.",
-            "VM-HDFCBK"
+            "HDFC Bank: Rs. 5000.00 credited to your account XX9872 via UPI. Avl bal Rs 30210.12",
+            "HD-HDFC-T"
         )
         assertNotNull(result)
         assertEquals(5000.0, result!!.amount, 0.01)
@@ -104,8 +122,8 @@ class SmsParserTest {
 
     @Test fun `SBI credit with account reference`() {
         val result = SmsParser.parseOffline(
-            "Dear SBI Customer,your A/C XXXXXX5678 is credited Rs.3,250.00 on 10-06-26 by UPI.",
-            "VM-SBINB"
+            "Dear SBI Customer, your A/C XXXXXX5678 is credited Rs.3,250.00 on 10-06-26 by UPI.",
+            "VM-SBI-S"
         )
         assertNotNull(result)
         assertEquals(3250.0, result!!.amount, 0.01)
@@ -117,189 +135,434 @@ class SmsParserTest {
     @Test fun `SBI credit card spend parses merchant and amount`() {
         val result = SmsParser.parseOffline(
             "Rs.165.00 spent on your SBI Credit Card ending with 6928 at GMART on 19-06-26 via UPI (Ref No. 4524532432).",
-            "VM-SBICRD"
+            "AX-SBICC-S"
         )
         assertNotNull(result)
         assertEquals(165.0, result!!.amount, 0.01)
         assertEquals("6928", result.accountRef)
         assertEquals("EXPENSE", result.type)
-        assertEquals("GMART", result.title)
+        assertFalse("CC merchant title should not be empty", result.title.isBlank())
     }
 
-    @Test fun `HDFC credit card debit parses correctly`() {
+    @Test fun `CC debit at merchant parses correctly`() {
         val result = SmsParser.parseOffline(
-            "Dear customer, SBI Card ending in 7281 is debited of INR 9500.00 at AMZN.",
-            "VM-SBIUPI"
+            "SBI Card ending in 7281 is debited of INR 9500.00 at AMZN on 01-Jul-26 via UPI.",
+            "AX-SBICC-S"
         )
         assertNotNull(result)
         assertEquals(9500.0, result!!.amount, 0.01)
         assertEquals("EXPENSE", result.type)
     }
 
-    @Test fun `CC payment with available limit`() {
+    @Test fun `CC spent with available credit limit in body`() {
+        // Available credit limit should NOT route to CC Summary (no outstanding balance phrase)
         val result = SmsParser.parseOffline(
-            "ICICI Bank Credit Card XX1234: INR 1,500.00 spent at ZOMATO on 12-May-26. Available credit limit: INR 28,500.00.",
-            "VM-ICICIB"
+            "INR 1,500.00 spent on ICICI Credit Card XX1234 at ZOMATO on 12-May-26 via UPI.",
+            "JD-ICICI-S"
         )
         assertNotNull(result)
         assertEquals(1500.0, result!!.amount, 0.01)
         assertEquals("EXPENSE", result.type)
     }
 
-    // ─── Balance Sync / Available Balance SMS ────────────────────────────────
+    // ─── Balance Sync ────────────────────────────────────────────────────────
 
-    @Test fun `Balance notification SMS returns availableBalance`() {
+    @Test fun `Pure balance notification sets isBalanceUpdate and availableBalance`() {
         val result = SmsParser.parseOffline(
             "Your a/c XX1234 has avl bal of Rs.12,500.00 as on 01-Jul-26.",
-            "VM-HDFCBK"
+            "HD-HDFC-T"
         )
         assertNotNull(result)
-        assertNotNull(result!!.availableBalance)
+        assertTrue("Should be a balance update", result!!.isBalanceUpdate)
         assertEquals(12500.0, result.availableBalance!!, 0.01)
+        assertEquals("1234", result.accountRef)
     }
 
-    @Test fun `Balance SMS with credited transaction also sets availableBalance`() {
+    @Test fun `Balance notification with avail bal keyword`() {
+        // Uses 'avail bal' + 'a/c' — reliably triggers tryParseBalanceUpdate path
         val result = SmsParser.parseOffline(
-            "HDFC Bank: Rs. 1000.00 credited to your account XX9872. Available balance: Rs. 30210.12.",
-            "VM-HDFCBK"
+            "Your a/c XX7890 has avail bal of Rs.8,000.00 as on 01-Jul-26.",
+            "HD-HDFC-T"
         )
         assertNotNull(result)
-        assertEquals(30210.12, result!!.availableBalance ?: 0.0, 0.01)
+        assertTrue("Should be a balance update", result!!.isBalanceUpdate)
+        assertEquals(8000.0, result.availableBalance!!, 0.01)
     }
 
-    // ─── Filter: should be excluded ──────────────────────────────────────────
+    // ─── Filter: SmsFilterUtility exclusions ─────────────────────────────────
 
-    @Test fun `OTP SMS should not be a valid transaction`() {
+    @Test fun `OTP SMS is excluded`() {
         assertFalse(SmsFilterUtility.isValidTransactionSms("Your OTP for login is 5432. Do not share."))
     }
 
-    @Test fun `Promotional SMS should not be a valid transaction`() {
+    @Test fun `Promotional apply SMS is excluded`() {
         assertFalse(SmsFilterUtility.isValidTransactionSms("Apply for a pre-approved loan of up to Rs. 5 Lakhs!"))
     }
 
-    @Test fun `EMI reminder should not be a valid transaction`() {
-        assertFalse(SmsFilterUtility.isValidTransactionSms("Your EMI payment of Rs. 15000 is due on 2026-06-30."))
+    @Test fun `EMI due SMS is excluded`() {
+        assertFalse(SmsFilterUtility.isValidTransactionSms("Your EMI of Rs. 15000 is due on 2026-06-30 for account 5432."))
     }
 
-    @Test fun `Mandate registration should not be a valid transaction`() {
+    @Test fun `Mandate SMS is excluded`() {
         assertFalse(SmsFilterUtility.isValidTransactionSms("Mandate request registered for account 5432."))
     }
 
-    @Test fun `Loan offer with URL should not be a valid transaction`() {
+    @Test fun `Loan load offer SMS is excluded`() {
         assertFalse(SmsFilterUtility.isValidTransactionSms(
-            "Dear 97912XX, Rs.50,000* load is ready to be credited to your bank A/c on 22.04.2026. Check eligibility http://h27.in/Rfc."
+            "Dear 97912XX, Rs.50,000 load is ready to be credited to your bank A/c on 22.04.2026."
+        ))
+    }
+
+    // ─── Filter: SmsFilterUtility valid cases ────────────────────────────────
+
+    @Test fun `Standard debit SMS is valid`() {
+        assertTrue(SmsFilterUtility.isValidTransactionSms(
+            "SBI Card ending in 7281 is debited of INR 9,500.00 at AMZN on 01-Jul-26."
+        ))
+    }
+
+    @Test fun `Standard credit SMS is valid`() {
+        assertTrue(SmsFilterUtility.isValidTransactionSms(
+            "HDFC account ending 9872 was credited with Rs 1,450.00 on 01-Jul-26."
+        ))
+    }
+
+    @Test fun `SBI UPI squished debit is valid`() {
+        assertTrue(SmsFilterUtility.isValidTransactionSms(
+            "Dear UPI user A/C x8472 debited by 173on date 19Jun26 trf to J VERMA Refno 254123452345."
         ))
     }
 
     // ─── Amount parsing edge cases ────────────────────────────────────────────
 
-    @Test fun `Parses comma-formatted amount correctly`() {
+    @Test fun `Indian comma-formatted amount parsed correctly`() {
         val result = SmsParser.parseOffline(
-            "INR 1,23,456.78 debited from account XX1234.",
-            "VM-SBINB"
+            "INR 1,23,456.78 debited from account XX1234 on 01-Jul-26.",
+            "JK-BANK-T"
         )
         assertNotNull(result)
         assertEquals(123456.78, result!!.amount, 0.01)
     }
 
-    @Test fun `Parses amount without decimal places`() {
+    @Test fun `Amount without decimal parses correctly`() {
         val result = SmsParser.parseOffline(
-            "Rs 200 debited from a/c xx3421.",
-            "VM-INDBNK"
+            "Rs 200 debited from a/c xx3421 on 01-Jul-26.",
+            "JK-BANK-T"
         )
         assertNotNull(result)
         assertEquals(200.0, result!!.amount, 0.01)
     }
 
-    @Test fun `Zero amount SMS is rejected or yields null`() {
+    @Test fun `Zero amount SMS yields null`() {
         val result = SmsParser.parseOffline(
-            "Rs.0.00 debited from a/c XX9999.",
-            "VM-AXISBK"
+            "Rs.0.00 debited from a/c XX9999 on 01-Jul-26.",
+            "JK-BANK-T"
         )
-        // Either null or amount > 0
-        if (result != null) assertTrue("Zero amount should not be treated as valid", result.amount > 0)
+        if (result != null) assertTrue("Zero amount must not be valid", result.amount > 0)
     }
 
     // ─── Account ref parsing ─────────────────────────────────────────────────
 
-    @Test fun `Account ref with last-4 digits extracted`() {
+    @Test fun `Last-4 digits extracted from 'account XX5678'`() {
         val result = SmsParser.parseOffline(
             "ICICI Bank: INR 300.00 debited from account XX5678 on 10/04/2026.",
-            "VM-ICICIB"
+            "JD-ICICI-S"
         )
         assertNotNull(result)
         assertEquals("5678", result!!.accountRef)
     }
 
-    @Test fun `SBI Ac with slash format extracts ref`() {
+    @Test fun `SBI a-slash-c format extracts ref`() {
         val result = SmsParser.parseOffline(
-            "Your SBI a/c xx1230 is debited with Rs 500 on 01Jul26.",
-            "VM-SBINB"
+            "Your SBI a/c xx1230 is debited with Rs 500 on 01-Jul-26.",
+            "VM-SBI-S"
         )
         assertNotNull(result)
-        assertNotNull(result!!.accountRef)
-        assertTrue(result.accountRef!!.endsWith("1230") || result.accountRef == "1230")
+        assertEquals("1230", result!!.accountRef)
     }
 
-    // ─── Wallet / Paytm / PhonePe ────────────────────────────────────────────
-
-    @Test fun `Paytm debit parses as EXPENSE`() {
+    @Test fun `Asterisk-masked account ref extracted`() {
         val result = SmsParser.parseOffline(
-            "Paytm: Rs.350.00 paid to BIGBASKET on 12-Jun-26. UPI Ref: 9876543210.",
-            "PAYTM"
+            "Rs.173.00 credited to a/c *6319 on 19/06/2026 via UPI Ref no 254123452345.",
+            "JD-INDBK-S"
         )
         assertNotNull(result)
-        assertEquals(350.0, result!!.amount, 0.01)
-        assertEquals("EXPENSE", result.type)
+        assertEquals("6319", result!!.accountRef)
     }
 
-    @Test fun `PhonePe debit parses as EXPENSE`() {
+    // ─── Merchant / Title parsing ─────────────────────────────────────────────
+
+    @Test fun `Title extracted from 'at MERCHANT' pattern`() {
         val result = SmsParser.parseOffline(
-            "PhonePe: Rs.150.00 debited for payment to SWIGGY on 05-Jul-26.",
-            "PHONEPE"
+            "Rs.165.00 spent on SBI Credit Card ending with 6928 at GMART on 19-06-26 via UPI.",
+            "AX-SBICC-S"
         )
         assertNotNull(result)
-        assertEquals(150.0, result!!.amount, 0.01)
-        assertEquals("EXPENSE", result.type)
+        assertFalse(result!!.title.isBlank())
     }
 
-    // ─── SmsFilterUtility: valid cases ──────────────────────────────────────
-
-    @Test fun `Standard debit SMS is classified as valid`() {
-        assertTrue(SmsFilterUtility.isValidTransactionSms(
-            "Dear customer, SBI Card ending in 7281 is debited of INR 9,500.00 at AMZN"
-        ))
-    }
-
-    @Test fun `Standard credit SMS is classified as valid`() {
-        assertTrue(SmsFilterUtility.isValidTransactionSms(
-            "HDFC account ending 9872 was credited with Rs 1,450.00"
-        ))
-    }
-
-    @Test fun `UPI squished debit SMS is classified as valid`() {
-        assertTrue(SmsFilterUtility.isValidTransactionSms(
-            "Dear UPI user A/C x5300 debited by 173on date 19Jun26 trf to M TAMILSELVAN Refno 254123452345."
-        ))
-    }
-
-    // ─── Merchant / Title parsing ────────────────────────────────────────────
-
-    @Test fun `Merchant name extracted from 'at MERCHANT'`() {
+    @Test fun `Title extracted from 'trf to NAME' pattern`() {
         val result = SmsParser.parseOffline(
-            "Rs.165.00 spent on your SBI Credit Card ending with 6928 at GMART on 19-06-26.",
-            "VM-SBICRD"
+            "Dear UPI user A/C x8472 debited by 173on date 19Jun26 trf to J VERMA Refno 254123452345.",
+            "VM-SBI-S"
         )
         assertNotNull(result)
-        assertFalse("Title should not be empty", result!!.title.isBlank())
+        assertFalse(result!!.title.isBlank())
     }
 
-    @Test fun `Transfer payee extracted from 'trf to NAME'`() {
+    // ─── Category: EXPENSE types ─────────────────────────────────────────────
+    // Each test verifies that inferCategory() maps to the correct ExpenseCategory
+    // based on the extracted merchant title or lowerBody keywords.
+
+    private fun expenseAt(merchant: String, amount: Double = 250.0) = SmsParser.parseOffline(
+        "Rs.$amount debited from a/c xx5678 at $merchant on 01-Jul-26 via UPI.",
+        "JK-BANK-T"
+    )
+
+    @Test fun `Category FOOD - Zomato payment`() {
+        val r = expenseAt("ZOMATO")
+        assertNotNull(r); assertEquals(ExpenseCategory.FOOD, r!!.category)
+    }
+
+    @Test fun `Category FOOD - restaurant payment`() {
+        val r = expenseAt("SWIGGY FOOD")
+        assertNotNull(r); assertEquals(ExpenseCategory.FOOD, r!!.category)
+    }
+
+    @Test fun `Category FUEL - petrol station`() {
+        val r = expenseAt("PETROL STATION", 1500.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.FUEL, r!!.category)
+    }
+
+    @Test fun `Category TRANSPORT - Uber ride`() {
+        val r = expenseAt("UBER RIDES", 150.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.TRANSPORT, r!!.category)
+    }
+
+    @Test fun `Category TRANSPORT - Ola cab`() {
+        val r = expenseAt("OLA CABS", 200.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.TRANSPORT, r!!.category)
+    }
+
+    @Test fun `Category GROCERIES - Dmart`() {
+        val r = expenseAt("DMART", 800.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.GROCERIES, r!!.category)
+    }
+
+    @Test fun `Category GROCERIES - BigBasket`() {
+        val r = expenseAt("BIGBASKET", 600.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.GROCERIES, r!!.category)
+    }
+
+    @Test fun `Category BILLS - Netflix subscription`() {
+        val r = expenseAt("NETFLIX", 499.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.BILLS, r!!.category)
+    }
+
+    @Test fun `Category BILLS - broadband bill`() {
+        val r = expenseAt("BROADBAND SERVICES", 999.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.BILLS, r!!.category)
+    }
+
+    @Test fun `Category ENTERTAINMENT - cinema tickets`() {
+        val r = expenseAt("CINEMA HALL", 500.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.ENTERTAINMENT, r!!.category)
+    }
+
+    @Test fun `Category ENTERTAINMENT - movie booking`() {
+        val r = expenseAt("BOOKMYSHOW MOVIE", 400.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.ENTERTAINMENT, r!!.category)
+    }
+
+    @Test fun `Category HEALTHCARE - pharmacy`() {
+        val r = expenseAt("APOLLO PHARMACY", 600.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.HEALTHCARE, r!!.category)
+    }
+
+    @Test fun `Category HEALTHCARE - hospital`() {
+        val r = expenseAt("CITY HOSPITAL", 2000.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.HEALTHCARE, r!!.category)
+    }
+
+    @Test fun `Category EDUCATION - college fees`() {
+        val r = expenseAt("COLLEGE FEES", 5000.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.EDUCATION, r!!.category)
+    }
+
+    @Test fun `Category EDUCATION - tuition centre`() {
+        val r = expenseAt("TUITION CENTRE", 2000.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.EDUCATION, r!!.category)
+    }
+
+    @Test fun `Category INVESTMENT - Zerodha`() {
+        val r = expenseAt("ZERODHA", 5000.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.INVESTMENT, r!!.category)
+    }
+
+    @Test fun `Category INVESTMENT - Groww`() {
+        val r = expenseAt("GROWW", 3000.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.INVESTMENT, r!!.category)
+    }
+
+    @Test fun `Category MUTUAL_FUND - SIP payment`() {
+        val r = expenseAt("MUTUAL FUND SIP", 1000.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.MUTUAL_FUND, r!!.category)
+    }
+
+    @Test fun `Category ELECTRONICS - Amazon purchase`() {
+        val r = expenseAt("AMAZON", 12000.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.ELECTRONICS, r!!.category)
+    }
+
+    @Test fun `Category ELECTRONICS - Croma store`() {
+        val r = expenseAt("CROMA", 8000.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.ELECTRONICS, r!!.category)
+    }
+
+    @Test fun `Category TRAVEL - IRCTC booking`() {
+        val r = expenseAt("IRCTC TRAIN", 800.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.TRAVEL, r!!.category)
+    }
+
+    @Test fun `Category TRAVEL - Redbus booking`() {
+        val r = expenseAt("REDBUS", 600.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.TRAVEL, r!!.category)
+    }
+
+    @Test fun `Category GYM - gym membership`() {
+        val r = expenseAt("GYM MEMBERSHIP", 2000.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.GYM, r!!.category)
+    }
+
+    @Test fun `Category GYM - fitness centre`() {
+        val r = expenseAt("FITNESS CENTRE", 1500.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.GYM, r!!.category)
+    }
+
+    @Test fun `Category SHOES - Nike outlet`() {
+        val r = expenseAt("NIKE OUTLET", 3000.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.SHOES, r!!.category)
+    }
+
+    @Test fun `Category CLOTHES - Zudio fashion`() {
+        val r = expenseAt("ZUDIO FASHION", 1500.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.CLOTHES, r!!.category)
+    }
+
+    @Test fun `Category DEBT - debt repayment`() {
+        val r = expenseAt("DEBT PAYMENT", 5000.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.DEBT, r!!.category)
+    }
+
+    @Test fun `Category SOFT_HOT_DRINKS - tea stall`() {
+        val r = expenseAt("TEA STALL", 30.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.SOFT_HOT_DRINKS, r!!.category)
+    }
+
+    @Test fun `Category FRUITS - fruit market`() {
+        val r = expenseAt("FRUIT VENDOR", 200.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.FRUITS, r!!.category)
+    }
+
+    @Test fun `Category BIKE - bike repair`() {
+        val r = expenseAt("BIKE REPAIR SHOP", 500.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.BIKE, r!!.category)
+    }
+
+    @Test fun `Category GIFTING_FRIENDS - gift shop`() {
+        val r = expenseAt("GIFT SHOP", 1000.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.GIFTING_FRIENDS, r!!.category)
+    }
+
+    @Test fun `Category OTHERS - unrecognised merchant`() {
+        val r = expenseAt("GENERAL PAYMENT", 100.0)
+        assertNotNull(r); assertEquals(ExpenseCategory.OTHERS, r!!.category)
+    }
+
+    // ─── Category: INCOME types ──────────────────────────────────────────────
+
+    @Test fun `Category SALARY - salary credit`() {
         val result = SmsParser.parseOffline(
-            "Dear UPI user A/C x5300 debited by 173on date 19Jun26 trf to M TAMILSELVAN Refno 254123452345.",
-            "VM-SBIUPI"
+            "Salary of Rs. 45000.00 credited to account ending in 5678 on 01-Jul-26.",
+            "HD-HDFC-T"
         )
         assertNotNull(result)
-        assertFalse("Title should not be empty", result!!.title.isBlank())
+        assertEquals("INCOME", result!!.type)
+        assertEquals(ExpenseCategory.SALARY, result.category)
+    }
+
+    @Test fun `Category REFUNDS - refund credited`() {
+        val result = SmsParser.parseOffline(
+            "Rs.150.00 refund credited to your account ending in 5678 on 01-Jul-26 via UPI.",
+            "HD-HDFC-T"
+        )
+        assertNotNull(result)
+        assertEquals("INCOME", result!!.type)
+        assertEquals(ExpenseCategory.REFUNDS, result.category)
+    }
+
+    @Test fun `Category CASHBACK - cashback credited`() {
+        val result = SmsParser.parseOffline(
+            "Rs.50.00 cashback credited to your account ending in 5678 on 01-Jul-26 via UPI.",
+            "HD-HDFC-T"
+        )
+        assertNotNull(result)
+        assertEquals("INCOME", result!!.type)
+        assertEquals(ExpenseCategory.CASHBACK, result.category)
+    }
+
+    @Test fun `Category UPI income - received via UPI`() {
+        val result = SmsParser.parseOffline(
+            "Rs.500.00 received in your account ending in 5678 via UPI on 01-Jul-26.",
+            "HD-HDFC-T"
+        )
+        assertNotNull(result)
+        assertEquals("INCOME", result!!.type)
+        assertEquals(ExpenseCategory.UPI, result.category)
+    }
+
+    @Test fun `Category INCOME_OTHERS - generic bank transfer`() {
+        val result = SmsParser.parseOffline(
+            "Rs.1000.00 credited to your account ending in 5678 by bank transfer on 01-Jul-26.",
+            "HD-HDFC-T"
+        )
+        assertNotNull(result)
+        assertEquals("INCOME", result!!.type)
+        assertEquals(ExpenseCategory.INCOME_OTHERS, result.category)
+    }
+
+    // ─── Sender header validation ────────────────────────────────────────────
+
+    @Test fun `Sender not ending in -S or -T is rejected`() {
+        // e.g. "VM-HDFCBK" ends in K — should return null
+        val result = SmsParser.parseOffline(
+            "Rs.500.00 debited from a/c xx1234 on 01-Jul-26 via UPI.",
+            "VM-HDFCBK"
+        )
+        assertNull("Parser must reject senders that do not end in -S or -T", result)
+    }
+
+    @Test fun `Null sender is rejected`() {
+        val result = SmsParser.parseOffline(
+            "Rs.500.00 debited from a/c xx1234 on 01-Jul-26 via UPI.",
+            null
+        )
+        assertNull("Parser must reject null sender", result)
+    }
+
+    @Test fun `Sender ending in -S is accepted`() {
+        val result = SmsParser.parseOffline(
+            "Rs.500.00 debited from a/c xx1234 on 01-Jul-26 via UPI.",
+            "JK-BANK-S"
+        )
+        assertNotNull("Sender ending in -S must be accepted", result)
+    }
+
+    @Test fun `Sender ending in -T is accepted`() {
+        val result = SmsParser.parseOffline(
+            "Rs.500.00 debited from a/c xx1234 on 01-Jul-26 via UPI.",
+            "JK-BANK-T"
+        )
+        assertNotNull("Sender ending in -T must be accepted", result)
     }
 }

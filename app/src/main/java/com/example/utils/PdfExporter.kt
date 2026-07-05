@@ -130,7 +130,7 @@ object PdfExporter {
         drawLabeledBar(cv, "Income",  grandInc, (grandInc / maxVal).toFloat(), M, y, barZoneW, C_TEAL)
         y += 22f
         drawLabeledBar(cv, "Expense", grandExp, (grandExp / maxVal).toFloat(), M, y, barZoneW, C_EXP)
-        y += 26f
+        y += 28f
 
         // Monthly overview mini-table
         cv.drawText("Monthly Overview", M, y, paint(10f, C_BG_DARK, bold = true))
@@ -140,7 +140,7 @@ object PdfExporter {
         y += 20f
 
         sections.sortedByDescending { it.month }.forEach { s ->
-            ensureSpace(16f)
+            ensureSpace(18f)
             val netColor = if (s.net >= 0) C_INC else C_EXP
             val gcColor  = if (s.closingBalance >= 0) C_ACCENT else C_EXP
             cv.drawText(s.month,                             colM[0], y, paint(9f, C_TEXT))

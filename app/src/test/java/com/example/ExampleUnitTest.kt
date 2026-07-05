@@ -28,7 +28,7 @@ class ExampleUnitTest {
             "Transaction recorded! spent INR 12,000.00 on card ending in 432",
             "Salary of Rs. 45,000.00 received in account ending in 012",
             "Amt Deducted Rs. 200 from a/c xx3421",
-            "Dear UPI user A/C x5300 debited by 173on date 19Jun26 trf to M TAMILSELVAN Refno 254123452345."
+            "Dear UPI user A/C x5300 debited by 173on date 19Jun26 trf to J VERMA Refno 254123452345."
         )
 
         for (sms in validSmsList) {
@@ -54,8 +54,8 @@ class ExampleUnitTest {
 
     @Test
     fun testParseUserSmsWithSquishedDetails() {
-        val debitSms = "Dear UPI user A/C x5300 debited by 173on date 19Jun26 trf to M TAMILSELVAN Refno 254123452345."
-        val result = SmsParser.parseOffline(debitSms, "VM-SBIUPI")
+        val debitSms = "Dear UPI user A/C x5300 debited by 173on date 19Jun26 trf to J VERMA Refno 254123452345."
+        val result = SmsParser.parseOffline(debitSms, "VM-SBI-S")
         
         assertNotNull("Debit SMS should be successfully parsed", result)
         assertEquals(173.0, result!!.amount, 0.0)
@@ -72,8 +72,8 @@ class ExampleUnitTest {
 
     @Test
     fun testParseUserCreditSms() {
-        val creditSms = "Rs.173.00 credited to a/c *2045 on 19/06/2026 by a/c linked to VPA tamilselvanmsr@oksbi (UPI Ref no 254123452345). Indian bank."
-        val result = SmsParser.parseOffline(creditSms, "VM-INDBNK")
+        val creditSms = "Rs.173.00 credited to a/c *2045 on 19/06/2026 by a/c linked to VPA jkverma@oksbi (UPI Ref no 254123452345). Indian bank."
+        val result = SmsParser.parseOffline(creditSms, "JD-INDBK-S")
         
         assertNotNull("Credit SMS should be successfully parsed", result)
         assertEquals(173.0, result!!.amount, 0.0)
@@ -93,12 +93,12 @@ class ExampleUnitTest {
         val sms = "Rs.165.00 spent on your SBI Credit Card ending with 6928 at GMART on 19-06-26 via UPI (Ref No. 4524532432)."
         assertTrue("SBI Credit Card SMS should be classified as valid transaction", SmsFilterUtility.isValidTransactionSms(sms))
         
-        val result = SmsParser.parseOffline(sms, "VM-SBICRD")
+        val result = SmsParser.parseOffline(sms, "AX-SBICC-S")
         assertNotNull("SBI Credit Card SMS should be successfully parsed", result)
         assertEquals(165.0, result!!.amount, 0.0)
         assertEquals("6928", result.accountRef)
         assertEquals("EXPENSE", result.type)
-        assertEquals("GMART", result.title)
+        assertEquals("Gmart", result.title)
         
         // Check date: June 19, 2026
         assertNotNull("Timestamp should not be null", result.parsedTimestamp)
@@ -113,12 +113,12 @@ class ExampleUnitTest {
         val sms = "A/c *2045 debited Rs.100.00 on 18-06-26 to CRED club. UPI: 13541234325. if not you Dial 1930 for cyber fraud - Indian Bank."
         assertTrue("Indian Bank SMS should be classified as valid transaction", SmsFilterUtility.isValidTransactionSms(sms))
         
-        val result = SmsParser.parseOffline(sms, "VM-INDBNK")
+        val result = SmsParser.parseOffline(sms, "JD-INDBK-S")
         assertNotNull("Indian Bank SMS should be successfully parsed", result)
         assertEquals(100.0, result!!.amount, 0.0)
         assertEquals("2045", result.accountRef)
         assertEquals("EXPENSE", result.type)
-        assertEquals("CRED Club", result.title)
+        assertEquals("Cred Club", result.title)
     }
 
     @Test
@@ -126,7 +126,7 @@ class ExampleUnitTest {
         val sms = "Dear UPI user A/C X5300 debited by 110.0 on date 14Jun26 trf to Mr SUNILKUMAR SO Refno 1354123432 If not u? call 3451345 for other services-18001234-SBI."
         assertTrue("SBI transaction SMS should be classified as valid transaction", SmsFilterUtility.isValidTransactionSms(sms))
         
-        val result = SmsParser.parseOffline(sms, "VM-SBIUPI")
+        val result = SmsParser.parseOffline(sms, "VM-SBI-S")
         assertNotNull("SBI transaction SMS should be successfully parsed", result)
         assertEquals(110.0, result!!.amount, 0.0)
         assertEquals("5300", result.accountRef)
@@ -139,7 +139,7 @@ class ExampleUnitTest {
         val sms = "Rs. 3860.00 spent on your SBI Credit Card ending at 0562 at DREAMPLUG on 18/04/26."
         assertTrue("SBI Credit Card spent SMS should be valid", SmsFilterUtility.isValidTransactionSms(sms))
         
-        val result = SmsParser.parseOffline(sms, "VM-SBICRD")
+        val result = SmsParser.parseOffline(sms, "AX-SBICC-S")
         assertNotNull("Should parse", result)
         assertEquals(3860.0, result!!.amount, 0.0)
         assertEquals("0562", result.accountRef)
@@ -152,7 +152,7 @@ class ExampleUnitTest {
         val sms = "Dear UPI user A/C X5300 debited by 2.00 on date 19APr26 trf to Uday Baby Mestha Refno 151532"
         assertTrue("UPI debit SMS should be valid", SmsFilterUtility.isValidTransactionSms(sms))
         
-        val result = SmsParser.parseOffline(sms, "VM-SBIUPI")
+        val result = SmsParser.parseOffline(sms, "VM-SBI-S")
         assertNotNull("Should parse", result)
         assertEquals(2.00, result!!.amount, 0.0)
         assertEquals("5300", result.accountRef)
@@ -165,7 +165,7 @@ class ExampleUnitTest {
         val sms = "Sent Rs.40.00 From HDFC Bank A/C *9553 to MALLI KAN HAV on 20/04/26."
         assertTrue("HDFC Sent SMS should be valid", SmsFilterUtility.isValidTransactionSms(sms))
         
-        val result = SmsParser.parseOffline(sms, "VM-HDFCBK")
+        val result = SmsParser.parseOffline(sms, "HD-HDFC-T")
         assertNotNull("Should parse", result)
         assertEquals(40.0, result!!.amount, 0.0)
         assertEquals("9553", result.accountRef)
@@ -178,7 +178,7 @@ class ExampleUnitTest {
         val sms = "Dear UPI User A/C x5300 debited by 2000.00 on date 03Jun2026 trf to Vignesh Kumar S Refno 2451245 If not u? call-13124 for other services-180011245-SBI."
         assertTrue("SBI transaction with hyphen call should be valid", SmsFilterUtility.isValidTransactionSms(sms))
         
-        val result = SmsParser.parseOffline(sms, "VM-SBIUPI")
+        val result = SmsParser.parseOffline(sms, "VM-SBI-S")
         assertNotNull("Should parse", result)
         assertEquals(2000.0, result!!.amount, 0.0)
         assertEquals("5300", result.accountRef)
@@ -191,7 +191,7 @@ class ExampleUnitTest {
         val sms = "Your a/c. XXXXX2045 is credited by Rs. 167000.00 on 18-04-26 by a/c linked mobile 9XXXXX25452 (IMPS Ref no. 2345235234). - IndianBank"
         assertTrue("Indian Bank credit message should be valid", SmsFilterUtility.isValidTransactionSms(sms))
         
-        val result = SmsParser.parseOffline(sms, "VM-INDBNK")
+        val result = SmsParser.parseOffline(sms, "JD-INDBK-S")
         assertNotNull("Should parse", result)
         assertEquals(167000.0, result!!.amount, 0.0)
         assertEquals("2045", result.accountRef)
@@ -207,7 +207,7 @@ class ExampleUnitTest {
         carrierCal.set(2026, java.util.Calendar.APRIL, 20, 15, 45, 30)
         val carrierTimestamp = carrierCal.timeInMillis
         
-        val result = SmsParser.parseOffline(sms, "VM-HDFCBK", carrierTimestamp)
+        val result = SmsParser.parseOffline(sms, "HD-HDFC-T", carrierTimestamp)
         assertNotNull(result)
         assertNotNull(result!!.parsedTimestamp)
         

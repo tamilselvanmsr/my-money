@@ -590,8 +590,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun updateAccount(account: Account) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.updateAccount(account)
-            _toastMessage.emit("Budget wallet configurations updated.")
-            addNotification("Wallet Updated", "Configuration for '${account.name}' (${account.type}) saved.")
+            _toastMessage.emit("Account configurations updated.")
+            addNotification("Account Updated", "Configuration for '${account.name}' (${account.type}) saved.")
         }
     }
 
@@ -1202,8 +1202,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun adjustAccountBalance(accountName: String, currentBalance: Double, targetBalance: Double) {
         if (Math.abs(targetBalance - currentBalance) < 0.01) return
         viewModelScope.launch {
-            // Store the absolute target as a BALANCE_UPDATE snapshot.
-            // computeWalletBalances will use this as the starting point going forward.
             val tx = TransactionEntry(
                 title = "Balance Adjustment",
                 amount = targetBalance,
@@ -1214,6 +1212,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             )
             repository.insertTransaction(tx)
             _toastMessage.emit("Balance set to \u20b9${String.format("%.2f", targetBalance)} for $accountName")
+            addNotification("Balance Updated", "$accountName: \u20b9${String.format("%.2f", currentBalance)} \u2192 \u20b9${String.format("%.2f", targetBalance)}")
         }
     }
 
@@ -1230,6 +1229,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             }
             maybeNotifyBudgetAlert(tx, allTransactions.value.map { if (it.id == tx.id) tx else it })
             _toastMessage.emit("Updated transaction details")
+
+            // Build a human-readable diff notification for what actually changed.
+            if (oldTx != null) {
+                val sdf = SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
+                val changes = buildList<String> {
+                    if (!oldTx.title.equals(tx.title, ignoreCase = true))
+                        add("Payee: '${oldTx.title}' \u2192 '${tx.title}'")
+                    if (oldTx.type != tx.type)
+                        add("Type: ${oldTx.type} \u2192 ${tx.type}")
+                    if (!oldTx.category.equals(tx.category, ignoreCase = true))
+                        add("Category: ${oldTx.category} \u2192 ${tx.category}")
+                    if (oldTx.amount != tx.amount)
+                        add("Amount: \u20b9${String.format("%.2f", oldTx.amount)} \u2192 \u20b9${String.format("%.2f", tx.amount)}")
+                    if (oldTx.timestamp != tx.timestamp)
+                        add("Date: ${sdf.format(Date(oldTx.timestamp))} \u2192 ${sdf.format(Date(tx.timestamp))}")
+                    if (oldTx.getAccountName() != tx.getAccountName())
+                        add("Account: '${oldTx.getAccountName()}' \u2192 '${tx.getAccountName()}'")
+                }
+                if (changes.isNotEmpty()) {
+                    addNotification("Transaction Updated", "${tx.title}: ${changes.joinToString("; ")}")
+                }
+            }
         }
     }
 

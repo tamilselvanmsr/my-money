@@ -155,5 +155,17 @@ interface FinanceDao {
      *  Used by adjustCcAvailableLimit to skip pre-CC-Summary transactions. */
     @Query("SELECT timestamp FROM transactions WHERE type = 'BALANCE_UPDATE' AND title = 'Balance Sync' AND note LIKE '%[Acc: ' || :accountName || ']%' ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatestBalanceSyncTimestamp(accountName: String): Long?
+
+    /** One-shot snapshot of ALL transactions — used for merge-restore deduplication. */
+    @Query("SELECT * FROM transactions")
+    suspend fun getAllTransactionsOnce(): List<TransactionEntry>
+
+    /** One-shot snapshot of ALL accounts — used for merge-restore deduplication. */
+    @Query("SELECT * FROM accounts")
+    suspend fun getAllAccountsOnce(): List<Account>
+
+    /** One-shot snapshot of ALL custom categories — used for merge-restore deduplication. */
+    @Query("SELECT * FROM custom_categories")
+    suspend fun getAllCustomCategoriesOnce(): List<CustomCategory>
 }
 

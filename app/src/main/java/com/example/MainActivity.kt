@@ -321,6 +321,11 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
         }
     }
 
+    // Trigger auto-backup if frequency interval has elapsed since last backup
+    LaunchedEffect(Unit) {
+        viewModel.checkAndTriggerAutoBackup()
+    }
+
     // Theme-aware palette constants (switch with dark/light mode)
     val darkBg = c.bg
     val cardSurface = c.surface
@@ -471,7 +476,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Ver: 67",
+                                        "Ver: ${BuildConfig.VERSION_NAME}",
                                         fontSize = 11.sp,
                                         color = c.textSecondary,
                                         modifier = Modifier.fillMaxWidth()
@@ -479,7 +484,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                 },
                                 onClick = {},
                                 enabled = false,
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                             )
                         }
                     }
@@ -835,14 +840,15 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             modifier = Modifier
                                 .background(c.surfaceVariant)
                                 .border(1.dp, c.border, RoundedCornerShape(8.dp))
-                                .width(260.dp)
+                                .width(220.dp)
                         ) {
                         DropdownMenuItem(
                             text = {
                                 Text("DISPLAY MODE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                             },
                             onClick = {},
-                            enabled = false
+                            enabled = false,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)
                         )
                         
                         val modes = listOf(
@@ -877,6 +883,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     viewModel.setDisplayMode(mode)
                                     showFilterMenu = false
                                 },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
                                 modifier = Modifier.testTag("filter_mode_${mode.name.lowercase()}")
                             )
                         }
@@ -919,7 +926,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("Running Balance", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
-                                        Text("Show balance after each transaction", fontSize = 9.sp, color = c.textSecondary)
+                                        Text("Per-tx cumulative total", fontSize = 9.sp, color = c.textSecondary)
                                     }
                                     Switch(
                                         checked = showRunningBalance,
@@ -1860,7 +1867,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
 
     var timeFilter by remember { mutableStateOf("MONTHLY") }
-    var selectedMode by remember { mutableStateOf(AnalyticsMode.EXPENSE_OVERVIEW) }
+    val selectedModeIdx by viewModel.selectedAnalyticsModeIdx.collectAsStateWithLifecycle()
+    val selectedMode = AnalyticsMode.entries.getOrElse(selectedModeIdx) { AnalyticsMode.EXPENSE_OVERVIEW }
     var showModeMenu by remember { mutableStateOf(false) }
     var showPeriodMenu by remember { mutableStateOf(false) }
 
@@ -2043,7 +2051,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                     )
                                 },
                                 onClick = {
-                                    selectedMode = mode
+                                    viewModel.setSelectedAnalyticsModeIdx(AnalyticsMode.entries.indexOf(mode))
                                     showModeMenu = false
                                 }
                             )
@@ -5105,7 +5113,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                     Text("Secure Offline Automated Scanner", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Reads your messages locally using regex pattern matching and/or local AI. No financial or personal data ever leaves your device.",
+                        "Messages are parsed 100% on-device using offline pattern matching — no internet connection is used, no data is uploaded, and your financial information never leaves your phone.",
                         fontSize = 11.sp,
                         color = c.textSecondary,
                         textAlign = TextAlign.Center
@@ -5197,6 +5205,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                             }
                         }
                         // Bal Sync toggle
+                        var showBalSyncInfo by remember { mutableStateOf(false) }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -5206,8 +5215,14 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                 fontSize = 10.sp,
                                 lineHeight = 13.sp,
                                 color = c.textSecondary,
-                                textAlign = TextAlign.End
+                                textAlign = TextAlign.Center
                             )
+                            IconButton(
+                                onClick = { showBalSyncInfo = true },
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(Icons.Default.Info, contentDescription = "Bal Sync info", tint = c.textSecondary, modifier = Modifier.size(14.dp))
+                            }
                             Switch(
                                 checked = enableBalanceSync,
                                 onCheckedChange = { viewModel.setEnableBalanceSync(it) },
@@ -5217,6 +5232,16 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                                     uncheckedThumbColor = c.textSecondary,
                                     uncheckedTrackColor = c.divider
                                 )
+                            )
+                        }
+                        if (showBalSyncInfo) {
+                            AlertDialog(
+                                onDismissRequest = { showBalSyncInfo = false },
+                                title = { Text("Balance Sync", fontWeight = FontWeight.Bold) },
+                                text = { Text("Reads bank balance SMS to anchor your account's current balance, fixing any drift from manual entries. When enabled, the reported balance is stored as a snapshot and only transactions after that point affect your running balance.") },
+                                confirmButton = {
+                                    TextButton(onClick = { showBalSyncInfo = false }) { Text("Got it") }
+                                }
                             )
                         }
                     }
@@ -7190,7 +7215,18 @@ fun BackupDialog(
                                         fontWeight = FontWeight.Bold,
                                         color = c.text
                                     )
-                                    val currentPath = customBackupPath.ifEmpty { viewModel.getBackupFolder(false, "").absolutePath }
+                                val currentPath = when {
+                                    customBackupPath.isEmpty() -> viewModel.getBackupFolder(false, "").absolutePath
+                                    customBackupPath.startsWith("content://") -> {
+                                        try {
+                                            val docId = android.net.Uri.parse(customBackupPath).lastPathSegment ?: customBackupPath
+                                            val decoded = java.net.URLDecoder.decode(docId, "UTF-8")
+                                            if (decoded.startsWith("primary:")) "/storage/emulated/0/" + decoded.removePrefix("primary:")
+                                            else decoded
+                                        } catch (_: Exception) { customBackupPath }
+                                    }
+                                    else -> customBackupPath
+                                }
                                     Text(
                                         currentPath,
                                         fontSize = 11.sp,
@@ -7358,8 +7394,8 @@ fun BackupDialog(
                         }
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // Show top 3 backups
-                            availableBackups.take(3).forEach { item ->
+                            // Show all available backups
+                            availableBackups.forEach { item ->
                                 Surface(
                                     color = c.surfaceVariant,
                                     shape = RoundedCornerShape(10.dp),
@@ -7444,34 +7480,14 @@ fun BackupDialog(
                             },
                             border = BorderStroke(1.dp, c.border),
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
                             contentPadding = PaddingValues(vertical = 6.dp)
                         ) {
                             Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Export CSV", fontSize = 11.sp, color = c.text)
                         }
-                        
-                        OutlinedButton(
-                            onClick = {
-                                openDocLauncher.launch(arrayOf("application/json", "text/comma-separated-values", "text/csv", "*/*"))
-                            },
-                            border = BorderStroke(1.dp, c.border),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(vertical = 6.dp)
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Import Backup", fontSize = 11.sp, color = c.text)
-                        }
                     }
-                    Text(
-                        "* Import Backup auto-detects and processes both CSV and JSON backups.",
-                        fontSize = 9.sp,
-                        color = c.textSecondary,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
                     if (exportedCsv) {
                         Text("CSV exported successfully!", fontSize = 10.sp, color = c.income, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 2.dp))
                     }
@@ -7651,7 +7667,7 @@ fun RestoreBackupDialog(
                     color = c.text
                 )
                 Text(
-                    "Restore from a CSV backup file",
+                    "Restore from a backup file",
                     fontSize = 12.sp,
                     color = c.textSecondary,
                     modifier = Modifier.padding(top = 2.dp)

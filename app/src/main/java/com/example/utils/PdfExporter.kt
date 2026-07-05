@@ -365,8 +365,7 @@ object PdfExporter {
 
     private fun drawPageFooter(canvas: Canvas, pageNum: Int) {
         canvas.drawLine(M, PH - 18f, PW - M, PH - 18f, p(C_DIVIDER, strokeWidth = 0.5f))
-        canvas.drawText("MyMoney Financial Report", M, PH - 7f, paint(7f, C_MUTED))
-        canvas.drawText("Page $pageNum", PW - M - 30f, PH - 7f, paint(7f, C_MUTED))
+        canvas.drawText("Page $pageNum", PW / 2f, PH - 7f, paint(7f, C_MUTED).also { it.textAlign = android.graphics.Paint.Align.CENTER })
     }
 
     // ─── Paint factory ────────────────────────────────────────────────────────

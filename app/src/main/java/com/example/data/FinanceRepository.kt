@@ -167,6 +167,10 @@ class FinanceRepository(private val financeDao: FinanceDao) {
         return financeDao.getLatestBalanceSyncTimestamp(accountName)
     }
 
+    suspend fun getAllTransactionsOnce(): List<TransactionEntry> = financeDao.getAllTransactionsOnce()
+    suspend fun getAllAccountsOnce(): List<Account> = financeDao.getAllAccountsOnce()
+    suspend fun getAllCustomCategoriesOnce(): List<CustomCategory> = financeDao.getAllCustomCategoriesOnce()
+
     suspend fun clearAccounts() {
         financeDao.clearAllAccounts()
     }

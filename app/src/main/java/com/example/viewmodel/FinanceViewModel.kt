@@ -9,9 +9,9 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.BuildConfig
 import com.example.data.*
 import com.example.utils.ExcelExporter
 import com.example.utils.PdfExporter
@@ -31,6 +31,16 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
+/** Represents a backup file available for restore. */
+data class BackupItem(
+    val file: java.io.File? = null,
+    val contentUri: android.net.Uri? = null,
+    val name: String = file?.name ?: "",
+    val timestamp: Long,
+    val sizeBytes: Long,
+    val isGoogleStorage: Boolean = false
+)
+
 /** Holds a parsed transaction before it is committed, so we can match transfer pairs first. */
 private data class PendingTxItem(
     val tx: com.example.data.TransactionEntry,
@@ -43,6 +53,7 @@ private data class PendingTxItem(
 
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
     private val TAG = "FinanceViewModel"
+    private val BACKUP_KEY = "MyMoney_Local_Backup_AES256"
     private val budgetAlertChannelId = "budget_alerts"
     private val db = FinanceDatabase.getDatabase(application)
     private val repository = FinanceRepository(db.financeDao())
@@ -146,6 +157,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     // Fingerprint format: "title|amount|type|timestamp". Cleared on new scan. Never persisted.
     private val _recentlyImportedFingerprints = MutableStateFlow<Set<String>>(emptySet())
     val recentlyImportedFingerprints: StateFlow<Set<String>> = _recentlyImportedFingerprints.asStateFlow()
+
+    // ── Analytics screen — persist selected mode across tab switches ──────────
+    private val _selectedAnalyticsModeIdx = MutableStateFlow(0)
+    val selectedAnalyticsModeIdx: StateFlow<Int> = _selectedAnalyticsModeIdx.asStateFlow()
+    fun setSelectedAnalyticsModeIdx(idx: Int) { _selectedAnalyticsModeIdx.value = idx }
 
     // ── Light / Dark theme preference ─────────────────────────────────────────
     // themeMode: "system" (follow device) | "light" | "dark"
@@ -819,12 +835,276 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val _backupString = MutableStateFlow<String?>(null)
     val backupString: StateFlow<String?> = _backupString.asStateFlow()
 
-    // Gemini API connectivity status (check if API key is not a placeholder)
-    val isGeminiAvailable: Boolean
-        get() {
-            val key = BuildConfig.GEMINI_API_KEY
-            return key.isNotEmpty() && key != "MY_GEMINI_API_KEY"
+    // ── Backup center state ────────────────────────────────────────────────────
+    private val _backupFrequency = MutableStateFlow(prefs.getString("backup_frequency", "MANUAL") ?: "MANUAL")
+    val backupFrequency: StateFlow<String> = _backupFrequency.asStateFlow()
+
+    private val _customBackupPath = MutableStateFlow(prefs.getString("custom_backup_path", "") ?: "")
+    val customBackupPath: StateFlow<String> = _customBackupPath.asStateFlow()
+
+    private val _lastBackupTime = MutableStateFlow(prefs.getLong("last_backup_time", 0L))
+    val lastBackupTime: StateFlow<Long> = _lastBackupTime.asStateFlow()
+
+    private val _availableBackups = MutableStateFlow<List<BackupItem>>(emptyList())
+    val availableBackups: StateFlow<List<BackupItem>> = _availableBackups.asStateFlow()
+
+    fun setBackupFrequency(freq: String) {
+        _backupFrequency.value = freq
+        prefs.edit().putString("backup_frequency", freq).apply()
+    }
+
+    /**
+     * Checks whether an automatic backup is due (based on the saved frequency and last backup time)
+     * and silently runs one if so. Call this when the app comes to foreground.
+     *
+     * Schedule semantics:
+     *   DAILY   → triggers whenever the app is opened after ≥24 h since the last backup
+     *   WEEKLY  → triggers after ≥7 days
+     *   MONTHLY → triggers after ≥30 days
+     */
+    fun checkAndTriggerAutoBackup() {
+        val freq = _backupFrequency.value
+        if (freq == "MANUAL") return
+        val last = _lastBackupTime.value
+        val now = System.currentTimeMillis()
+        val intervalMs: Long = when (freq.uppercase()) {
+            "DAILY"   -> 24L * 60 * 60 * 1000
+            "WEEKLY"  -> 7L * 24 * 60 * 60 * 1000
+            "MONTHLY" -> 30L * 24 * 60 * 60 * 1000
+            else -> return
         }
+        if (now - last >= intervalMs) {
+            executeBackupNow { success, _ ->
+                if (success) {
+                    viewModelScope.launch { _toastMessage.emit("Auto-backup complete ($freq)") }
+                }
+            }
+        }
+    }
+
+    fun setCustomBackupPath(path: String) {
+        _customBackupPath.value = path
+        prefs.edit().putString("custom_backup_path", path).apply()
+    }
+
+    fun getBackupFolder(isGoogleStorage: Boolean, suffix: String): java.io.File {
+        val customPath = _customBackupPath.value
+        return if (customPath.isNotEmpty()) {
+            java.io.File(customPath)
+        } else {
+            java.io.File(getApplication<Application>().getExternalFilesDir(null), "MyMoneyBackups")
+        }
+    }
+
+    fun refreshAvailableBackups() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val customPath = _customBackupPath.value
+            val items = mutableListOf<BackupItem>()
+            if (customPath.startsWith("content://")) {
+                // Folder was chosen via document picker — use DocumentFile API
+                try {
+                    val treeUri = android.net.Uri.parse(customPath)
+                    val docFolder = DocumentFile.fromTreeUri(getApplication(), treeUri)
+                    if (docFolder != null && docFolder.exists()) {
+                        docFolder.listFiles()
+                            .filter { it.name?.endsWith(".csv") == true || it.name?.endsWith(".json") == true }
+                            .sortedByDescending { it.lastModified() }
+                            .forEach { docFile ->
+                                items.add(BackupItem(
+                                    contentUri = docFile.uri,
+                                    name = docFile.name ?: "",
+                                    timestamp = docFile.lastModified(),
+                                    sizeBytes = docFile.length(),
+                                    isGoogleStorage = false
+                                ))
+                            }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "refreshAvailableBackups (content URI) failed: ${e.message}", e)
+                }
+            } else {
+                val folder = getBackupFolder(false, "")
+                if (folder.exists() && folder.isDirectory) {
+                    folder.listFiles { f -> f.extension == "csv" || f.extension == "json" }
+                        ?.sortedByDescending { it.lastModified() }
+                        ?.forEach { f ->
+                            items.add(BackupItem(
+                                file = f,
+                                name = f.name,
+                                timestamp = f.lastModified(),
+                                sizeBytes = f.length(),
+                                isGoogleStorage = false
+                            ))
+                        }
+                }
+            }
+            _availableBackups.value = items
+        }
+    }
+
+    fun executeBackupNow(onComplete: (Boolean, String?) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val customPath = _customBackupPath.value
+                val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+                val fileName = "mymoney_backup_${sdf.format(Date())}.json"
+
+                // Build JSON payload
+                val accArray = JSONArray()
+                for (acc in allAccounts.value) {
+                    accArray.put(JSONObject().apply {
+                        put("name", acc.name)
+                        put("type", acc.type)
+                        put("lastFour", acc.lastFour ?: JSONObject.NULL)
+                        put("creditLimit", acc.creditLimit)
+                        put("balance", acc.balance)
+                    })
+                }
+                val txArray = JSONArray()
+                for (tx in allTransactions.value) {
+                    txArray.put(JSONObject().apply {
+                        put("title", tx.title)
+                        put("amount", tx.amount)
+                        put("category", tx.category)
+                        put("type", tx.type)
+                        put("timestamp", tx.timestamp)
+                        put("note", tx.note ?: JSONObject.NULL)
+                    })
+                }
+                val budgetArray = JSONArray()
+                val budgets = repository.getAllBudgetsOnce()
+                for (b in budgets) {
+                    budgetArray.put(JSONObject().apply {
+                        put("category", b.category)
+                        put("amountLimit", b.amountLimit)
+                        put("monthYear", b.monthYear)
+                    })
+                }
+                val ccArray = JSONArray()
+                for (cc in allCustomCategories.value) {
+                    ccArray.put(JSONObject().apply {
+                        put("name", cc.name)
+                        put("iconName", cc.iconName)
+                        put("colorHex", cc.colorHex)
+                    })
+                }
+                val payload = JSONObject().apply {
+                    put("accounts", accArray)
+                    put("transactions", txArray)
+                    put("budgets", budgetArray)
+                    put("customCategories", ccArray)
+                }
+                val encrypted = SecurityUtils.encrypt(payload.toString(), BACKUP_KEY)
+                val wrapper = JSONObject().apply {
+                    put("v", 1)
+                    put("ts", System.currentTimeMillis())
+                    put("encrypted", encrypted)
+                }
+                val content = wrapper.toString()
+
+                if (customPath.startsWith("content://")) {
+                    val treeUri = android.net.Uri.parse(customPath)
+                    val docFolder = DocumentFile.fromTreeUri(getApplication(), treeUri)
+                        ?: throw Exception("Cannot access backup folder. Please re-select it.")
+                    val docFile = docFolder.createFile("application/json", fileName)
+                        ?: throw Exception("Cannot create backup file in the selected folder.")
+                    getApplication<Application>().contentResolver.openOutputStream(docFile.uri)?.use { out ->
+                        out.write(content.toByteArray(Charsets.UTF_8))
+                    } ?: throw Exception("Cannot write to backup file.")
+                } else {
+                    val folder = getBackupFolder(false, "")
+                    folder.mkdirs()
+                    java.io.File(folder, fileName).writeText(content, Charsets.UTF_8)
+                }
+
+                val now = System.currentTimeMillis()
+                _lastBackupTime.value = now
+                prefs.edit().putLong("last_backup_time", now).apply()
+                pruneOldBackups(5)
+                refreshAvailableBackups()
+                withContext(Dispatchers.Main) { onComplete(true, null) }
+            } catch (e: Exception) {
+                Log.e(TAG, "executeBackupNow failed: ${e.message}", e)
+                withContext(Dispatchers.Main) { onComplete(false, e.message) }
+            }
+        }
+    }
+
+    fun deleteBackup(item: BackupItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (item.contentUri != null) {
+                    DocumentFile.fromSingleUri(getApplication(), item.contentUri)?.delete()
+                } else {
+                    item.file?.delete()
+                }
+            } catch (_: Exception) {}
+            refreshAvailableBackups()
+        }
+    }
+
+    private suspend fun pruneOldBackups(maxKeep: Int = 5) {
+        val customPath = _customBackupPath.value
+        if (customPath.startsWith("content://")) {
+            try {
+                val treeUri = android.net.Uri.parse(customPath)
+                val docFolder = DocumentFile.fromTreeUri(getApplication(), treeUri) ?: return
+                val toDelete = docFolder.listFiles()
+                    .filter { it.name?.endsWith(".json") == true || it.name?.endsWith(".csv") == true }
+                    .sortedByDescending { it.lastModified() }
+                    .drop(maxKeep)
+                toDelete.forEach { it.delete() }
+            } catch (e: Exception) {
+                Log.e(TAG, "pruneOldBackups failed: ${e.message}", e)
+            }
+        } else {
+            val folder = getBackupFolder(false, "")
+            if (!folder.exists()) return
+            folder.listFiles { f -> f.extension == "json" || f.extension == "csv" }
+                ?.sortedByDescending { it.lastModified() }
+                ?.drop(maxKeep)
+                ?.forEach { it.delete() }
+        }
+    }
+
+    fun executeRestore(item: BackupItem, onComplete: (Boolean, String?) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val content: String = if (item.contentUri != null) {
+                    getApplication<Application>().contentResolver.openInputStream(item.contentUri)
+                        ?.bufferedReader()?.readText() ?: ""
+                } else {
+                    item.file?.readText() ?: ""
+                }
+                if (content.trimStart().startsWith("{")) {
+                    restoreFromJsonContent(content, onComplete)
+                } else {
+                    restoreFromCsvLines(content.lines(), onComplete)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "executeRestore failed: ${e.message}", e)
+                withContext(Dispatchers.Main) { onComplete(false, e.message) }
+            }
+        }
+    }
+
+    /** Reads a backup from a URI with completion callback (SAF-based restore). Auto-detects JSON vs CSV. */
+    fun restoreFromBackupUri(context: android.content.Context, uri: android.net.Uri, onComplete: (Boolean, String?) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val content = context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() }
+                    ?: run { withContext(Dispatchers.Main) { onComplete(false, "Could not open file") }; return@launch }
+                if (content.trimStart().startsWith("{")) {
+                    restoreFromJsonContent(content, onComplete)
+                } else {
+                    restoreFromCsvLines(content.lines(), onComplete)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "restoreFromBackupUri(cb) failed: ${e.message}", e)
+                withContext(Dispatchers.Main) { onComplete(false, e.message) }
+            }
+        }
+    }
 
     fun setMonthYear(monthYear: String) {
         _selectedMonthYear.value = monthYear
@@ -1239,12 +1519,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             if (item.tx.type == "INCOME" && item.parsedAvailableBalance != null && item.parsedAccountRef != null) {
                                 val incomeAcct = repository.getAccountByLastFour(item.parsedAccountRef)
                                 if (incomeAcct != null && incomeAcct.type != "CREDIT_CARD") {
-                                    createBalanceAdjustIfNeeded(
+                                    val bsTs = item.tx.timestamp + 1L
+                                    if (createBalanceAdjustIfNeeded(
                                         incomeAcct, item.parsedAvailableBalance,
-                                        item.tx.timestamp + 1L,
+                                        bsTs,
                                         item.tx.smsBody ?: "", item.tx.smsSender ?: "",
                                         projectedTransactions
-                                    )
+                                    )) {
+                                        newImportedFingerprints.add("Balance Sync|${item.parsedAvailableBalance}|BALANCE_UPDATE|$bsTs")
+                                    }
                                 }
                             }
                             matchedCount++
@@ -1281,6 +1564,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                             repository.deleteAllBalanceSyncForAccount(linkedAcc.name)
                                             // Use actual SMS received date, NOT the parsed statement date from the body
                                             if (createBalanceAdjustIfNeeded(linkedAcc, snapshot, smsDate, body, sender, projectedTransactions)) {
+                                                newImportedFingerprints.add("Balance Sync|${snapshot}|BALANCE_UPDATE|$smsDate")
                                                 matchedCount++
                                             }
                                         }
@@ -1316,6 +1600,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     val snapshotBal = if (linkedAcc.type == "CREDIT_CARD" && linkedAcc.creditLimit > 0)
                                         bal - linkedAcc.creditLimit else bal
                                     if (createBalanceAdjustIfNeeded(linkedAcc, snapshotBal, targetTime, body, sender, projectedTransactions)) {
+                                        newImportedFingerprints.add("Balance Sync|${snapshotBal}|BALANCE_UPDATE|$targetTime")
                                         matchedCount++
                                     }
                                 }
@@ -1774,18 +2059,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         bypassExclusionFilter: Boolean = false
     ) {
         _isSmsParsing.value = true
-        val apiKey = BuildConfig.GEMINI_API_KEY
 
-        // Always try offline parser first — it handles CC Summary, balance updates, and most
-        // bank transactions reliably without a network round-trip.  Only fall back to Gemini
-        // when offline returns null AND Gemini is available.
+        // Use offline parser exclusively — this app is fully offline.
         _toastMessage.emit(progressMessage)
         val parsed = withContext(Dispatchers.Default) {
             SmsParser.parseOffline(parserBody, sender, System.currentTimeMillis(), bypassExclusionFilter)
-        } ?: if (isGeminiAvailable) {
-            _toastMessage.emit("Offline parser found nothing — retrying with Gemini AI...")
-            SmsParser.parseWithGemini(parserBody, sender, apiKey, System.currentTimeMillis())
-        } else null
+        }
 
         _isSmsParsing.value = false
 
@@ -1993,116 +2272,196 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** Reads a CSV backup (created by exportBackupToUri) and fully restores accounts + transactions. */
+    /** Reads a backup (created by exportBackupToUri) and fully restores accounts + transactions. Auto-detects JSON vs CSV. */
     fun restoreFromBackupUri(context: android.content.Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val lines = context.contentResolver.openInputStream(uri)?.use { stream ->
-                    stream.bufferedReader().readLines()
-                } ?: run {
-                    _toastMessage.emit("Could not open backup file.")
-                    return@launch
+                val content = context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() }
+                    ?: run { _toastMessage.emit("Could not open backup file."); return@launch }
+                if (content.trimStart().startsWith("{")) {
+                    restoreFromJsonContent(content) { _, _ -> }
+                } else {
+                    restoreFromCsvLines(content.lines()) { _, _ -> }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Restore backup failed: ${e.message}", e)
+                _toastMessage.emit("Restore failed: ${e.message}")
+            }
+        }
+    }
 
-                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-                var section = ""
-                var accountsRestored = 0
-                var txRestored = 0
-                var budgetsRestored = 0
-                var customCatsRestored = 0
+    private suspend fun restoreFromJsonContent(content: String, onComplete: (Boolean, String?) -> Unit) {
+        try {
+            val wrapper = JSONObject(content)
+            val encrypted = wrapper.optString("encrypted", "")
+            if (encrypted.isEmpty()) throw Exception("Invalid backup format: missing encrypted data")
+            val plainJson = SecurityUtils.decrypt(encrypted, BACKUP_KEY)
+            val payload = JSONObject(plainJson)
 
-                // Wipe existing data
-                repository.clearTransactions()
-                repository.clearBudgets()
-                repository.clearAccounts()
-                repository.clearCustomCategories()
-                createdAccountsCache.clear()
+            // Load existing fingerprints for dedup — no destructive clear
+            val existingTxFingerprints = repository.getAllTransactionsOnce()
+                .mapTo(mutableSetOf()) { "${it.title}|${it.amount}|${it.type}|${it.timestamp}" }
+            val existingAccountNames = repository.getAllAccountsOnce().mapTo(mutableSetOf()) { it.name }
+            val existingBudgetKeys = repository.getAllBudgetsOnce().mapTo(mutableSetOf()) { "${it.category}|${it.monthYear}" }
+            val existingCatNames = repository.getAllCustomCategoriesOnce().mapTo(mutableSetOf()) { it.name }
 
-                for (line in lines) {
-                    val trimmed = line.trim()
-                    when {
-                        trimmed.startsWith("## ") -> section = trimmed.removePrefix("## ")
-                        trimmed.isBlank() ||
-                        trimmed.startsWith("Name,") ||
-                        trimmed.startsWith("Date,") ||
-                        trimmed.startsWith("Category,") -> { /* header / blank – skip */ }                        section == "ACCOUNTS" -> {
-                            val cols = trimmed.split(",")
-                            if (cols.size >= 5) {
-                                repository.insertAccount(
-                                    Account(
-                                        name = cols[0].trim(),
-                                        type = cols[1].trim(),
-                                        lastFour = cols[2].trim().ifBlank { null },
-                                        creditLimit = cols[3].trim().toDoubleOrNull() ?: 0.0,
-                                        balance = cols[4].trim().toDoubleOrNull() ?: 0.0
-                                    )
-                                )
+            var accountsRestored = 0
+            var txRestored = 0
+            var budgetsRestored = 0
+            var customCatsRestored = 0
+
+            val accArray = payload.optJSONArray("accounts") ?: JSONArray()
+            for (i in 0 until accArray.length()) {
+                val obj = accArray.getJSONObject(i)
+                val name = obj.getString("name")
+                if (name !in existingAccountNames) {
+                    repository.insertAccount(Account(
+                        name = name,
+                        type = obj.getString("type"),
+                        lastFour = if (obj.isNull("lastFour")) null else obj.optString("lastFour").ifBlank { null },
+                        creditLimit = obj.optDouble("creditLimit", 0.0),
+                        balance = obj.optDouble("balance", 0.0)
+                    ))
+                    accountsRestored++
+                }
+            }
+
+            val txArray = payload.optJSONArray("transactions") ?: JSONArray()
+            for (i in 0 until txArray.length()) {
+                val obj = txArray.getJSONObject(i)
+                val title = obj.getString("title")
+                val amount = obj.getDouble("amount")
+                val type = obj.getString("type")
+                val ts = obj.getLong("timestamp")
+                val fp = "$title|$amount|$type|$ts"
+                if (fp !in existingTxFingerprints) {
+                    repository.insertTransaction(TransactionEntry(
+                        title = title, amount = amount, category = obj.getString("category"),
+                        type = type, timestamp = ts,
+                        note = if (obj.isNull("note")) null else obj.optString("note").ifBlank { null }
+                    ))
+                    txRestored++
+                }
+            }
+
+            val budgetArray = payload.optJSONArray("budgets") ?: JSONArray()
+            for (i in 0 until budgetArray.length()) {
+                val obj = budgetArray.getJSONObject(i)
+                val key = "${obj.getString("category")}|${obj.getString("monthYear")}"
+                if (key !in existingBudgetKeys) {
+                    repository.insertBudget(BudgetEntry(id = 0,
+                        category = obj.getString("category"),
+                        amountLimit = obj.getDouble("amountLimit"),
+                        monthYear = obj.getString("monthYear")
+                    ))
+                    budgetsRestored++
+                }
+            }
+
+            val ccArray = payload.optJSONArray("customCategories") ?: JSONArray()
+            for (i in 0 until ccArray.length()) {
+                val obj = ccArray.getJSONObject(i)
+                val name = obj.getString("name")
+                if (name !in existingCatNames) {
+                    repository.insertCustomCategory(CustomCategory(id = 0,
+                        name = name, iconName = obj.getString("iconName"), colorHex = obj.getString("colorHex")
+                    ))
+                    customCatsRestored++
+                }
+            }
+
+            _toastMessage.emit("Merged from backup: +$txRestored transactions, +$accountsRestored accounts, +$budgetsRestored budgets, +$customCatsRestored categories. Existing records kept.")
+            withContext(Dispatchers.Main) { onComplete(true, null) }
+        } catch (e: Exception) {
+            Log.e(TAG, "restoreFromJsonContent failed: ${e.message}", e)
+            withContext(Dispatchers.Main) { onComplete(false, e.message) }
+        }
+    }
+
+    private suspend fun restoreFromCsvLines(lines: List<String>, onComplete: (Boolean, String?) -> Unit) {
+        try {
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+            var section = ""
+            var accountsRestored = 0
+            var txRestored = 0
+            var budgetsRestored = 0
+            var customCatsRestored = 0
+
+            // Load existing fingerprints for dedup — no destructive clear
+            val existingTxFingerprints = repository.getAllTransactionsOnce()
+                .mapTo(mutableSetOf()) { "${it.title}|${it.amount}|${it.type}|${it.timestamp}" }
+            val existingAccountNames = repository.getAllAccountsOnce().mapTo(mutableSetOf()) { it.name }
+            val existingBudgetKeys = repository.getAllBudgetsOnce().mapTo(mutableSetOf()) { "${it.category}|${it.monthYear}" }
+            val existingCatNames = repository.getAllCustomCategoriesOnce().mapTo(mutableSetOf()) { it.name }
+
+            for (line in lines) {
+                val trimmed = line.trim()
+                when {
+                    trimmed.startsWith("## ") -> section = trimmed.removePrefix("## ")
+                    trimmed.isBlank() || trimmed.startsWith("Name,") ||
+                    trimmed.startsWith("Date,") || trimmed.startsWith("Category,") -> { /* skip */ }
+                    section == "ACCOUNTS" -> {
+                        val cols = trimmed.split(",")
+                        if (cols.size >= 5) {
+                            val name = cols[0].trim()
+                            if (name !in existingAccountNames) {
+                                repository.insertAccount(Account(
+                                    name = name, type = cols[1].trim(),
+                                    lastFour = cols[2].trim().ifBlank { null },
+                                    creditLimit = cols[3].trim().toDoubleOrNull() ?: 0.0,
+                                    balance = cols[4].trim().toDoubleOrNull() ?: 0.0
+                                ))
                                 accountsRestored++
                             }
                         }
-                        section == "TRANSACTIONS" -> {
-                            // Date,Title,Amount,Category,Type,Account[,Note] — 6 or 7 columns
-                            val parts = trimmed.split(",", limit = 7)
-                            if (parts.size >= 6) {
-                                val timestamp = try {
-                                    dateFormat.parse(parts[0].trim())?.time ?: System.currentTimeMillis()
-                                } catch (e: Exception) { System.currentTimeMillis() }
-                                // If a Note column is present use it directly (it already contains
-                                // [Acc: ...] and [To: ...] tags); otherwise reconstruct from Account.
-                                val note = if (parts.size >= 7 && parts[6].trim().isNotBlank()) {
-                                    parts[6].trim()
-                                } else {
-                                    "[Acc: ${parts[5].trim()}]"
-                                }
-                                repository.insertTransaction(
-                                    TransactionEntry(
-                                        title = parts[1].trim(),
-                                        amount = parts[2].trim().toDoubleOrNull() ?: 0.0,
-                                        category = parts[3].trim(),
-                                        type = parts[4].trim(),
-                                        timestamp = timestamp,
-                                        note = note
-                                    )
-                                )
+                    }
+                    section == "TRANSACTIONS" -> {
+                        val parts = trimmed.split(",", limit = 7)
+                        if (parts.size >= 6) {
+                            val ts = try { dateFormat.parse(parts[0].trim())?.time ?: System.currentTimeMillis() } catch (_: Exception) { System.currentTimeMillis() }
+                            val title = parts[1].trim()
+                            val amount = parts[2].trim().toDoubleOrNull() ?: 0.0
+                            val type = parts[4].trim()
+                            val fp = "$title|$amount|$type|$ts"
+                            if (fp !in existingTxFingerprints) {
+                                val note = if (parts.size >= 7 && parts[6].trim().isNotBlank()) parts[6].trim() else "[Acc: ${parts[5].trim()}]"
+                                repository.insertTransaction(TransactionEntry(
+                                    title = title, amount = amount,
+                                    category = parts[3].trim(), type = type, timestamp = ts, note = note
+                                ))
                                 txRestored++
                             }
                         }
-                        section == "BUDGETS" -> {
-                            val parts = trimmed.split(",", limit = 3)
-                            if (parts.size == 3) {
-                                repository.insertBudget(
-                                    BudgetEntry(
-                                        id = 0,
-                                        category = parts[0].trim(),
-                                        amountLimit = parts[1].trim().toDoubleOrNull() ?: 0.0,
-                                        monthYear = parts[2].trim()
-                                    )
-                                )
+                    }
+                    section == "BUDGETS" -> {
+                        val parts = trimmed.split(",", limit = 3)
+                        if (parts.size == 3) {
+                            val key = "${parts[0].trim()}|${parts[2].trim()}"
+                            if (key !in existingBudgetKeys) {
+                                repository.insertBudget(BudgetEntry(id = 0, category = parts[0].trim(),
+                                    amountLimit = parts[1].trim().toDoubleOrNull() ?: 0.0, monthYear = parts[2].trim()))
                                 budgetsRestored++
                             }
                         }
-                        section == "CUSTOM_CATEGORIES" -> {
-                            // Name,IconName,ColorHex
-                            val parts = trimmed.split(",", limit = 3)
-                            if (parts.size == 3) {
-                                repository.insertCustomCategory(
-                                    CustomCategory(
-                                        id = 0,
-                                        name = parts[0].trim(),
-                                        iconName = parts[1].trim(),
-                                        colorHex = parts[2].trim()
-                                    )
-                                )
+                    }
+                    section == "CUSTOM_CATEGORIES" -> {
+                        val parts = trimmed.split(",", limit = 3)
+                        if (parts.size == 3) {
+                            val name = parts[0].trim()
+                            if (name !in existingCatNames) {
+                                repository.insertCustomCategory(CustomCategory(id = 0, name = name,
+                                    iconName = parts[1].trim(), colorHex = parts[2].trim()))
                                 customCatsRestored++
                             }
                         }
                     }
                 }
-                _toastMessage.emit("Restored $accountsRestored accounts, $txRestored transactions, $budgetsRestored budgets and $customCatsRestored custom categories.")
-            } catch (e: Exception) {
-                Log.e(TAG, "Restore backup failed: ${e.message}", e)
-                _toastMessage.emit("Restore failed: ${e.message}")
             }
+            _toastMessage.emit("Merged from backup: +$txRestored transactions, +$accountsRestored accounts, +$budgetsRestored budgets, +$customCatsRestored categories. Existing records kept.")
+            withContext(Dispatchers.Main) { onComplete(true, null) }
+        } catch (e: Exception) {
+            Log.e(TAG, "restoreFromCsvLines failed: ${e.message}", e)
+            withContext(Dispatchers.Main) { onComplete(false, e.message) }
         }
     }
 

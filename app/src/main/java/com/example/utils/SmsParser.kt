@@ -3,15 +3,6 @@ package com.example.utils
 import android.util.Log
 import com.example.data.ExpenseCategory
 import com.example.data.TransactionEntry
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
-import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 data class SmsParsingResult(
@@ -19,7 +10,6 @@ data class SmsParsingResult(
     val amount: Double,
     val category: ExpenseCategory,
     val type: String, // EXPENSE or INCOME
-    val isGeminiParsed: Boolean,
     val accountRef: String? = null, // Linked account ending/identifier e.g. "4321"
     val sender: String? = null,     // Source of transfer
     val receiver: String? = null,    // Destination of transfer
@@ -118,7 +108,7 @@ object SmsParser {
             (lowerBody.contains("online payment") && lowerBody.contains("vide ref") && lowerBody.contains("card"))) {
             return SmsParsingResult(
                 title = "CC Payment ACK", amount = amount, category = ExpenseCategory.DEBT,
-                type = "DUPLICATE", isGeminiParsed = false, accountRef = last4Digits,
+                type = "DUPLICATE", accountRef = last4Digits,
                 sender = accountRef, receiver = "CC Payment ACK", parsedTimestamp = parsedTime
             )
         }
@@ -131,7 +121,7 @@ object SmsParser {
             ).let { pat -> val m = pat.matcher(cleanBody); if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null }
             return SmsParsingResult(
                 title = "Credit Card Payment", amount = amount, category = ExpenseCategory.INCOME_OTHERS,
-                type = "INCOME", isGeminiParsed = false, accountRef = last4Digits,
+                type = "INCOME", accountRef = last4Digits,
                 sender = accountRef, receiver = "Credit Card Payment",
                 parsedTimestamp = parsedTime, availableLimit = availLimit
             )
@@ -151,7 +141,6 @@ object SmsParser {
             amount = amount,
             category = inferCategory(type, title, lowerBody, amount),
             type = type,
-            isGeminiParsed = false,
             accountRef = last4Digits,
             sender = if (type == "EXPENSE") accountRef else title,
             receiver = if (type == "EXPENSE") title else accountRef,
@@ -265,7 +254,7 @@ object SmsParser {
         return SmsParsingResult(
             title = title, amount = amount,
             category = if (type == "INCOME") ExpenseCategory.CASHBACK else ExpenseCategory.SHOPPING,
-            type = type, isGeminiParsed = false, accountRef = "APAY_WALLET",
+            type = type, accountRef = "APAY_WALLET",
             parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp)
         )
     }
@@ -295,7 +284,7 @@ object SmsParser {
         }
         return SmsParsingResult(
             title = title, amount = amount, category = category,
-            type = type, isGeminiParsed = false, accountRef = "NEUCOINS_WALLET",
+            type = type, accountRef = "NEUCOINS_WALLET",
             parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp)
         )
     }
@@ -316,7 +305,7 @@ object SmsParser {
         return SmsParsingResult(
             title = "PF Contribution", amount = contribution,
             category = ExpenseCategory.PROVIDENT_FUND, type = "INCOME",
-            isGeminiParsed = false, accountRef = epfoLast4,
+            accountRef = epfoLast4,
             parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp),
             availableBalance = passbookBal
         )
@@ -469,116 +458,6 @@ object SmsParser {
 
             else -> ExpenseCategory.OTHERS
         }
-    }
-
-    // Advanced Gemini hybrid parser
-    suspend fun parseWithGemini(body: String, senderId: String?, apiKey: String, smsTimestamp: Long? = null): SmsParsingResult? = withContext(Dispatchers.IO) {
-        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-            Log.d(TAG, "Gemini API skipped: falls back to high-fidelity offline matcher.")
-            return@withContext parseOffline(body, senderId, smsTimestamp)
-        }
-
-        // Double check local criteria first: do not waste API call if clearly promotional / OTP / bills due
-        val localVerify = parseOffline(body, senderId, smsTimestamp)
-        if (localVerify == null) {
-            Log.d(TAG, "Gemini parsing skipped: message classified offline as promotional, OTP, or non-transactional.")
-            return@withContext null
-        }
-
-        val client = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
-            .build()
-
-        val prompt = """
-            Extract precise transaction parameters of dynamic actual expenses or incomes from this notification body.
-            SMS Text: "$body"
-            SenderId: "$senderId"
-            
-            Respond STRICTLY with a valid flat JSON containing ONLY these schema properties:
-            {
-               "title": "Clean concise Payee / Merchant / Payer Name (Capitalized, max 30 chars, e.g., 'Starbucks', 'Uber', 'Amazon', 'Salary Checking'). For UPI ids, extract name like 'Jeeva (UPI)' instead of 'jeeva@paytm'.",
-               "amount": 12.34, // Positive Double of transaction amount only
-               "category": "One of: FOOD, SHOPPING, TRANSPORT, BILLS, ENTERTAINMENT, HEALTHCARE, EDUCATION, SALARY, CASHBACK, UPI, REFUNDS, RENTAL, SALE, REWARDS, COUPONS, GRANTS, COINS, POCKET_MONEY_INC, OTHERS",
-               "type": "EXPENSE" or "INCOME",
-               "accountRef": "Last 4 digits only of card/wallet identifier e.g. '1234' or '8765'. Set null if not found.",
-               "sender": "Source account code, card label, or merchant sending funds",
-               "receiver": "Destination payload"
-            }
-            Do not include any speech markdown, headers, or explanations. Just return raw JSON.
-        """.trimIndent()
-
-        val requestJson = JSONObject().apply {
-            put("contents", JSONArray().apply {
-                put(JSONObject().apply {
-                    put("parts", JSONArray().apply {
-                        put(JSONObject().apply {
-                            put("text", prompt)
-                        })
-                    })
-                })
-            })
-            put("generationConfig", JSONObject().apply {
-                put("responseMimeType", "application/json")
-            })
-        }
-
-        val requestBody = requestJson.toString().toRequestBody("application/json".toMediaType())
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$apiKey"
-
-        val request = Request.Builder()
-            .url(url)
-            .post(requestBody)
-            .build()
-
-        try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    Log.e(TAG, "Gemini API failure: code ${response.code}, message ${response.message}")
-                    return@withContext localVerify
-                }
-
-                val responseBody = response.body?.string() ?: ""
-                Log.d(TAG, "Gemini Response payload: $responseBody")
-
-                val responseObj = JSONObject(responseBody)
-                val candidates = responseObj.getJSONArray("candidates")
-                val parts = candidates.getJSONObject(0)
-                    .getJSONObject("content")
-                    .getJSONArray("parts")
-                val textResponse = parts.getJSONObject(0).getString("text").trim()
-
-                val parsedJson = JSONObject(textResponse)
-                val title = parsedJson.optString("title", localVerify.title)
-                val amountVal = parsedJson.optDouble("amount", localVerify.amount)
-                val categoryStr = parsedJson.optString("category", "OTHERS")
-                val typeVal = parsedJson.optString("type", localVerify.type).uppercase()
-                val accountRefVal = if (parsedJson.isNull("accountRef")) localVerify.accountRef else parsedJson.getString("accountRef")
-                val senderVal = if (parsedJson.isNull("sender")) localVerify.sender else parsedJson.getString("sender")
-                val receiverVal = if (parsedJson.isNull("receiver")) localVerify.receiver else parsedJson.getString("receiver")
-
-                val resolvedCategory = ExpenseCategory.entries.firstOrNull { it.name == categoryStr.uppercase() } ?: ExpenseCategory.OTHERS
-
-                if (amountVal > 0.0) {
-                    return@withContext SmsParsingResult(
-                        title = title,
-                        amount = amountVal,
-                        category = resolvedCategory,
-                        type = typeVal,
-                        isGeminiParsed = true,
-                        accountRef = accountRefVal,
-                        sender = senderVal,
-                        receiver = receiverVal,
-                        parsedTimestamp = localVerify?.parsedTimestamp
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error matching via Gemini flash: ${e.message}", e)
-        }
-
-        return@withContext localVerify
     }
 
     private fun extractTimestampFromSms(body: String, referenceTimestamp: Long? = null): Long? {
@@ -747,7 +626,6 @@ object SmsParser {
                     amount = effectiveOutstanding ?: 0.0,
                     category = ExpenseCategory.INCOME_OTHERS,
                     type = "INCOME",
-                    isGeminiParsed = false,
                     accountRef = ccRef,
                     parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp),
                     isBalanceUpdate = true,
@@ -877,7 +755,6 @@ object SmsParser {
             amount = firstBal,
             category = ExpenseCategory.INCOME_OTHERS,
             type = "INCOME",
-            isGeminiParsed = false,
             accountRef = firstRef,
             parsedTimestamp = effectiveTime,
             isBalanceUpdate = true,

@@ -412,6 +412,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             .build()
 
         NotificationManagerCompat.from(application).notify(categoryName.hashCode() + thresholdLabel.hashCode(), notification)
+        addNotification("Budget Alert: $categoryName", "$categoryName reached $thresholdLabel of budget — spent ₹${"%.2f".format(Locale.getDefault(), spent)} of ₹${"%.2f".format(Locale.getDefault(), limit)}.")
     }
 
     private fun getNextOccurenceDate(time: Long, frequency: String): Long {
@@ -479,6 +480,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val cat = CustomCategory(id = existing?.id ?: 0, name = trimmed, iconName = iconNameWithType, colorHex = colorHex)
             repository.insertCustomCategory(cat)
             _toastMessage.emit("Category '$trimmed' added successfully!")
+            addNotification("Category Added", "New category '$trimmed' ($type) created.")
         }
     }
 
@@ -497,13 +499,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 repository.updateCategoryReferences(oldName, resolvedName)
             }
             _toastMessage.emit("Category '$resolvedName' updated successfully!")
+            addNotification("Category Updated", "Category renamed: '$oldName' → '$resolvedName'.")
         }
     }
 
     fun deleteCustomCategory(id: Int) {
         viewModelScope.launch {
+            val catName = allCustomCategories.value.firstOrNull { it.id == id }?.name ?: "category"
             repository.deleteCustomCategory(id)
             _toastMessage.emit("Custom category deleted.")
+            addNotification("Category Deleted", "Category '$catName' removed.")
         }
     }
 
@@ -586,6 +591,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             repository.updateAccount(account)
             _toastMessage.emit("Budget wallet configurations updated.")
+            addNotification("Wallet Updated", "Configuration for '${account.name}' (${account.type}) saved.")
         }
     }
 
@@ -1241,6 +1247,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.deleteTransactionsInRange(startTime, endTime)
             _toastMessage.emit("Deleted all transactions for $label")
+            addNotification("Records Deleted", "All transactions for $label were deleted.")
         }
     }
 
@@ -1248,6 +1255,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.deleteTransactionsByCategoryInRange(category, startTime, endTime)
             _toastMessage.emit("Deleted '$category' transactions for this period")
+            addNotification("Records Deleted", "All '$category' transactions for this period were deleted.")
         }
     }
 
@@ -1258,6 +1266,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             repository.clearAccounts()
             seedDefaultAccountsIfNeeded()
             _toastMessage.emit("All data cleared successfully")
+            addNotification("All Data Cleared", "All transactions, budgets, and accounts have been wiped.")
         }
     }
 

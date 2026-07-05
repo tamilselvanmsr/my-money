@@ -5118,16 +5118,23 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                                 viewModel.adjustAccountBalance(oldName, computedBal, targetBal)
                             }
 
-                            // Update account metadata only (not balance — the Adjust tx handles it)
-                            viewModel.updateAccount(
-                                acc.copy(
-                                    name = editName,
-                                    type = editType,
-                                    lastFour = editName.filter { it.isDigit() }.takeLast(4).ifBlank { null },
-                                    creditLimit = editCreditLimit.toDoubleOrNull() ?: acc.creditLimit,
-                                    showCreditLimitBalance = editShowCreditLimitBalance
-                                )
+                            // Update account metadata only when something actually changed to avoid
+                            // spurious "wallet configuration updated" toasts/notifications.
+                            val updatedAcc = acc.copy(
+                                name = editName,
+                                type = editType,
+                                lastFour = editName.filter { it.isDigit() }.takeLast(4).ifBlank { null },
+                                creditLimit = editCreditLimit.toDoubleOrNull() ?: acc.creditLimit,
+                                showCreditLimitBalance = editShowCreditLimitBalance
                             )
+                            val metadataChanged = updatedAcc.name != acc.name ||
+                                updatedAcc.type != acc.type ||
+                                updatedAcc.lastFour != acc.lastFour ||
+                                updatedAcc.creditLimit != acc.creditLimit ||
+                                updatedAcc.showCreditLimitBalance != acc.showCreditLimitBalance
+                            if (metadataChanged) {
+                                viewModel.updateAccount(updatedAcc)
+                            }
 
                             if (oldName != editName) {
                                 viewModel.renameAccountTransactions(oldName, editName)

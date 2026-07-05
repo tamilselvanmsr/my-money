@@ -45,11 +45,9 @@ enum class ExpenseCategory(
     RECHARGE("Recharge",               Icons.Default.Smartphone,      Color(0xFF7986CB)),
     DEBT("Debt / Loan",                Icons.Default.CreditCard,      Color(0xFF5D4037)),
     FUEL("Fuel",                       Icons.Default.LocalGasStation, Color(0xFFF44336)),
-    CLOTHES("Clothes",                 Icons.Default.Checkroom,       Color(0xFFC2185B)),
-    // DirectionsRun matches the "shoes" icon key in suitableIconsList / getIconFromIconName
+    CLOTHES("Clothes",                 Icons.Default.Checkroom,       Color(0xFFC2185B)),\
     SHOES("Shoes & Footwear",          Icons.Default.DirectionsRun,   Color(0xFF5C6BC0)),
     POCKET_MONEY("Pocket Money",       Icons.Default.Payments,        Color(0xFFFFA000)),
-    // WaterDrop matches the "fruits" icon key in suitableIconsList / getIconFromIconName
     FRUITS("Fruits & Veggies",         Icons.Default.WaterDrop,       Color(0xFF4CAF50)),
     TRAVEL("Travel & Commute",         Icons.Default.Flight,          Color(0xFF3949AB)),
     BIKE("Bike & Maintenance",         Icons.Default.TwoWheeler,      Color(0xFFFF8F00)),

@@ -1002,11 +1002,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     // Export to CSV
     fun getExcelData(): ByteArray {
-        return ExcelExporter.exportToExcelBytes(allTransactions.value, allCustomCategories.value)
+        return ExcelExporter.exportToExcelBytes(allTransactions.value, allAccounts.value, allCustomCategories.value)
     }
 
     fun getPdfData(): ByteArray {
-        return PdfExporter.exportToPdfBytes(allTransactions.value, allCustomCategories.value)
+        return PdfExporter.exportToPdfBytes(allTransactions.value, allAccounts.value, allCustomCategories.value)
     }
 
     // Cloud Synchronization Simulation (Simulates encrypted backup to cloud storage)

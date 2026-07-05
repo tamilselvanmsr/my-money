@@ -6,6 +6,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
 import com.example.data.CategoryResolver
+import com.example.data.Account
 import com.example.data.CustomCategory
 import com.example.data.TransactionEntry
 import java.io.ByteArrayOutputStream
@@ -41,6 +42,7 @@ object PdfExporter {
 
     fun exportToPdfBytes(
         transactions: List<TransactionEntry>,
+        accounts: List<Account>,
         customCategories: List<CustomCategory>
     ): ByteArray {
         // ─── Build monthly data ──────────────────────────────────────────────
@@ -148,6 +150,66 @@ object PdfExporter {
             cv.drawText(fmtAmt(s.closingBalance),           colM[4], y, paint(9f, gcColor, bold = true))
             y += 16f
             cv.drawLine(M, y - 4f, PW - M, y - 4f, p(C_DIVIDER, strokeWidth = 0.5f))
+        }
+
+        // ─── ACCOUNT BALANCES TABLE ───────────────────────────────────────────
+        if (accounts.isNotEmpty()) {
+            // Compute actual balances (same logic as computeWalletBalances)
+            val latestSnap = mutableMapOf<String, Pair<Long, Double>>()
+            for (tx in transactions) {
+                if (tx.type != "BALANCE_UPDATE") continue
+                val name = tx.getAccountName()
+                val prev = latestSnap[name]
+                if (prev == null || tx.timestamp > prev.first) latestSnap[name] = tx.timestamp to tx.amount
+            }
+            val computedBal: Map<String, Double> = accounts.associate { acc ->
+                val snap = latestSnap[acc.name]
+                var bal = snap?.second ?: acc.balance
+                for (tx in transactions) {
+                    if (tx.type == "DUPLICATE" || tx.type == "BALANCE_UPDATE") continue
+                    if (snap != null && tx.timestamp <= snap.first) continue
+                    when {
+                        tx.type == "INCOME"   && tx.getAccountName() == acc.name -> bal += tx.amount
+                        tx.type == "EXPENSE"  && tx.getAccountName() == acc.name -> bal -= tx.amount
+                        tx.type == "TRANSFER" && tx.getAccountName() == acc.name -> bal -= tx.amount
+                        tx.type == "TRANSFER" && run {
+                            val n = tx.note ?: ""; val s = n.indexOf("[To: "); val e = if (s >= 0) n.indexOf("]", s + 5) else -1
+                            if (s >= 0 && e > s) n.substring(s + 5, e) else null
+                        } == acc.name -> {
+                            val ds = latestSnap[acc.name]
+                            if (ds == null || tx.timestamp > ds.first) bal += tx.amount
+                        }
+                    }
+                }
+                acc.name to bal
+            }
+
+            ensureSpace(20f + accounts.size * 18f)
+            y += 8f
+            cv.drawText("Account Balances", M, y, paint(10f, C_BG_DARK, bold = true))
+            y += 12f
+            val colA = floatArrayOf(M, M + 185f, M + 290f, M + 400f)
+            drawTableHeader(cv, y, colA, arrayOf("Account", "Type", "Current Balance", "Income / Expense"))
+            y += 18f
+            accounts.forEach { acc ->
+                ensureSpace(16f)
+                val bal = computedBal[acc.name] ?: acc.balance
+                val balColor = if (bal >= 0) C_INC else C_EXP
+                val activity = transactions
+                    .filter { it.getAccountName() == acc.name }
+                val inc = activity.filter { it.type == "INCOME" }.sumOf { it.amount }
+                val exp = activity.filter { it.type == "EXPENSE" }.sumOf { it.amount }
+                val typeLabel = when (acc.type) {
+                    "BANK" -> "Bank"; "CREDIT_CARD" -> "Credit Card"
+                    "CASH" -> "Cash"; "WALLET" -> "Wallet"; else -> acc.type
+                }
+                cv.drawText(acc.name.take(30),   colA[0], y, paint(8.5f, C_TEXT))
+                cv.drawText(typeLabel,           colA[1], y, paint(8.5f, C_MUTED))
+                cv.drawText(fmtAmt(bal),         colA[2], y, paint(8.5f, balColor, bold = true))
+                cv.drawText("${fmtAmt(inc)} / ${fmtAmt(exp)}", colA[3], y, paint(8.5f, C_TEXT))
+                y += 16f
+                cv.drawLine(M, y - 4f, PW - M, y - 4f, p(C_DIVIDER, strokeWidth = 0.5f))
+            }
         }
 
         // ─── PER-MONTH SECTIONS ───────────────────────────────────────────────

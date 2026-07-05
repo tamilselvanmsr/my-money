@@ -1,5 +1,6 @@
 package com.example.utils
 
+import com.example.data.Account
 import com.example.data.CustomCategory
 import com.example.data.TransactionEntry
 import com.example.data.CategoryResolver
@@ -29,21 +30,52 @@ object ExcelExporter {
 
     fun exportToExcelBytes(
         transactions: List<TransactionEntry>,
+        accounts: List<Account>,
         customCategories: List<CustomCategory>
     ): ByteArray {
         val sections = buildMonthlySections(transactions, customCategories)
         val generatedAt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
 
-        // Account summary data
-        val accountSummary = transactions
+        // ── Compute actual account balances (mirrors computeWalletBalances logic) ──
+        // Step 1: find the latest BALANCE_UPDATE snapshot per account name
+        val latestSnap = mutableMapOf<String, Pair<Long, Double>>()
+        for (tx in transactions) {
+            if (tx.type != "BALANCE_UPDATE") continue
+            val name = tx.getAccountName()
+            val prev = latestSnap[name]
+            if (prev == null || tx.timestamp > prev.first) latestSnap[name] = tx.timestamp to tx.amount
+        }
+        // Step 2: starting balance = snapshot if present, else account.balance
+        // Step 3: apply all regular transactions AFTER the snapshot
+        val computedBalances: Map<String, Double> = accounts.associate { acc ->
+            val snap = latestSnap[acc.name]
+            var bal = snap?.second ?: acc.balance
+            for (tx in transactions) {
+                if (tx.type == "DUPLICATE" || tx.type == "BALANCE_UPDATE") continue
+                if (snap != null && tx.timestamp <= snap.first) continue
+                when {
+                    tx.type == "INCOME"   && tx.getAccountName() == acc.name -> bal += tx.amount
+                    tx.type == "EXPENSE"  && tx.getAccountName() == acc.name -> bal -= tx.amount
+                    tx.type == "TRANSFER" && tx.getAccountName() == acc.name -> bal -= tx.amount
+                    tx.type == "TRANSFER" && run {
+                        val n = tx.note ?: ""; val s = n.indexOf("[To: "); val e = if (s >= 0) n.indexOf("]", s + 5) else -1
+                        if (s >= 0 && e > s) n.substring(s + 5, e) else null
+                    } == acc.name -> {
+                        val destSnap = latestSnap[acc.name]
+                        if (destSnap == null || tx.timestamp > destSnap.first) bal += tx.amount
+                    }
+                }
+            }
+            acc.name to bal
+        }
+        // Per-account activity totals (all-time income + expense)
+        val accountActivity: Map<String, Pair<Double, Double>> = transactions
             .filter { it.type == "INCOME" || it.type == "EXPENSE" }
             .groupBy { it.getAccountName() }
-            .map { (account, txList) ->
-                val inc = txList.filter { it.type == "INCOME" }.sumOf { it.amount }
-                val exp = txList.filter { it.type == "EXPENSE" }.sumOf { it.amount }
-                Triple(account, inc, exp)
+            .mapValues { (_, txList) ->
+                txList.filter { it.type == "INCOME" }.sumOf { it.amount } to
+                    txList.filter { it.type == "EXPENSE" }.sumOf { it.amount }
             }
-            .sortedByDescending { it.second + it.third }
 
         val workbook = buildString {
             append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
@@ -168,38 +200,72 @@ object ExcelExporter {
             // ─── SHEET 2: Account Summary ─────────────────────────────────────────
             append("<Worksheet ss:Name=\"Account Summary\">")
             append("<Table>")
-            append("<Column ss:Width=\"190\"/>")
-            append("<Column ss:Width=\"120\"/>")
-            append("<Column ss:Width=\"120\"/>")
-            append("<Column ss:Width=\"120\"/>")
-            append("<Column ss:Width=\"80\"/>")
+            append("<Column ss:Width=\"190\"/>") // Account Name
+            append("<Column ss:Width=\"90\"/>")  // Type
+            append("<Column ss:Width=\"120\"/>") // Current Balance
+            append("<Column ss:Width=\"110\"/>") // Credit Limit
+            append("<Column ss:Width=\"115\"/>") // Income Activity
+            append("<Column ss:Width=\"115\"/>") // Expense Activity
+            append("<Column ss:Width=\"70\"/>")  // Tx Count
 
-            append(mergeRow("Account Activity Summary", "title", 4))
-            append(mergeRow("Generated: $generatedAt", "subtitle", 4))
+            append(mergeRow("Account Balances & Activity", "title", 6))
+            append(mergeRow("Generated: $generatedAt", "subtitle", 6))
             append(row(ec()))
             append(row(
                 tc("Account / Wallet", "hdrNavy"),
-                tc("Total Income", "hdrTeal"),
-                tc("Total Expense", "hdrPurp"),
-                tc("Net Balance", "hdrBlue"),
-                tc("Tx Count", "hdrBlue")
+                tc("Type",            "hdrBlue"),
+                tc("Current Balance", "hdrBlue"),
+                tc("Credit Limit",    "hdrPurp"),
+                tc("Income (all-time)",  "hdrTeal"),
+                tc("Expense (all-time)", "hdrPurp"),
+                tc("Tx Count",        "hdrBlue")
             ))
 
-            accountSummary.forEachIndexed { idx, (account, inc, exp) ->
-                val txCount = transactions.count { it.getAccountName() == account }
-                val alt = idx % 2 != 0
+            accounts.forEachIndexed { idx, acc ->
+                val alt  = idx % 2 != 0
                 val rowS = if (alt) "rowAlt" else "rowW"
+                val bal  = computedBalances[acc.name] ?: acc.balance
+                val balS = when {
+                    bal >= 0 && alt  -> "amtAltInc"
+                    bal >= 0         -> "amtInc"
+                    alt              -> "amtAltExp"
+                    else             -> "amtExp"
+                }
+                val (inc, exp) = accountActivity[acc.name] ?: (0.0 to 0.0)
                 val incS = if (alt) "amtAltInc" else "amtInc"
                 val expS = if (alt) "amtAltExp" else "amtExp"
-                val netS = if (inc >= exp) incS else expS
+                val txCount = transactions.count { it.getAccountName() == acc.name }
+                val typeLabel = when (acc.type) {
+                    "BANK"        -> "Bank"
+                    "CREDIT_CARD" -> "Credit Card"
+                    "CASH"        -> "Cash"
+                    "WALLET"      -> "Wallet"
+                    else          -> acc.type
+                }
                 append(row(
-                    tc(account, rowS),
-                    nc(inc, incS),
-                    nc(exp, expS),
-                    nc(inc - exp, netS),
-                    tc("$txCount", rowS)
+                    tc(acc.name,    rowS),
+                    tc(typeLabel,   rowS),
+                    nc(bal,         balS),
+                    if (acc.type == "CREDIT_CARD" && acc.creditLimit > 0) nc(acc.creditLimit, rowS) else ec(),
+                    nc(inc,         incS),
+                    nc(exp,         expS),
+                    tc("$txCount",  rowS)
                 ))
             }
+
+            // Grand totals row
+            val grandBal = computedBalances.values.sum()
+            val grandInc2 = accountActivity.values.sumOf { it.first }
+            val grandExp2 = accountActivity.values.sumOf { it.second }
+            append(row(ec()))
+            append(row(
+                tc("Grand Total", "totLbl"), ec(),
+                nc(grandBal,  if (grandBal >= 0) "totValInc" else "totValExp"),
+                ec(),
+                nc(grandInc2, "totValInc"),
+                nc(grandExp2, "totValExp"),
+                ec()
+            ))
 
             append("</Table>")
             append(freezeRows(4))

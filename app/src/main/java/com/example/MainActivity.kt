@@ -7553,12 +7553,18 @@ fun BackupDialog(
                                             )
                                         }
                                         Column(modifier = Modifier.weight(1f)) {
-                                            val sourceLabel = if (item.isGoogleStorage) "Cloud Backup" else "Offline Backup"
-                                            Text(sourceLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.text)
-                                            
+                                            val storageMode = if (item.isGoogleStorage) "Cloud" else "Local"
+                                            Text(
+                                                item.name.ifBlank { "$storageMode Backup" },
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = c.text,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
                                             val df = java.text.SimpleDateFormat("MMM dd, yyyy HH:mm:ss", java.util.Locale.getDefault())
                                             val sizeKb = String.format(java.util.Locale.getDefault(), "%.1f KB", item.sizeBytes / 1024.0)
-                                            Text("${df.format(java.util.Date(item.timestamp))} • $sizeKb", fontSize = 10.sp, color = c.textSecondary)
+                                            Text("$storageMode • ${df.format(java.util.Date(item.timestamp))} • $sizeKb", fontSize = 10.sp, color = c.textSecondary)
                                         }
                                         Icon(
                                             Icons.Default.CloudDownload,

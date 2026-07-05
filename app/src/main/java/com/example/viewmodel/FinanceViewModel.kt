@@ -907,9 +907,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             else -> return
         }
         if (now - last >= intervalMs) {
-            executeBackupNow { success, _ ->
+            executeBackupNow(mode = "Auto ($freq)") { success, _ ->
                 if (success) {
-                    viewModelScope.launch { _toastMessage.emit("Auto-backup complete ($freq)"); addNotification("Auto-Backup", "Backup completed ($freq).") }
+                    viewModelScope.launch { _toastMessage.emit("Auto-backup complete ($freq)") }
                 }
             }
         }
@@ -975,12 +975,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun executeBackupNow(onComplete: (Boolean, String?) -> Unit) {
+    fun executeBackupNow(mode: String = "Manual", onComplete: (Boolean, String?) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val customPath = _customBackupPath.value
                 val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-                val fileName = "mymoney_backup_${sdf.format(Date())}.json"
+                val fileName = "autoledger_backup_${sdf.format(Date())}.json"
 
                 // Build JSON payload
                 val accArray = JSONArray()
@@ -1044,10 +1044,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     getApplication<Application>().contentResolver.openOutputStream(docFile.uri)?.use { out ->
                         out.write(content.toByteArray(Charsets.UTF_8))
                     } ?: throw Exception("Cannot write to backup file.")
+                    val folderName = docFolder.name ?: "Custom folder"
+                    addNotification("$mode Backup", "Saved: $fileName\nFolder: $folderName")
                 } else {
                     val folder = getBackupFolder(false, "")
                     folder.mkdirs()
                     java.io.File(folder, fileName).writeText(content, Charsets.UTF_8)
+                    addNotification("$mode Backup", "Saved: $fileName\nPath: ${folder.absolutePath}")
                 }
 
                 val now = System.currentTimeMillis()
@@ -2331,6 +2334,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val budgetCount = budgets.size
                 val customCatCount = allCustomCategories.value.size
                 _toastMessage.emit("Backup saved — ${allAccounts.value.size} accounts, $txCount transactions, $budgetCount budgets, $customCatCount custom categories.")
+                val fileName = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':') ?: "backup.csv"
+                addNotification("Manual Backup (CSV)", "Exported: $fileName\n${allAccounts.value.size} accounts, $txCount transactions, $budgetCount budgets.")
             } catch (e: Exception) {
                 Log.e(TAG, "Export backup failed: ${e.message}", e)
                 _toastMessage.emit("Export failed: ${e.message}")

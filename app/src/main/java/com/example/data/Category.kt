@@ -1,6 +1,9 @@
 package com.example.data
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -30,7 +33,7 @@ enum class ExpenseCategory(
     FOOD("Food",                       Icons.Default.Restaurant,      Color(0xFFFF9800)),
     SHOPPING("Shopping",               Icons.Default.ShoppingBag,     Color(0xFFE91E63)),
     TRANSPORT("Transport",             Icons.Default.LocalTaxi,       Color(0xFF03A9F4)),
-    BILLS("Bills & Utilities",         Icons.Default.ReceiptLong,     Color(0xFF9C27B0)),
+    BILLS("Bills & Utilities",         Icons.AutoMirrored.Filled.ReceiptLong,     Color(0xFF9C27B0)),
     ENTERTAINMENT("Entertainment",     Icons.Default.LocalPlay,       Color(0xFFFF5722)),
     HEALTHCARE("Healthcare",           Icons.Default.MedicalServices, Color(0xFF00ACC1)),
     EDUCATION("Education",             Icons.Default.School,          Color(0xFF009688)),
@@ -46,13 +49,13 @@ enum class ExpenseCategory(
     DEBT("Debt / Loan",                Icons.Default.CreditCard,      Color(0xFF5D4037)),
     FUEL("Fuel",                       Icons.Default.LocalGasStation, Color(0xFFF44336)),
     CLOTHES("Clothes",                 Icons.Default.Checkroom,       Color(0xFFC2185B)),
-    SHOES("Shoes & Footwear",          Icons.Default.DirectionsRun,   Color(0xFF5C6BC0)),
+    SHOES("Shoes & Footwear",          Icons.AutoMirrored.Filled.DirectionsRun,   Color(0xFF5C6BC0)),
     POCKET_MONEY("Pocket Money",       Icons.Default.Payments,        Color(0xFFFFA000)),
     FRUITS("Fruits & Veggies",         Icons.Default.WaterDrop,       Color(0xFF4CAF50)),
     TRAVEL("Travel & Commute",         Icons.Default.Flight,          Color(0xFF3949AB)),
     BIKE("Bike & Maintenance",         Icons.Default.TwoWheeler,      Color(0xFFFF8F00)),
     GIFTING_FRIENDS("Gifting Friends", Icons.Default.CardGiftcard,    Color(0xFFAD1457)),
-    INVESTMENT("Investment",           Icons.Default.TrendingUp,      Color(0xFF1565C0)),
+    INVESTMENT("Investment",           Icons.AutoMirrored.Filled.TrendingUp,      Color(0xFF1565C0)),
     MUTUAL_FUND("Mutual Fund",         Icons.Default.AccountBalance,  Color(0xFF00897B)),
     ETF("ETF",                         Icons.Default.BarChart,        Color(0xFF1976D2)),
     RENT("Rent",                       Icons.Default.Home,            Color(0xFF7E57C2)),
@@ -156,8 +159,8 @@ object CategoryResolver {
             "shopping"          -> Icons.Default.ShoppingBag
             "checkroom"         -> Icons.Default.Checkroom
             "clothes"           -> Icons.Default.Checkroom
-            "directionsrun"     -> Icons.Default.DirectionsRun
-            "shoes"             -> Icons.Default.DirectionsRun  // matches suitableIconsList
+            "directionsrun"     -> Icons.AutoMirrored.Filled.DirectionsRun
+            "shoes"             -> Icons.AutoMirrored.Filled.DirectionsRun  // matches suitableIconsList
             "laptop"            -> Icons.Default.Laptop
             "online_shopping"   -> Icons.Default.Laptop
 
@@ -179,8 +182,8 @@ object CategoryResolver {
             // Home / utilities
             "home"              -> Icons.Default.Home
             "rent"              -> Icons.Default.Home
-            "receiptlong"       -> Icons.Default.ReceiptLong
-            "bills"             -> Icons.Default.ReceiptLong
+            "receiptlong"       -> Icons.AutoMirrored.Filled.ReceiptLong
+            "bills"             -> Icons.AutoMirrored.Filled.ReceiptLong
             "smartphone"        -> Icons.Default.Smartphone
             "recharge"          -> Icons.Default.Smartphone
             "bolt"              -> Icons.Default.Bolt
@@ -205,8 +208,8 @@ object CategoryResolver {
             "pocket_money"      -> Icons.Default.Payments
             "savings"           -> Icons.Default.Savings
             "coins"             -> Icons.Default.Savings
-            "trendindup"        -> Icons.Default.TrendingUp
-            "investment"        -> Icons.Default.TrendingUp
+            "trendindup"        -> Icons.AutoMirrored.Filled.TrendingUp
+            "investment"        -> Icons.AutoMirrored.Filled.TrendingUp
             "accountbalance"    -> Icons.Default.AccountBalance
             "mutual_fund"       -> Icons.Default.AccountBalance
             "provident_fund"    -> Icons.Default.AccountBalance

@@ -23,6 +23,7 @@ import com.example.utils.smsDisplayBankName
 import com.example.utils.SmsParser
 import com.example.utils.isDuplicateImportedTransaction
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -60,6 +61,7 @@ private data class PendingTxItem(
     val parsedAvailableBalance: Double? = null
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
     private val TAG = "FinanceViewModel"
     private val BACKUP_KEY = "AutoLedger_Local_Backup_AES256"

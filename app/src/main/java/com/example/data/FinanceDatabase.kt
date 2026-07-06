@@ -26,8 +26,8 @@ abstract class FinanceDatabase : RoomDatabase() {
         private var INSTANCE: FinanceDatabase? = null
 
         private val MIGRATION_4_5 = object : Migration(4, 5) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL(
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
                     "ALTER TABLE accounts ADD COLUMN showCreditLimitBalance INTEGER NOT NULL DEFAULT 0"
                 )
             }
@@ -41,7 +41,7 @@ abstract class FinanceDatabase : RoomDatabase() {
                     "finance_database"
                 )
                 .addMigrations(MIGRATION_4_5)
-                .fallbackToDestructiveMigration()
+                .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 INSTANCE = instance
                 instance

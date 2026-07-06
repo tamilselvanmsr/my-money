@@ -34,7 +34,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.*
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,7 +92,7 @@ import androidx.compose.ui.graphics.toArgb
 
 // Enum representing the five core tabs mimicking MyMoney
 enum class AppTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    DASHBOARD("Records", Icons.Default.ReceiptLong),
+    DASHBOARD("Records", Icons.AutoMirrored.Filled.ReceiptLong),
     ANALYTICS("Analysis", Icons.Default.DonutLarge),
     BUDGETS("Budgets", Icons.Default.Calculate),
     ACCOUNT("Accounts", Icons.Default.AccountBalanceWallet),
@@ -354,34 +358,35 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                         Surface(
                             color = c.accentDim,
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(28.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.AccountBalanceWallet,
                                     contentDescription = "Wallet Logo",
                                     tint = c.accent,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "AutoLedger",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 21.sp,
+                            fontSize = 20.sp,
                             letterSpacing = 0.5.sp,
                             color = c.text
                         )
                     }
                 },
+                expandedHeight = 48.dp,
                 actions = {
                     // ── Notification bell ─────────────────────────────────────
                     val unreadCount = notifications.count { !it.isRead }
                     BadgedBox(
                         badge = {
                             if (unreadCount > 0) Badge(
-                                containerColor = Color(0xFFE53935)
+                                containerColor = if (c.isDark) Color(0xFFE53935) else Color(0xFFEF5350).copy(alpha = 0.75f)
                             ) {
                                 Text(
                                     if (unreadCount > 99) "99+" else unreadCount.toString(),
@@ -405,11 +410,11 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                     // ── Hamburger / overflow menu ─────────────────────────────
                     Box {
                         IconButton(
-                            onClick = { showAppMenu = true },
+                            onClick = { showAppMenu = !showAppMenu },
                             modifier = Modifier.testTag("app_overflow_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Menu,
+                                imageVector = if (showAppMenu) Icons.Default.Close else Icons.Default.Menu,
                                 contentDescription = "App menu",
                                 tint = c.accent
                             )
@@ -417,9 +422,10 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                         DropdownMenu(
                             expanded = showAppMenu,
                             onDismissRequest = { showAppMenu = false },
-                            modifier = Modifier
-                                .background(c.surface, RoundedCornerShape(12.dp))
-                                .widthIn(min = 180.dp, max = 220.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            containerColor = c.surface,
+                            shadowElevation = 10.dp,
+                            modifier = Modifier.widthIn(min = 180.dp, max = 220.dp)
                         ) {
                             // ── Theme toggle ─────────────────────────────
                             DropdownMenuItem(
@@ -537,7 +543,10 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                 NavigationBar(
                     containerColor = if (c.isDark) c.surface else Color(0xFFEDF3FA),
                     tonalElevation = 0.dp,
-                    windowInsets = WindowInsets.navigationBars
+                    windowInsets = WindowInsets.navigationBars,
+                    modifier = Modifier.height(68.dp + with(androidx.compose.ui.platform.LocalDensity.current) {
+                        WindowInsets.navigationBars.getBottom(this).toDp()
+                    })
                 ) {
                     AppTab.values().forEach { tab ->
                         NavigationBarItem(
@@ -798,22 +807,26 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     var searchQuery by remember { mutableStateOf("") }
     var searchFilter by remember { mutableStateOf("All") }
     var isSearchExpanded by remember { mutableStateOf(false) }
-    // Advanced filter state
-    var filterType     by remember { mutableStateOf("") }       // "" = all
-    var filterCategory by remember { mutableStateOf("") }       // "" = all
-    var filterAccount  by remember { mutableStateOf("") }       // "" = all
+    // Advanced filter state — multi-select sets
+    var filterTypes     by remember { mutableStateOf(setOf<String>()) }
+    var filterCategories by remember { mutableStateOf(setOf<String>()) }
+    var filterAccounts  by remember { mutableStateOf(setOf<String>()) }
     var showAdvancedFilter by remember { mutableStateOf(false) }
-    val hasActiveFilters = filterType.isNotEmpty() || filterCategory.isNotEmpty() || filterAccount.isNotEmpty()
+    var showCategoryPicker by remember { mutableStateOf(false) }
+    var showAccountPicker  by remember { mutableStateOf(false) }
+    val hasActiveFilters = filterTypes.isNotEmpty() || filterCategories.isNotEmpty() || filterAccounts.isNotEmpty()
+    val isFilterPanelOpen = isSearchExpanded || showAdvancedFilter
     var showDeleteOptionsSheet by remember { mutableStateOf(false) }
 
     fun clearAllFilters() {
         searchQuery = ""; searchFilter = "All"
-        filterType = ""; filterCategory = ""; filterAccount = ""
+        filterTypes = emptySet(); filterCategories = emptySet(); filterAccounts = emptySet()
         isSearchExpanded = false; showAdvancedFilter = false
+        showCategoryPicker = false; showAccountPicker = false
     }
 
-    // Close search bar on back press instead of exiting the app
-    BackHandler(enabled = isSearchExpanded || hasActiveFilters) {
+    // Close search/filter on back press
+    BackHandler(enabled = isFilterPanelOpen || hasActiveFilters) {
         clearAllFilters()
     }
     var deleteConfirmMode by remember { mutableStateOf("") }
@@ -893,19 +906,8 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
             destDisplay == selectedWallet
         })
     }
-    val searchableTransactions = if (searchQuery.isBlank() && !hasActiveFilters) {
-        monthTransactions
-    } else {
-        txs.filter { tx ->
-            selectedWallet == "All" ||
-            tx.getAccountName(consolidateAccounts) == selectedWallet ||
-            (tx.type == "TRANSFER" && run {
-                val destRaw = tx.getTransferDestName() ?: return@run false
-                val destDisplay = if (consolidateAccounts) consolidateAccountName(destRaw) else destRaw
-                destDisplay == selectedWallet
-            })
-        }
-    }
+    // Always scope to the current period — search/filters do NOT expand across all time.
+    val searchableTransactions = monthTransactions
     val visibleTransactions = searchableTransactions.filter { tx ->
         val textMatch = if (searchQuery.isBlank()) true else {
             val query = searchQuery.trim()
@@ -925,12 +927,12 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                 }
             }
         }
-        val typeMatch     = filterType.isEmpty() || tx.type.equals(filterType, ignoreCase = true)
-        val catMatch      = filterCategory.isEmpty() || run {
+        val typeMatch = filterTypes.isEmpty() || filterTypes.any { it.equals(tx.type, ignoreCase = true) }
+        val catMatch  = filterCategories.isEmpty() || run {
             val displayCat = CategoryResolver.resolve(tx.category, customCats).displayName
-            tx.category.equals(filterCategory, ignoreCase = true) || displayCat.equals(filterCategory, ignoreCase = true)
+            filterCategories.any { tx.category.equals(it, ignoreCase = true) || displayCat.equals(it, ignoreCase = true) }
         }
-        val accMatch      = filterAccount.isEmpty() || tx.getAccountName(consolidateAccounts).equals(filterAccount, ignoreCase = true)
+        val accMatch  = filterAccounts.isEmpty() || filterAccounts.any { it.equals(tx.getAccountName(consolidateAccounts), ignoreCase = true) }
         textMatch && typeMatch && catMatch && accMatch
     }
     
@@ -992,33 +994,27 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilledTonalIconButton(
-                        onClick = {
-                            isSearchExpanded = !isSearchExpanded
-                            if (!isSearchExpanded) { searchQuery = ""; searchFilter = "All" }
-                        },
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent.copy(alpha = 0.18f) else c.divider,
-                            contentColor = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent else c.text
-                        ),
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Default.Search, contentDescription = "Toggle search", modifier = Modifier.size(20.dp))
-                    }
-
-                    // Filter icon — with badge when any filter is active
+                    // Search + Filter toggle — one button opens the combined panel
                     Box {
                         FilledTonalIconButton(
-                            onClick = { showAdvancedFilter = !showAdvancedFilter },
+                            onClick = {
+                                if (isFilterPanelOpen) clearAllFilters()
+                                else isSearchExpanded = true
+                            },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (hasActiveFilters || showAdvancedFilter) c.accent.copy(alpha = 0.18f) else c.divider,
-                                contentColor = if (hasActiveFilters || showAdvancedFilter) c.accent else c.text
+                                containerColor = if (isFilterPanelOpen || hasActiveFilters) c.accent.copy(alpha = 0.18f) else c.divider,
+                                contentColor   = if (isFilterPanelOpen || hasActiveFilters) c.accent else c.text
                             ),
                             modifier = Modifier.size(36.dp)
                         ) {
-                            Icon(Icons.Default.Tune, contentDescription = "Advanced filter", modifier = Modifier.size(20.dp))
+                            Icon(
+                                if (isFilterPanelOpen) Icons.Default.Close else Icons.Default.Search,
+                                contentDescription = "Toggle search/filter",
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
-                        if (hasActiveFilters) {
+                        // Dot badge when filters are active but panel is closed
+                        if (hasActiveFilters && !isFilterPanelOpen) {
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
@@ -1045,10 +1041,10 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                         DropdownMenu(
                             expanded = showFilterMenu,
                             onDismissRequest = { showFilterMenu = false },
-                            modifier = Modifier
-                                .background(c.surfaceVariant)
-                                .border(1.dp, c.border, RoundedCornerShape(8.dp))
-                                .width(220.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            containerColor = c.surfaceVariant,
+                            shadowElevation = 10.dp,
+                            modifier = Modifier.width(220.dp)
                         ) {
                         // Header (non-interactive label — no min-height needed)
                         Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
@@ -1158,7 +1154,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
         }
         }
 
-        if (!isSearchExpanded) {
+        if (!isFilterPanelOpen) {
         // Net Balance Glow Card
         item {
             Surface(
@@ -1170,7 +1166,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                     .testTag("net_wealth_glowing_card")
             ) {
                 Column(
-                    modifier = Modifier.padding(20.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Row(
@@ -1217,7 +1213,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             containerColor = c.surface
                         )
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = if (showTotal) {
                             decFormat.format(if (selectedWallet == "All") totalWealth else (walletsBalances[selectedWallet] ?: 0.0))
@@ -1229,14 +1225,14 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                         color = c.accent
                     )
                     
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(1.dp)
                             .background(c.divider)
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1393,358 +1389,261 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                 }
             }
         }
-        } // end if (!isSearchExpanded)
+        } // end if (!isFilterPanelOpen)
 
-        // ── Search bar (shown when search icon tapped) ──────────────────────
-        if (isSearchExpanded) {
+        // ── Combined Search + Filter panel ──────────────────────────────────
+        if (isFilterPanelOpen) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val accountsInUse = remember(monthTransactions, accounts, consolidateAccounts) {
+                    val usedNames = monthTransactions.map { tx -> tx.getAccountName(consolidateAccounts) }.toSet()
+                    accounts.map { if (consolidateAccounts) consolidateAccountName(it.name) else it.name }
+                        .distinct().filter { it in usedNames }
+                }
+                val catsInUse = remember(monthTransactions, customCats) {
+                    monthTransactions.map { CategoryResolver.resolve(it.category, customCats) }
+                        .distinctBy { it.name }
+                        .filter { it.displayName.isNotBlank() }
+                        .sortedBy { it.displayName }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Text search
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
                         modifier = Modifier.fillMaxWidth(),
-                        leadingIcon = {
-                            Icon(Icons.Default.Search, contentDescription = "Search", tint = c.textSecondary)
-                        },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = c.textSecondary) },
                         trailingIcon = {
-                            if (searchQuery.isNotBlank()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear search", tint = c.textSecondary)
-                                }
+                            if (searchQuery.isNotBlank()) IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = c.textSecondary)
                             }
                         },
-                        label = { Text("Search records") },
-                        placeholder = {
-                            Text(when (searchFilter) {
-                                "Title"    -> "Search by merchant / title…"
-                                "Category" -> "Search by category…"
-                                "Account"  -> "Search by account / wallet…"
-                                "Type"     -> "INCOME or EXPENSE…"
-                                else       -> "Search all fields…"
-                            })
-                        },
+                        label = { Text("Search") },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = c.text,
-                            unfocusedTextColor = c.text,
-                            focusedBorderColor = c.accent,
-                            unfocusedBorderColor = c.textTertiary,
-                            focusedLabelColor = c.accent,
-                            unfocusedLabelColor = c.textSecondary
+                            focusedTextColor = c.text, unfocusedTextColor = c.text,
+                            focusedBorderColor = c.accent, unfocusedBorderColor = c.textTertiary,
+                            focusedLabelColor = c.accent, unfocusedLabelColor = c.textSecondary
                         )
                     )
-                    // Search-field-scope chips
+                    // Type chips — multi-select
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        val filters = listOf("All", "Title", "Category", "Account", "Type")
-                        items(filters.size) { i ->
-                            val f = filters[i]
-                            val sel = searchFilter == f
+                        val types = listOf(
+                            Triple("EXPENSE",  Icons.Default.ArrowUpward,   c.expense),
+                            Triple("INCOME",   Icons.Default.ArrowDownward, c.income),
+                            Triple("TRANSFER", Icons.Default.SyncAlt,       c.accent)
+                        )
+                        items(types.size) { i ->
+                            val (t, icon, color) = types[i]
+                            val sel = t in filterTypes
                             FilterChip(
                                 selected = sel,
-                                onClick = { searchFilter = f },
-                                label = { Text(f, fontSize = 11.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal) },
-                                leadingIcon = if (sel) {{ Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }} else null,
+                                onClick = { filterTypes = if (sel) filterTypes - t else filterTypes + t },
+                                label = { Text(t.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 12.sp) },
+                                leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp)) },
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = c.accent.copy(0.15f),
-                                    selectedLabelColor = c.accent,
-                                    containerColor = c.divider,
-                                    labelColor = c.textSecondary
+                                    selectedContainerColor = color.copy(alpha = 0.18f), selectedLabelColor = color,
+                                    containerColor = c.divider, labelColor = c.textSecondary
                                 ),
                                 border = FilterChipDefaults.filterChipBorder(
                                     enabled = true, selected = sel,
-                                    selectedBorderColor = c.accent.copy(0.5f),
-                                    borderColor = c.text.copy(0.1f)
+                                    selectedBorderColor = color.copy(0.4f), borderColor = c.text.copy(0.1f)
                                 )
                             )
                         }
                     }
-                }
-            }
-        }
-
-        // ── Advanced filter panel (shown when Tune icon tapped) ─────────────
-        if (showAdvancedFilter) {
-            item {
-                Surface(
-                    color = c.surface,
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, c.accent.copy(alpha = 0.3f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        // Header row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(Icons.Default.Tune, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
-                                Text("Filter Records", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.text)
-                            }
-                            if (hasActiveFilters) {
+                    // Category picker
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(Modifier.fillMaxWidth().height(20.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                            Text("Category", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = c.textSecondary)
+                            if (filterCategories.isNotEmpty()) CompositionLocalProvider(
+                                LocalMinimumInteractiveComponentSize provides androidx.compose.ui.unit.Dp.Unspecified
+                            ) {
                                 TextButton(
-                                    onClick = { filterType = ""; filterCategory = ""; filterAccount = "" },
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    Text("Clear all", color = c.expense, fontSize = 12.sp)
-                                }
+                                    onClick = { filterCategories = emptySet() },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                ) { Text("Clear", fontSize = 11.sp, color = c.expense) }
                             }
                         }
-
-                        // ── Type filter ─────────────────────────────────────
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                                color = c.textSecondary, letterSpacing = 1.sp)
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                val types = listOf(
-                                    "EXPENSE" to Icons.Default.ArrowUpward,
-                                    "INCOME"  to Icons.Default.ArrowDownward,
-                                    "TRANSFER" to Icons.Default.SyncAlt
-                                )
-                                items(types.size) { i ->
-                                    val (t, icon) = types[i]
-                                    val sel = filterType == t
-                                    FilterChip(
-                                        selected = sel,
-                                        onClick = { filterType = if (sel) "" else t },
-                                        label = { Text(t.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 12.sp) },
-                                        leadingIcon = {
-                                            Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp))
-                                        },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = when(t) {
-                                                "INCOME" -> c.income.copy(alpha = 0.18f)
-                                                "EXPENSE" -> c.expense.copy(alpha = 0.18f)
-                                                else -> c.accent.copy(alpha = 0.18f)
-                                            },
-                                            selectedLabelColor = when(t) {
-                                                "INCOME" -> c.income
-                                                "EXPENSE" -> c.expense
-                                                else -> c.accent
-                                            },
-                                            containerColor = c.divider,
-                                            labelColor = c.textSecondary
-                                        ),
-                                        border = FilterChipDefaults.filterChipBorder(
-                                            enabled = true, selected = sel,
-                                            selectedBorderColor = c.accent.copy(0.4f),
-                                            borderColor = c.text.copy(0.1f)
-                                        )
+                        if (filterCategories.isNotEmpty()) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                items(filterCategories.toList()) { catKey ->
+                                    val resolved = CategoryResolver.resolve(catKey, customCats)
+                                    InputChip(
+                                        selected = true,
+                                        onClick = { filterCategories = filterCategories - catKey },
+                                        label = { Text(resolved.displayName, fontSize = 11.sp) },
+                                        leadingIcon = { Icon(resolved.icon, contentDescription = null, modifier = Modifier.size(13.dp), tint = resolved.color) },
+                                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
+                                        colors = InputChipDefaults.inputChipColors(selectedContainerColor = resolved.color.copy(0.15f), selectedLabelColor = resolved.color)
                                     )
                                 }
                             }
                         }
-
-                        // ── Account filter ──────────────────────────────────
-                        if (accounts.isNotEmpty()) {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("ACCOUNT", fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                                    color = c.textSecondary, letterSpacing = 1.sp)
-                                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    val acctNames = accounts.map {
-                                        if (consolidateAccounts) consolidateAccountName(it.name) else it.name
-                                    }.distinct()
-                                    items(acctNames.size) { i ->
-                                        val name = acctNames[i]
-                                        val sel = filterAccount == name
-                                        FilterChip(
-                                            selected = sel,
-                                            onClick = { filterAccount = if (sel) "" else name },
-                                            label = { Text(name, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                            leadingIcon = if (sel) {{
-                                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(13.dp))
-                                            }} else null,
+                        Box {
+                            OutlinedButton(
+                                onClick = { showCategoryPicker = !showCategoryPicker; showAccountPicker = false },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                border = BorderStroke(1.dp, if (showCategoryPicker) c.accent else c.divider),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Category, contentDescription = null, modifier = Modifier.size(15.dp), tint = c.textSecondary)
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (filterCategories.isEmpty()) "Add category filter…" else "+ Add more categories",
+                                    fontSize = 12.sp, color = c.textSecondary, modifier = Modifier.weight(1f))
+                                Icon(if (showCategoryPicker) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = null, modifier = Modifier.size(16.dp), tint = c.textSecondary)
+                            }
+                            DropdownMenu(
+                                expanded = showCategoryPicker,
+                                onDismissRequest = { showCategoryPicker = false },
+                                shape = RoundedCornerShape(16.dp),
+                                containerColor = c.surfaceVariant,
+                                shadowElevation = 10.dp,
+                                modifier = Modifier.widthIn(min = 220.dp, max = 300.dp).heightIn(max = 320.dp)
+                            ) {
+                                catsInUse.forEach { resolved ->
+                                    val selected = resolved.name in filterCategories
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                Icon(resolved.icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = resolved.color)
+                                                Text(resolved.displayName, fontSize = 13.sp,
+                                                    color = if (selected) resolved.color else c.text,
+                                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                                                Spacer(Modifier.weight(1f))
+                                                if (selected) Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = resolved.color)
+                                            }
+                                        },
+                                        onClick = { filterCategories = if (selected) filterCategories - resolved.name else filterCategories + resolved.name }
+                                    )
+                                }
+                                if (catsInUse.isEmpty()) DropdownMenuItem(
+                                    text = { Text("No categories in this period", fontSize = 12.sp, color = c.textSecondary) }, onClick = {}
+                                )
+                            }
+                        }
+                    }
+                    // Account picker
+                    if (accountsInUse.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(Modifier.fillMaxWidth().height(20.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                                Text("Account", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = c.textSecondary)
+                                if (filterAccounts.isNotEmpty()) CompositionLocalProvider(
+                                    LocalMinimumInteractiveComponentSize provides androidx.compose.ui.unit.Dp.Unspecified
+                                ) {
+                                    TextButton(
+                                        onClick = { filterAccounts = emptySet() },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                    ) { Text("Clear", fontSize = 11.sp, color = c.expense) }
+                                }
+                            }
+                            if (filterAccounts.isNotEmpty()) {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    items(filterAccounts.toList()) { acc ->
+                                        InputChip(
+                                            selected = true,
+                                            onClick = { filterAccounts = filterAccounts - acc },
+                                            label = { Text(acc, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                            trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
                                             modifier = Modifier.widthIn(max = 180.dp),
-                                            colors = FilterChipDefaults.filterChipColors(
-                                                selectedContainerColor = c.accent.copy(0.15f),
-                                                selectedLabelColor = c.accent,
-                                                containerColor = c.divider,
-                                                labelColor = c.textSecondary
-                                            ),
-                                            border = FilterChipDefaults.filterChipBorder(
-                                                enabled = true, selected = sel,
-                                                selectedBorderColor = c.accent.copy(0.5f),
-                                                borderColor = c.text.copy(0.1f)
-                                            )
+                                            colors = InputChipDefaults.inputChipColors(selectedContainerColor = c.accent.copy(0.15f), selectedLabelColor = c.accent)
+                                        )
+                                    }
+                                }
+                            }
+                            Box {
+                                OutlinedButton(
+                                    onClick = { showAccountPicker = !showAccountPicker; showCategoryPicker = false },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    border = BorderStroke(1.dp, if (showAccountPicker) c.accent else c.divider),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(15.dp), tint = c.textSecondary)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(if (filterAccounts.isEmpty()) "Add account filter…" else "+ Add more accounts",
+                                        fontSize = 12.sp, color = c.textSecondary, modifier = Modifier.weight(1f))
+                                    Icon(if (showAccountPicker) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = null, modifier = Modifier.size(16.dp), tint = c.textSecondary)
+                                }
+                                DropdownMenu(
+                                    expanded = showAccountPicker,
+                                    onDismissRequest = { showAccountPicker = false },
+                                    shape = RoundedCornerShape(16.dp),
+                                    containerColor = c.surfaceVariant,
+                                    shadowElevation = 10.dp,
+                                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp).heightIn(max = 260.dp)
+                                ) {
+                                    accountsInUse.forEach { name ->
+                                        val selected = name in filterAccounts
+                                        val acctObj = accounts.find { a ->
+                                            if (consolidateAccounts) consolidateAccountName(a.name) == name else a.name == name
+                                        }
+                                        val acctType = acctObj?.type ?: ""
+                                        val acctColor = when (acctType) {
+                                            "CASH"        -> c.income
+                                            "BANK"        -> Color(0xFF3B82F6)
+                                            "CREDIT_CARD" -> c.expense
+                                            "WALLET"      -> Color(0xFFFF9800)
+                                            else          -> c.textSecondary
+                                        }
+                                        val acctIcon = walletIconFor(name, acctType.takeIf { it.isNotEmpty() })
+                                        DropdownMenuItem(
+                                            text = {
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                    Icon(acctIcon, contentDescription = null, modifier = Modifier.size(16.dp), tint = acctColor)
+                                                    Text(name, fontSize = 13.sp,
+                                                        color = if (selected) acctColor else c.text,
+                                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                                    if (selected) Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = acctColor)
+                                                }
+                                            },
+                                            onClick = { filterAccounts = if (selected) filterAccounts - name else filterAccounts + name }
                                         )
                                     }
                                 }
                             }
                         }
-
-                        // ── Category filter ─────────────────────────────────
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            val catTypeLabel = when (filterType) {
-                                "INCOME" -> "INCOME CATEGORIES"
-                                "EXPENSE" -> "EXPENSE CATEGORIES"
-                                else -> "CATEGORIES"
-                            }
-                            Text(catTypeLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                                color = c.textSecondary, letterSpacing = 1.sp)
-                            // Only show categories relevant to selected type
-                            val builtInCats = ExpenseCategory.entries.filter { cat ->
-                                when (filterType) {
-                                    "INCOME" -> cat.type == "INCOME"
-                                    "EXPENSE" -> cat.type == "EXPENSE"
-                                    else -> true
-                                }
-                            }
-                            val customDisplayCats = customCats
-                                .filter { it.name.isNotBlank() }
-                                .map { it.name }
-                            // All unique category display names from actual transactions in current period
-                            val usedCatNames = monthTransactions.map {
-                                CategoryResolver.resolve(it.category, customCats).displayName
-                            }.distinct().sorted()
-
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(builtInCats.size) { i ->
-                                    val cat = builtInCats[i]
-                                    val sel = filterCategory == cat.name || filterCategory == cat.displayName
-                                    FilterChip(
-                                        selected = sel,
-                                        onClick = { filterCategory = if (sel) "" else cat.name },
-                                        label = { Text(cat.displayName, fontSize = 11.sp) },
-                                        leadingIcon = {
-                                            Icon(cat.icon, contentDescription = null,
-                                                modifier = Modifier.size(13.dp),
-                                                tint = if (sel) cat.color else c.textSecondary)
-                                        },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = cat.color.copy(alpha = 0.18f),
-                                            selectedLabelColor = cat.color,
-                                            containerColor = c.divider,
-                                            labelColor = c.textSecondary
-                                        ),
-                                        border = FilterChipDefaults.filterChipBorder(
-                                            enabled = true, selected = sel,
-                                            selectedBorderColor = cat.color.copy(0.5f),
-                                            borderColor = c.text.copy(0.1f)
-                                        )
-                                    )
-                                }
-                                items(customDisplayCats.size) { i ->
-                                    val name = customDisplayCats[i]
-                                    val sel = filterCategory.equals(name, ignoreCase = true)
-                                    FilterChip(
-                                        selected = sel,
-                                        onClick = { filterCategory = if (sel) "" else name },
-                                        label = { Text(name, fontSize = 11.sp) },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = c.accent.copy(0.15f),
-                                            selectedLabelColor = c.accent,
-                                            containerColor = c.divider,
-                                            labelColor = c.textSecondary
-                                        ),
-                                        border = FilterChipDefaults.filterChipBorder(
-                                            enabled = true, selected = sel,
-                                            selectedBorderColor = c.accent.copy(0.5f),
-                                            borderColor = c.text.copy(0.1f)
-                                        )
-                                    )
-                                }
-                            }
-                        }
-
-                        // ── Active filter summary chips ──────────────────────
-                        if (hasActiveFilters) {
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                if (filterType.isNotEmpty()) item {
-                                    InputChip(
-                                        selected = true,
-                                        onClick = { filterType = "" },
-                                        label = { Text(filterType, fontSize = 11.sp) },
-                                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
-                                        colors = InputChipDefaults.inputChipColors(
-                                            selectedContainerColor = c.accent.copy(0.15f),
-                                            selectedLabelColor = c.accent
-                                        )
-                                    )
-                                }
-                                if (filterCategory.isNotEmpty()) item {
-                                    val displayCat = ExpenseCategory.entries.firstOrNull {
-                                        it.name == filterCategory
-                                    }?.displayName ?: filterCategory
-                                    InputChip(
-                                        selected = true,
-                                        onClick = { filterCategory = "" },
-                                        label = { Text(displayCat, fontSize = 11.sp) },
-                                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
-                                        colors = InputChipDefaults.inputChipColors(
-                                            selectedContainerColor = c.accent.copy(0.15f),
-                                            selectedLabelColor = c.accent
-                                        )
-                                    )
-                                }
-                                if (filterAccount.isNotEmpty()) item {
-                                    InputChip(
-                                        selected = true,
-                                        onClick = { filterAccount = "" },
-                                        label = { Text(filterAccount, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
-                                        modifier = Modifier.widthIn(max = 200.dp),
-                                        colors = InputChipDefaults.inputChipColors(
-                                            selectedContainerColor = c.accent.copy(0.15f),
-                                            selectedLabelColor = c.accent
-                                        )
-                                    )
-                                }
-                            }
+                    }
+                    // Filter summary
+                    if (hasActiveFilters) {
+                        val count = filterTypes.size + filterCategories.size + filterAccounts.size
+                        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                            Text("$count filter${if (count > 1) "s" else ""} active · ${visibleTransactions.size} result${if (visibleTransactions.size != 1) "s" else ""}",
+                                fontSize = 11.sp, color = c.accent, fontWeight = FontWeight.Medium)
+                            TextButton(
+                                onClick = { filterTypes = emptySet(); filterCategories = emptySet(); filterAccounts = emptySet() },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                            ) { Text("Clear all", fontSize = 11.sp, color = c.expense) }
                         }
                     }
                 }
             }
         }
 
-        // Active filter badge row (shown even when panel is collapsed, as a quick-glance reminder)
-        if (hasActiveFilters && !showAdvancedFilter) {
+        // Active filter badge row (shown when panel is closed)
+        if (hasActiveFilters && !isFilterPanelOpen) {
             item {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    contentPadding = PaddingValues(horizontal = 2.dp)
-                ) {
-                    if (filterType.isNotEmpty()) item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(horizontal = 2.dp)) {
+                    items((filterTypes + filterCategories + filterAccounts).toList()) { key ->
+                        val label = when {
+                            key in filterTypes -> key.lowercase().replaceFirstChar { it.uppercase() }
+                            else -> ExpenseCategory.entries.firstOrNull { it.name == key }?.displayName ?: key
+                        }
                         InputChip(
                             selected = true,
-                            onClick = { filterType = "" },
-                            label = { Text(filterType, fontSize = 11.sp) },
+                            onClick = { filterTypes = filterTypes - key; filterCategories = filterCategories - key; filterAccounts = filterAccounts - key },
+                            label = { Text(label, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
-                            colors = InputChipDefaults.inputChipColors(
-                                selectedContainerColor = c.accent.copy(0.15f),
-                                selectedLabelColor = c.accent
-                            )
-                        )
-                    }
-                    if (filterCategory.isNotEmpty()) item {
-                        val displayCat = ExpenseCategory.entries.firstOrNull { it.name == filterCategory }?.displayName ?: filterCategory
-                        InputChip(
-                            selected = true,
-                            onClick = { filterCategory = "" },
-                            label = { Text(displayCat, fontSize = 11.sp) },
-                            trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
-                            colors = InputChipDefaults.inputChipColors(
-                                selectedContainerColor = c.accent.copy(0.15f),
-                                selectedLabelColor = c.accent
-                            )
-                        )
-                    }
-                    if (filterAccount.isNotEmpty()) item {
-                        InputChip(
-                            selected = true,
-                            onClick = { filterAccount = "" },
-                            label = { Text(filterAccount, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
-                            modifier = Modifier.widthIn(max = 200.dp),
-                            colors = InputChipDefaults.inputChipColors(
-                                selectedContainerColor = c.accent.copy(0.15f),
-                                selectedLabelColor = c.accent
-                            )
+                            modifier = Modifier.widthIn(max = 180.dp),
+                            colors = InputChipDefaults.inputChipColors(selectedContainerColor = c.accent.copy(0.15f), selectedLabelColor = c.accent)
                         )
                     }
                 }
             }
         }
+
+
 
         // Chronological transaction lists grouped by Dates
         if (visibleTransactions.isEmpty()) {
@@ -2455,10 +2354,10 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                         DropdownMenu(
                             expanded = showPeriodMenu,
                             onDismissRequest = { showPeriodMenu = false },
-                            modifier = Modifier
-                                .background(c.surfaceVariant)
-                                .border(1.dp, c.border, RoundedCornerShape(8.dp))
-                                .width(180.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            containerColor = c.surfaceVariant,
+                            shadowElevation = 10.dp,
+                            modifier = Modifier.width(180.dp)
                         ) {
                             DropdownMenuItem(
                                 text = { Text("PERIOD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary) },
@@ -2484,8 +2383,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                     }
                 }
 
-                Box {
-                    OutlinedButton(
+                OutlinedButton(
                         onClick = { showModeMenu = true },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
@@ -2511,31 +2409,59 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            Icon(Icons.Default.ExpandMore, contentDescription = "Select analysis mode", tint = c.accent)
-                        }
-                    }
-
-                    DropdownMenu(
-                        expanded = showModeMenu,
-                        onDismissRequest = { showModeMenu = false },
-                        modifier = Modifier.background(c.surface)
-                    ) {
-                        AnalyticsMode.entries.forEach { mode ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        mode.label,
-                                        color = if (mode == selectedMode) c.accent else c.text,
-                                        fontWeight = if (mode == selectedMode) FontWeight.Bold else FontWeight.Medium
-                                    )
-                                },
-                                onClick = {
-                                    viewModel.setSelectedAnalyticsModeIdx(AnalyticsMode.entries.indexOf(mode))
-                                    showModeMenu = false
-                                }
+                            Icon(
+                                imageVector = if (showModeMenu) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = "Select analysis mode",
+                                tint = c.accent
                             )
                         }
                     }
+
+                if (showModeMenu) {
+                    AlertDialog(
+                        onDismissRequest = { showModeMenu = false },
+                        containerColor = c.surface,
+                        title = {
+                            Text("Analysis Mode", fontWeight = FontWeight.Bold, color = c.text)
+                        },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                AnalyticsMode.entries.forEach { mode ->
+                                    val isSelected = mode == selectedMode
+                                    Surface(
+                                        onClick = {
+                                            viewModel.setSelectedAnalyticsModeIdx(AnalyticsMode.entries.indexOf(mode))
+                                            showModeMenu = false
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (isSelected) c.accentDim else c.surfaceVariant,
+                                        border = if (isSelected) BorderStroke(1.dp, c.accent.copy(alpha = 0.5f)) else null,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                mode.label,
+                                                color = if (isSelected) c.accent else c.text,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                fontSize = 14.sp
+                                            )
+                                            if (isSelected) Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = c.accent,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {}
+                    )
                 }
             }
         }
@@ -2653,7 +2579,7 @@ private fun AnalyticsOverviewSection(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 if (categoryTotals.isEmpty()) {
@@ -2921,7 +2847,7 @@ private fun AnalyticsOverviewSection(
                                 Text(decFormat.format(stats.total), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.text)
                             }
                             LinearProgressIndicator(
-                                progress = stats.percentage.toFloat(),
+                                progress = { stats.percentage.toFloat() },
                                 color = stats.category.color,
                                 trackColor = c.divider,
                                 modifier = Modifier
@@ -2980,6 +2906,9 @@ private fun AnalyticsFlowSection(
     val activePoint = points.getOrNull(activePointIndex)
     val activeValue = pointValues.getOrElse(activePointIndex) { 0.0 }
     val calendarCells = remember(points) { buildAnalyticsCalendarCells(points) }
+    var showAverageActiveDay by remember { mutableStateOf(false) }
+    val averageAllDay = if (points.isNotEmpty()) total / points.size else 0.0
+    val displayAverage = if (showAverageActiveDay) average else averageAllDay
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -2992,9 +2921,15 @@ private fun AnalyticsFlowSection(
                         Text(title.uppercase(Locale.getDefault()), fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp, color = c.textSecondary)
                         Text(decFormat.format(total), fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, color = accent)
                     }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text("Average active day", fontSize = 11.sp, color = c.textSecondary)
-                        Text(decFormat.format(average), fontWeight = FontWeight.Bold, color = c.text)
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        modifier = Modifier.clickable { showAverageActiveDay = !showAverageActiveDay }
+                    ) {
+                        Text(
+                            if (showAverageActiveDay) "Average active day" else "Average day",
+                            fontSize = 11.sp, color = c.textSecondary
+                        )
+                        Text(decFormat.format(displayAverage), fontWeight = FontWeight.Bold, color = c.text)
                     }
                 }
 
@@ -3383,18 +3318,23 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         accountStats.forEachIndexed { index, stats ->
+                            val maxNameChars = if (accountStats.size >= 5) 3 else 4
                             Text(
                                 text = run {
                                     val n = stats.accountName
                                     val upper = n.uppercase(java.util.Locale.getDefault())
-                                    val tag = if (upper.contains("CARD") || upper.contains("CREDIT") || upper.contains(" CC ")) {
-                                        val digits = n.filter { it.isDigit() }.takeLast(2)
-                                        "CC${if (digits.isNotEmpty()) " $digits" else ""}"
-                                    } else "BNK"
-                                    "${n.split(" ").first().take(4).uppercase(java.util.Locale.getDefault())} $tag"
+                                    val isCreditCard = upper.contains("CARD") || upper.contains("CREDIT")
+                                    val digits = n.filter { it.isDigit() }.takeLast(2)
+                                    val prefix = n.split(" ").first().take(maxNameChars)
+                                        .uppercase(java.util.Locale.getDefault())
+                                    when {
+                                        isCreditCard && digits.isNotEmpty() -> "$prefix $digits"
+                                        isCreditCard                       -> "$prefix CC"
+                                        else                               -> prefix
+                                    }
                                 },
                                 color = if (index == activeAccountIndex) stats.color else c.textSecondary,
-                                fontSize = 10.sp,
+                                fontSize = 9.sp,
                                 fontWeight = if (index == activeAccountIndex) FontWeight.Bold else FontWeight.Medium,
                                 modifier = Modifier.weight(1f),
                                 textAlign = TextAlign.Center,
@@ -3407,6 +3347,7 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
         }
 
         if (accountStats.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = "ACCOUNT BREAKDOWN",
                 fontWeight = FontWeight.Bold,
@@ -3418,14 +3359,14 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
             accountStats.forEach { stats ->
                 Surface(
                     color = c.surface,
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(16.dp),
                     border = BorderStroke(1.dp, stats.color.copy(alpha = 0.45f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -3455,6 +3396,7 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                     }
                 }
             }
+            } // end Column(spacedBy(8dp))
         }
     }
 }
@@ -3585,7 +3527,7 @@ val suitableIconsList = listOf(
     "restaurant" to Icons.Default.Restaurant,
     "shopping" to Icons.Default.ShoppingBag,
     "car" to Icons.Default.DirectionsCar,
-    "bills" to Icons.Default.ReceiptLong,
+    "bills" to Icons.AutoMirrored.Filled.ReceiptLong,
     "recharge" to Icons.Default.Smartphone,
     "gym" to Icons.Default.FitnessCenter,
     "sport" to Icons.Default.SportsSoccer,
@@ -3621,7 +3563,7 @@ val suitableIconsList = listOf(
     "outside_food" to Icons.Default.Fastfood,
     "groceries" to Icons.Default.ShoppingCart,
     "cashback" to Icons.Default.Redeem,
-    "investment" to Icons.Default.TrendingUp,
+    "investment" to Icons.AutoMirrored.Filled.TrendingUp,
     "mutual_fund" to Icons.Default.AccountBalance,
     "etf" to Icons.Default.BarChart,
     "adjust" to Icons.Default.SwapVert,
@@ -3639,7 +3581,7 @@ val suitableIconsList = listOf(
     "drinks" to Icons.Default.LocalBar,
     "fruits" to Icons.Default.WaterDrop,
     "campfire" to Icons.Default.Fireplace,
-    "shoes" to Icons.Default.DirectionsRun,
+    "shoes" to Icons.AutoMirrored.Filled.DirectionsRun,
     "party" to Icons.Default.Celebration,
     "birthday" to Icons.Default.Cake,
     "vacation" to Icons.Default.BeachAccess,
@@ -4226,7 +4168,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                         )
                                     }
                                     LinearProgressIndicator(
-                                        progress = ratio.toFloat().coerceIn(0f, 1f),
+                                        progress = { ratio.toFloat().coerceIn(0f, 1f) },
                                         color = progressColor,
                                         trackColor = c.text.copy(alpha = 0.05f),
                                         modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
@@ -4837,7 +4779,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
                     color = c.text
                 )
                 IconButton(onClick = { showAccountCenterSettings = true }) {
-                    Icon(Icons.Default.Menu, contentDescription = "Account Settings", tint = c.text)
+                    Icon(Icons.Default.Settings, contentDescription = "Account Settings", tint = c.text)
                 }
             }
             if (showAccountCenterSettings) {
@@ -8206,7 +8148,7 @@ fun RestoreBackupDialog(
                 Spacer(Modifier.height(10.dp))
                 listOf(
                     Triple(Icons.Default.AccountBalanceWallet, "Accounts",        "All wallets recreated with their types"),
-                    Triple(Icons.Default.ReceiptLong,          "Transactions",    "All records with date, amount, category"),
+                    Triple(Icons.AutoMirrored.Filled.ReceiptLong, "Transactions",    "All records with date, amount, category"),
                     Triple(Icons.Default.LinkOff,              "Existing Data",   "Cleared first — cannot be recovered")
                 ).forEachIndexed { idx, (icon, title, sub) ->
                     val tint = if (idx == 2) c.expense else c.accent
@@ -8465,15 +8407,15 @@ fun AccountCenterSettingsDialog(
                 }
                 items(accounts) { acc ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                        modifier = Modifier.fillMaxWidth().height(36.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(acc.name, color = c.text, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Text(acc.name, color = c.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
                         Switch(
                             checked = !hiddenAccountIds.contains(acc.id),
                             onCheckedChange = { visible -> viewModel.setAccountHidden(acc.id, !visible) },
-                            modifier = Modifier.scale(0.75f),
+                            modifier = Modifier.scale(0.8f),
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = c.accent,
                                 checkedTrackColor = c.accent.copy(alpha = 0.45f),

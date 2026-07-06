@@ -28,6 +28,7 @@ class SmsReceiver : BroadcastReceiver() {
 
         val bundle = intent.extras ?: return
         try {
+            @Suppress("DEPRECATION")
             val pdus = bundle.get("pdus") as? Array<*> ?: return
             val format = bundle.getString("format")
 

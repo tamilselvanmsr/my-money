@@ -565,4 +565,49 @@ class SmsParserTest {
         )
         assertNotNull("Sender ending in -T must be accepted", result)
     }
+
+    // ─── getReferenceNumber: UPI NNNNN bare format ────────────────────────────
+    // HDFC credit SMS uses "(UPI 1234567890)" — no "Ref" keyword before the number.
+    // SBI debit SMS uses "Refno 1234567890".
+    // Both must extract the SAME reference number for transfer pair detection.
+
+    @Test fun `getReferenceNumber extracts bare UPI number from HDFC credit format`() {
+        // "(UPI 1234567890)" — the 7th pattern added to getReferenceNumber
+        val ref = SmsParser.getReferenceNumber("Rs.500 credited to a/c XX9872 (UPI 1234567890)")
+        assertEquals("1234567890", ref)
+    }
+
+    @Test fun `getReferenceNumber extracts Refno from SBI debit format`() {
+        // "Refno 1234567890" — existing pattern
+        val ref = SmsParser.getReferenceNumber(
+            "Dear UPI user A/C x8472 debited by 500 on 01Jan26 trf to SOMEONE Refno 1234567890."
+        )
+        assertEquals("1234567890", ref)
+    }
+
+    @Test fun `Transfer pair HDFC credit + SBI debit share same reference number`() {
+        // Both SMS must yield same ref → can be matched as TRANSFER in FinanceViewModel
+        val hdfcCreditRef = SmsParser.getReferenceNumber(
+            "HDFC Bank: Rs. 5000.00 credited to a/c XX9872 (UPI 9876543210). Avl Bal Rs 20000."
+        )
+        val sbiDebitRef = SmsParser.getReferenceNumber(
+            "Dear UPI user A/C x8472 debited by 5000 on 01Jan26 trf to SOMEONE Refno 9876543210."
+        )
+        assertNotNull("HDFC credit ref must not be null", hdfcCreditRef)
+        assertNotNull("SBI debit ref must not be null", sbiDebitRef)
+        assertEquals("Both SMS must share the same reference number", hdfcCreditRef, sbiDebitRef)
+    }
+
+    @Test fun `getReferenceNumber extracts UPI Ref no format (existing)`() {
+        // "UPI Ref no 254123452345" — should still work after adding new pattern
+        val ref = SmsParser.getReferenceNumber(
+            "Rs.173.00 credited to a/c *6319 by VPA jkverma@oksbi (UPI Ref no 254123452345). Indian bank."
+        )
+        assertEquals("254123452345", ref)
+    }
+
+    @Test fun `getReferenceNumber returns null for SMS with no reference`() {
+        val ref = SmsParser.getReferenceNumber("Your account balance is Rs.5000.")
+        assertNull(ref)
+    }
 }

@@ -106,7 +106,7 @@ object PdfExporter {
         // ─── COVER PAGE ───────────────────────────────────────────────────────
         // Dark header band
         cv.drawRect(0f, 0f, PW, 100f, p(C_BG_DARK))
-        cv.drawText("MyMoney", M, 44f, paint(22f, C_WHITE, bold = true))
+        cv.drawText("AutoLedger", M, 44f, paint(22f, C_WHITE, bold = true))
         cv.drawText("Financial Report", M, 66f, paint(13f, C_ACCENT))
         cv.drawText("Generated: ${tsFormat.format(Date())}", M, 86f, paint(9f, C_MUTED))
 

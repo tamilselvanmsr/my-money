@@ -324,6 +324,18 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
         }
     }
 
+    // Merge fingerprints written by SmsReceiver while app was in background
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.mergeReceiverFingerprints()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // Theme-aware palette constants (switch with dark/light mode)
     val darkBg = c.bg
     val cardSurface = c.surface
@@ -636,10 +648,21 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             onDismissRequest = { showNotificationsPanel = false },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // Dimmed scrim — tap outside panel dismisses
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {
+                            showNotificationsPanel = false
+                        }
+                )
             Surface(
                 modifier = Modifier
                     .fillMaxWidth(0.94f)
-                    .fillMaxHeight(0.75f),
+                    .fillMaxHeight(0.75f)
+                    .align(Alignment.Center),
                 shape = RoundedCornerShape(16.dp),
                 color = c.surface,
                 tonalElevation = 4.dp
@@ -685,20 +708,24 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable { selectedNotification = notif }
-                                        .background(if (!notif.isRead) c.accentDim.copy(alpha = 0.18f) else Color.Transparent)
-                                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                                        .background(if (!notif.isRead) c.accent.copy(alpha = 0.10f) else Color.Transparent)
+                                        .then(
+                                            if (!notif.isRead) Modifier.drawWithContent {
+                                                drawContent()
+                                                drawRect(color = androidx.compose.ui.graphics.Color(0xFF2196F3), size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height))
+                                            } else Modifier
+                                        )
+                                        .padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
                                     verticalAlignment = Alignment.Top
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .padding(top = 5.dp)
-                                            .size(8.dp)
-                                            .clip(CircleShape)
-                                            .background(if (!notif.isRead) c.accent else Color.Transparent)
-                                    )
-                                    Spacer(Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(notif.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = c.text)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(notif.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (!notif.isRead) c.accent else c.text)
+                                            if (!notif.isRead) {
+                                                Spacer(Modifier.width(6.dp))
+                                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(c.accent))
+                                            }
+                                        }
                                         Text(notif.message, fontSize = 12.sp, color = c.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                         Text(df.format(Date(notif.timestamp)), fontSize = 10.sp, color = c.textSecondary, modifier = Modifier.padding(top = 2.dp))
                                     }
@@ -706,12 +733,16 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                         Icon(Icons.Default.Close, contentDescription = "Delete", tint = c.textSecondary, modifier = Modifier.size(14.dp))
                                     }
                                 }
-                                HorizontalDivider(color = c.divider, thickness = 0.5.dp)
+                                HorizontalDivider(
+                                    color = if (!notif.isRead) c.accent.copy(alpha = 0.15f) else c.divider,
+                                    thickness = 0.5.dp
+                                )
                             }
                         }
                     }
                 }
             }
+        } // close outer Box
         }
     }
 
@@ -969,7 +1000,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             ),
                             modifier = Modifier.size(40.dp).testTag("three_bar_filter_button")
                         ) {
-                            Icon(Icons.Default.Menu, contentDescription = "Options and Filtering", modifier = Modifier.size(22.dp))
+                            Icon(Icons.Default.FilterList, contentDescription = "Options and Filtering", modifier = Modifier.size(22.dp))
                         }
 
                         DropdownMenu(
@@ -1232,7 +1263,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
             }
         }
 
-        // Horizontal Wallet microcards mimicking MyMoney custom wallets selector
+        // Horizontal Wallet microcards mimicking AutoLedger custom wallets selector
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -2096,7 +2127,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                             ),
                             modifier = Modifier.size(36.dp)
                         ) {
-                            Icon(Icons.Default.Menu, contentDescription = "Select time period", modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.FilterList, contentDescription = "Select time period", modifier = Modifier.size(20.dp))
                         }
                         DropdownMenu(
                             expanded = showPeriodMenu,
@@ -4889,9 +4920,13 @@ fun AccountScreen(viewModel: FinanceViewModel) {
 
         AlertDialog(
             onDismissRequest = { showAddAccountDialog = false },
-            title = { Text("Create New Wallet", fontWeight = FontWeight.Bold, color = c.text) },
+            title = { Text("Create New Account", fontWeight = FontWeight.Bold, color = c.text) },
+            properties = DialogProperties(decorFitsSystemWindows = false),
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
                     OutlinedTextField(
                         value = nameInput,
                         onValueChange = { nameInput = it },
@@ -4985,8 +5020,12 @@ fun AccountScreen(viewModel: FinanceViewModel) {
         AlertDialog(
             onDismissRequest = { selectedAccountForEdit = null },
             title = { Text("Edit Account", fontWeight = FontWeight.Bold, color = c.text) },
+            properties = DialogProperties(decorFitsSystemWindows = false),
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
                     Surface(
                         color = c.accent.copy(alpha = 0.08f),
                         shape = RoundedCornerShape(12.dp),
@@ -7119,7 +7158,7 @@ fun ExportCsvDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
-                        val fileName = "mymoney-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.xlsx"
+                        val fileName = "autoledger-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.xlsx"
                         excelExporter.launch(fileName)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
@@ -7128,7 +7167,7 @@ fun ExportCsvDialog(
                 }
                 Button(
                     onClick = {
-                        val fileName = "mymoney-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.pdf"
+                        val fileName = "autoledger-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.pdf"
                         pdfExporter.launch(fileName)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = c.income, contentColor = c.text)
@@ -7608,7 +7647,7 @@ fun BackupDialog(
                         OutlinedButton(
                             onClick = {
                                 val date = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date())
-                                createDocLauncher.launch("mymoney_backup_$date.csv")
+                                createDocLauncher.launch("autoledger_backup_$date.csv")
                             },
                             border = BorderStroke(1.dp, c.border),
                             shape = RoundedCornerShape(8.dp),

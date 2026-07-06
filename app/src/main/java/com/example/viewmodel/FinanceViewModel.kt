@@ -62,7 +62,7 @@ private data class PendingTxItem(
 
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
     private val TAG = "FinanceViewModel"
-    private val BACKUP_KEY = "MyMoney_Local_Backup_AES256"
+    private val BACKUP_KEY = "AutoLedger_Local_Backup_AES256"
     private val budgetAlertChannelId = "budget_alerts"
     private val db = FinanceDatabase.getDatabase(application)
     private val repository = FinanceRepository(db.financeDao())
@@ -162,10 +162,19 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         prefs.edit().putBoolean("show_running_balance", v).apply()
     }
 
-    // ── Recently imported fingerprints (from custom-pattern scan) — session-only highlight ─────
-    // Fingerprint format: "title|amount|type|timestamp". Cleared on new scan. Never persisted.
+    // ── Recently imported fingerprints (from scan / receiver) — session highlight ─────
+    // SmsReceiver writes fingerprints to SharedPrefs under "receiver_new_fingerprints".
+    // mergeReceiverFingerprints() is called by MainActivity.onResume to pick them up.
     private val _recentlyImportedFingerprints = MutableStateFlow<Set<String>>(emptySet())
     val recentlyImportedFingerprints: StateFlow<Set<String>> = _recentlyImportedFingerprints.asStateFlow()
+
+    /** Called from MainActivity.onResume — merges fingerprints stored by SmsReceiver. */
+    fun mergeReceiverFingerprints() {
+        val stored = prefs.getStringSet("receiver_new_fingerprints", null) ?: return
+        if (stored.isEmpty()) return
+        _recentlyImportedFingerprints.update { it + stored }
+        prefs.edit().remove("receiver_new_fingerprints").apply()
+    }
 
     // ── Analytics screen — persist selected mode across tab switches ──────────
     private val _selectedAnalyticsModeIdx = MutableStateFlow(0)
@@ -638,6 +647,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val updated = account.copy(balance = targetTotalBalance)
             repository.updateAccount(updated)
             _toastMessage.emit("Balance adjusted successfully!")
+            addNotification("Balance Updated", "${account.name}: balance set to ₹${String.format("%.2f", targetTotalBalance)}")
         }
     }
 
@@ -852,17 +862,57 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     val toastMessage = _toastMessage.asSharedFlow()
 
     // ── In-app notification centre ─────────────────────────────────────────────
-    private val _notifications = MutableStateFlow<List<AppNotification>>(emptyList())
+    private fun loadPersistedNotifications(): List<AppNotification> = try {
+        val json = prefs.getString("app_notifications_json", null) ?: return emptyList()
+        val arr = org.json.JSONArray(json)
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.getJSONObject(i)
+            AppNotification(
+                id        = o.getLong("id"),
+                title     = o.getString("title"),
+                message   = o.getString("message"),
+                timestamp = o.getLong("timestamp"),
+                isRead    = o.optBoolean("isRead", false)
+            )
+        }
+    } catch (_: Exception) { emptyList() }
+
+    private fun persistNotifications(list: List<AppNotification>) {
+        try {
+            val arr = org.json.JSONArray()
+            list.take(200).forEach { n ->
+                arr.put(org.json.JSONObject().apply {
+                    put("id", n.id); put("title", n.title); put("message", n.message)
+                    put("timestamp", n.timestamp); put("isRead", n.isRead)
+                })
+            }
+            prefs.edit().putString("app_notifications_json", arr.toString()).apply()
+        } catch (_: Exception) {}
+    }
+
+    private val _notifications = MutableStateFlow<List<AppNotification>>(loadPersistedNotifications())
     val notifications: StateFlow<List<AppNotification>> = _notifications.asStateFlow()
 
     fun addNotification(title: String, message: String) {
-        _notifications.update { prev -> listOf(AppNotification(id = System.currentTimeMillis(), title = title, message = message)) + prev }
+        try {
+            _notifications.update { prev ->
+                val updated = listOf(AppNotification(id = System.currentTimeMillis(), title = title, message = message)) + prev
+                val capped = updated.take(200)
+                persistNotifications(capped)
+                capped
+            }
+        } catch (_: Exception) {}
     }
     fun markAllNotificationsRead() {
-        _notifications.update { list -> list.map { it.copy(isRead = true) } }
+        _notifications.update { list -> list.map { it.copy(isRead = true) }.also { persistNotifications(it) } }
     }
-    fun deleteAllNotifications() { _notifications.value = emptyList() }
-    fun deleteNotification(id: Long) { _notifications.update { list -> list.filter { it.id != id } } }
+    fun deleteAllNotifications() {
+        _notifications.value = emptyList()
+        prefs.edit().remove("app_notifications_json").apply()
+    }
+    fun deleteNotification(id: Long) {
+        _notifications.update { list -> list.filter { it.id != id }.also { persistNotifications(it) } }
+    }
 
     private val _backupString = MutableStateFlow<String?>(null)
     val backupString: StateFlow<String?> = _backupString.asStateFlow()
@@ -925,7 +975,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         return if (customPath.isNotEmpty()) {
             java.io.File(customPath)
         } else {
-            java.io.File(getApplication<Application>().getExternalFilesDir(null), "MyMoneyBackups")
+            java.io.File(getApplication<Application>().getExternalFilesDir(null), "AutoLedgerBackups")
         }
     }
 

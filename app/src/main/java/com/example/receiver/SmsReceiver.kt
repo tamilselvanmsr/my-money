@@ -138,7 +138,7 @@ class SmsReceiver : BroadcastReceiver() {
                                             )
                                             dao.insertTransaction(snapTx)
                                             withContext(Dispatchers.Main) {
-                                                Toast.makeText(context, "MyMoney: Balance updated to \u20b9${String.format("%.2f", bal)} for ${linkedAcc.name}", Toast.LENGTH_LONG).show()
+                                                Toast.makeText(context, "Balance updated to \u20b9${String.format("%.2f", bal)} for ${linkedAcc.name}", Toast.LENGTH_LONG).show()
                                             }
                                         }
                                     }
@@ -216,13 +216,15 @@ class SmsReceiver : BroadcastReceiver() {
                                     note = "$body [Acc: $fromAcc][To: $toAcc]"
                                 )
                                 dao.insertTransaction(transferTx)
+                                saveReceiverFingerprint(context, "${transferTx.title}|${transferTx.amount}|TRANSFER|${transferTx.timestamp}")
                                 withContext(Dispatchers.Main) {
-                                    Toast.makeText(context, "MyMoney: Transfer ₹${parsed.amount} ($fromAcc → $toAcc)", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "AutoLedger: Transfer ₹${parsed.amount} ($fromAcc → $toAcc)", Toast.LENGTH_LONG).show()
                                 }
                                 return@launch
                             }
 
                             dao.insertTransaction(transaction)
+                            saveReceiverFingerprint(context, "${transaction.title}|${transaction.amount}|${transaction.type}|${transaction.timestamp}")
 
                             // Keep CC availableLimit in sync with live incoming transactions.
                             // Live SMS is always post-any-existing-CC-Summary, so delta is always valid.
@@ -245,7 +247,7 @@ class SmsReceiver : BroadcastReceiver() {
                                 val direction = if (parsed.type == "INCOME") "Added Income" else "Debited Expense"
                                 Toast.makeText(
                                     context,
-                                    "MyMoney Auto-Tracked: $direction of ₹${parsed.amount} at ${parsed.title}!",
+                                    "Auto-Tracked: $direction of ₹${parsed.amount} at ${parsed.title}!",
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
@@ -257,6 +259,18 @@ class SmsReceiver : BroadcastReceiver() {
         } catch (e: Exception) {
             Log.e("SmsReceiver", "Error receiving incoming SMS: ${e.message}", e)
         }
+    }
+
+    /** Appends a fingerprint to the SharedPrefs set that ViewModel reads on next resume. */
+    private fun saveReceiverFingerprint(context: Context, fingerprint: String) {
+        try {
+            val prefs = context.getSharedPreferences("finance_settings", Context.MODE_PRIVATE)
+            val existing = prefs.getStringSet("receiver_new_fingerprints", null)?.toMutableSet() ?: mutableSetOf()
+            existing.add(fingerprint)
+            // Keep at most 100 pending fingerprints to avoid unbounded growth
+            val trimmed = if (existing.size > 100) existing.toList().takeLast(100).toSet() else existing
+            prefs.edit().putStringSet("receiver_new_fingerprints", trimmed).apply()
+        } catch (_: Exception) {}
     }
 
     private suspend fun ensureAccountExists(context: Context, dao: com.example.data.FinanceDao, accountRef: String?, senderHeader: String?, smsBody: String): String? {

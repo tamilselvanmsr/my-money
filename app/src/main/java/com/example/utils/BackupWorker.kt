@@ -20,8 +20,8 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
 
     companion object {
         private const val TAG = "BackupWorker"
-        private const val BACKUP_KEY = "MyMoney_Local_Backup_AES256"
-        const val WORK_NAME = "mymoney_auto_backup"
+        private const val BACKUP_KEY = "AutoLedger_Local_Backup_AES256"
+        const val WORK_NAME = "autoledger_auto_backup"
     }
 
     override suspend fun doWork(): Result {
@@ -85,7 +85,7 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
                 put("v", 1); put("ts", System.currentTimeMillis()); put("encrypted", encrypted)
             }
             val content  = wrapper.toString()
-            val fileName = "mymoney_backup_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.json"
+            val fileName = "autoledger_backup_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.json"
 
             if (customPath.startsWith("content://")) {
                 val treeUri   = android.net.Uri.parse(customPath)
@@ -98,7 +98,7 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
                 } ?: throw Exception("Could not create backup file in chosen folder.")
             } else {
                 val folder = if (customPath.isNotEmpty()) java.io.File(customPath)
-                             else java.io.File(applicationContext.getExternalFilesDir(null), "MyMoneyBackups")
+                             else java.io.File(applicationContext.getExternalFilesDir(null), "autoledgerBackups")
                 folder.mkdirs()
                 java.io.File(folder, fileName).writeText(content, Charsets.UTF_8)
             }

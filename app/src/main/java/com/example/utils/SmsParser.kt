@@ -547,7 +547,10 @@ object SmsParser {
             "\\btxn(?:\\s*id)?[:\\s-]+([a-z0-9]+)\\b",
             "\\btransaction\\s*id[:\\s-]+([a-z0-9]+)\\b",
             "\\bimps[:\\s-/]+([a-z0-9]+)\\b",
-            "\\bref\\.([a-z0-9]+)\\b"
+            "\\bref\\.([a-z0-9]+)\\b",
+            // "UPI 1234567890" / "IMPS 1234567890" — payment-channel keyword directly followed by
+            // a long numeric ref (≥8 digits) with no "Ref" keyword between them.
+            "\\b(?:upi|imps|neft|rtgs)\\s+([0-9]{8,})\\b"
         )
         
         for (patStr in patterns) {

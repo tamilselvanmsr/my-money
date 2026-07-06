@@ -143,7 +143,7 @@ object ExcelExporter {
             append("<Column ss:Width=\"115\"/>") // Net
             append("<Column ss:Width=\"120\"/>") // Grand Total
 
-            append(mergeRow("MyMoney Financial Report", "title", 5))
+            append(mergeRow("AutoLedger Financial Report", "title", 5))
             append(mergeRow("Generated: $generatedAt", "subtitle", 5))
             append(row(ec()))
             append(row(

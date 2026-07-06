@@ -27,11 +27,14 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew assembleDebug --no-configuration-cache
 
+      - name: Rename APK to AutoLedger
+        run: mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/AutoLedger-debug.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v5
         with:
-          name: app-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: AutoLedger-debug
+          path: app/build/outputs/apk/debug/AutoLedger-debug.apk
 
   unit-test:
     runs-on: ubuntu-latest

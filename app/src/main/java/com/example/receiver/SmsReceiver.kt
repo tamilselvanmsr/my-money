@@ -138,7 +138,7 @@ class SmsReceiver : BroadcastReceiver() {
                                             )
                                             dao.insertTransaction(snapTx)
                                             withContext(Dispatchers.Main) {
-                                                Toast.makeText(context, "Balance updated to \u20b9${String.format("%.2f", bal)} for ${linkedAcc.name}", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "AutoLedger: Balance ₹${String.format("%.2f", bal)} → ${linkedAcc.name}", Toast.LENGTH_LONG).show()
                                             }
                                         }
                                     }
@@ -244,10 +244,10 @@ class SmsReceiver : BroadcastReceiver() {
                             }
 
                             withContext(Dispatchers.Main) {
-                                val direction = if (parsed.type == "INCOME") "Added Income" else "Debited Expense"
+                                val direction = if (parsed.type == "INCOME") "Income" else "Expense"
                                 Toast.makeText(
                                     context,
-                                    "Auto-Tracked: $direction of ₹${parsed.amount} at ${parsed.title}!",
+                                    "AutoLedger: $direction ₹${parsed.amount} at ${parsed.title}",
                                     Toast.LENGTH_LONG
                                 ).show()
                             }

@@ -798,19 +798,29 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     var searchQuery by remember { mutableStateOf("") }
     var searchFilter by remember { mutableStateOf("All") }
     var isSearchExpanded by remember { mutableStateOf(false) }
+    // Advanced filter state
+    var filterType     by remember { mutableStateOf("") }       // "" = all
+    var filterCategory by remember { mutableStateOf("") }       // "" = all
+    var filterAccount  by remember { mutableStateOf("") }       // "" = all
+    var showAdvancedFilter by remember { mutableStateOf(false) }
+    val hasActiveFilters = filterType.isNotEmpty() || filterCategory.isNotEmpty() || filterAccount.isNotEmpty()
     var showDeleteOptionsSheet by remember { mutableStateOf(false) }
 
+    fun clearAllFilters() {
+        searchQuery = ""; searchFilter = "All"
+        filterType = ""; filterCategory = ""; filterAccount = ""
+        isSearchExpanded = false; showAdvancedFilter = false
+    }
+
     // Close search bar on back press instead of exiting the app
-    BackHandler(enabled = isSearchExpanded) {
-        isSearchExpanded = false
-        searchQuery = ""
-        searchFilter = "All"
+    BackHandler(enabled = isSearchExpanded || hasActiveFilters) {
+        clearAllFilters()
     }
     var deleteConfirmMode by remember { mutableStateOf("") }
     var selectedDeleteCategory by remember { mutableStateOf("") }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var showNetAssetInfo by remember { mutableStateOf(false) }
-    
+
     val (periodStart, periodEnd) = getPeriodRange(activeMode, anchorTime)
     
     val periodTransactions = txs.filter { tx ->
@@ -883,7 +893,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
             destDisplay == selectedWallet
         })
     }
-    val searchableTransactions = if (searchQuery.isBlank()) {
+    val searchableTransactions = if (searchQuery.isBlank() && !hasActiveFilters) {
         monthTransactions
     } else {
         txs.filter { tx ->
@@ -897,9 +907,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
         }
     }
     val visibleTransactions = searchableTransactions.filter { tx ->
-        if (searchQuery.isBlank()) {
-            true
-        } else {
+        val textMatch = if (searchQuery.isBlank()) true else {
             val query = searchQuery.trim()
             val displayCategory = CategoryResolver.resolve(tx.category, customCats).displayName
             when (searchFilter) {
@@ -917,6 +925,13 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                 }
             }
         }
+        val typeMatch     = filterType.isEmpty() || tx.type.equals(filterType, ignoreCase = true)
+        val catMatch      = filterCategory.isEmpty() || run {
+            val displayCat = CategoryResolver.resolve(tx.category, customCats).displayName
+            tx.category.equals(filterCategory, ignoreCase = true) || displayCat.equals(filterCategory, ignoreCase = true)
+        }
+        val accMatch      = filterAccount.isEmpty() || tx.getAccountName(consolidateAccounts).equals(filterAccount, ignoreCase = true)
+        textMatch && typeMatch && catMatch && accMatch
     }
     
     // Monthly aggregates (specific to selected wallet)
@@ -989,6 +1004,30 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(Icons.Default.Search, contentDescription = "Toggle search", modifier = Modifier.size(20.dp))
+                    }
+
+                    // Filter icon — with badge when any filter is active
+                    Box {
+                        FilledTonalIconButton(
+                            onClick = { showAdvancedFilter = !showAdvancedFilter },
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = if (hasActiveFilters || showAdvancedFilter) c.accent.copy(alpha = 0.18f) else c.divider,
+                                contentColor = if (hasActiveFilters || showAdvancedFilter) c.accent else c.text
+                            ),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.Tune, contentDescription = "Advanced filter", modifier = Modifier.size(20.dp))
+                        }
+                        if (hasActiveFilters) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 2.dp, y = (-2).dp)
+                                    .clip(CircleShape)
+                                    .background(c.accent)
+                            )
+                        }
                     }
 
                     Box {
@@ -1356,6 +1395,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
         }
         } // end if (!isSearchExpanded)
 
+        // ── Search bar (shown when search icon tapped) ──────────────────────
         if (isSearchExpanded) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1393,7 +1433,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             unfocusedLabelColor = c.textSecondary
                         )
                     )
-                    // Filter chips — narrow the search to a specific field
+                    // Search-field-scope chips
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         val filters = listOf("All", "Title", "Category", "Account", "Type")
                         items(filters.size) { i ->
@@ -1411,13 +1451,296 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     labelColor = c.textSecondary
                                 ),
                                 border = FilterChipDefaults.filterChipBorder(
-                                    enabled = true,
-                                    selected = sel,
+                                    enabled = true, selected = sel,
                                     selectedBorderColor = c.accent.copy(0.5f),
                                     borderColor = c.text.copy(0.1f)
                                 )
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        // ── Advanced filter panel (shown when Tune icon tapped) ─────────────
+        if (showAdvancedFilter) {
+            item {
+                Surface(
+                    color = c.surface,
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, c.accent.copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        // Header row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Default.Tune, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
+                                Text("Filter Records", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.text)
+                            }
+                            if (hasActiveFilters) {
+                                TextButton(
+                                    onClick = { filterType = ""; filterCategory = ""; filterAccount = "" },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text("Clear all", color = c.expense, fontSize = 12.sp)
+                                }
+                            }
+                        }
+
+                        // ── Type filter ─────────────────────────────────────
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                                color = c.textSecondary, letterSpacing = 1.sp)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                val types = listOf(
+                                    "EXPENSE" to Icons.Default.ArrowUpward,
+                                    "INCOME"  to Icons.Default.ArrowDownward,
+                                    "TRANSFER" to Icons.Default.SyncAlt
+                                )
+                                items(types.size) { i ->
+                                    val (t, icon) = types[i]
+                                    val sel = filterType == t
+                                    FilterChip(
+                                        selected = sel,
+                                        onClick = { filterType = if (sel) "" else t },
+                                        label = { Text(t.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 12.sp) },
+                                        leadingIcon = {
+                                            Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = when(t) {
+                                                "INCOME" -> c.income.copy(alpha = 0.18f)
+                                                "EXPENSE" -> c.expense.copy(alpha = 0.18f)
+                                                else -> c.accent.copy(alpha = 0.18f)
+                                            },
+                                            selectedLabelColor = when(t) {
+                                                "INCOME" -> c.income
+                                                "EXPENSE" -> c.expense
+                                                else -> c.accent
+                                            },
+                                            containerColor = c.divider,
+                                            labelColor = c.textSecondary
+                                        ),
+                                        border = FilterChipDefaults.filterChipBorder(
+                                            enabled = true, selected = sel,
+                                            selectedBorderColor = c.accent.copy(0.4f),
+                                            borderColor = c.text.copy(0.1f)
+                                        )
+                                    )
+                                }
+                            }
+                        }
+
+                        // ── Account filter ──────────────────────────────────
+                        if (accounts.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("ACCOUNT", fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                                    color = c.textSecondary, letterSpacing = 1.sp)
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    val acctNames = accounts.map {
+                                        if (consolidateAccounts) consolidateAccountName(it.name) else it.name
+                                    }.distinct()
+                                    items(acctNames.size) { i ->
+                                        val name = acctNames[i]
+                                        val sel = filterAccount == name
+                                        FilterChip(
+                                            selected = sel,
+                                            onClick = { filterAccount = if (sel) "" else name },
+                                            label = { Text(name, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                            leadingIcon = if (sel) {{
+                                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(13.dp))
+                                            }} else null,
+                                            modifier = Modifier.widthIn(max = 180.dp),
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = c.accent.copy(0.15f),
+                                                selectedLabelColor = c.accent,
+                                                containerColor = c.divider,
+                                                labelColor = c.textSecondary
+                                            ),
+                                            border = FilterChipDefaults.filterChipBorder(
+                                                enabled = true, selected = sel,
+                                                selectedBorderColor = c.accent.copy(0.5f),
+                                                borderColor = c.text.copy(0.1f)
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── Category filter ─────────────────────────────────
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            val catTypeLabel = when (filterType) {
+                                "INCOME" -> "INCOME CATEGORIES"
+                                "EXPENSE" -> "EXPENSE CATEGORIES"
+                                else -> "CATEGORIES"
+                            }
+                            Text(catTypeLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                                color = c.textSecondary, letterSpacing = 1.sp)
+                            // Only show categories relevant to selected type
+                            val builtInCats = ExpenseCategory.entries.filter { cat ->
+                                when (filterType) {
+                                    "INCOME" -> cat.type == "INCOME"
+                                    "EXPENSE" -> cat.type == "EXPENSE"
+                                    else -> true
+                                }
+                            }
+                            val customDisplayCats = customCats
+                                .filter { it.name.isNotBlank() }
+                                .map { it.name }
+                            // All unique category display names from actual transactions in current period
+                            val usedCatNames = monthTransactions.map {
+                                CategoryResolver.resolve(it.category, customCats).displayName
+                            }.distinct().sorted()
+
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(builtInCats.size) { i ->
+                                    val cat = builtInCats[i]
+                                    val sel = filterCategory == cat.name || filterCategory == cat.displayName
+                                    FilterChip(
+                                        selected = sel,
+                                        onClick = { filterCategory = if (sel) "" else cat.name },
+                                        label = { Text(cat.displayName, fontSize = 11.sp) },
+                                        leadingIcon = {
+                                            Icon(cat.icon, contentDescription = null,
+                                                modifier = Modifier.size(13.dp),
+                                                tint = if (sel) cat.color else c.textSecondary)
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = cat.color.copy(alpha = 0.18f),
+                                            selectedLabelColor = cat.color,
+                                            containerColor = c.divider,
+                                            labelColor = c.textSecondary
+                                        ),
+                                        border = FilterChipDefaults.filterChipBorder(
+                                            enabled = true, selected = sel,
+                                            selectedBorderColor = cat.color.copy(0.5f),
+                                            borderColor = c.text.copy(0.1f)
+                                        )
+                                    )
+                                }
+                                items(customDisplayCats.size) { i ->
+                                    val name = customDisplayCats[i]
+                                    val sel = filterCategory.equals(name, ignoreCase = true)
+                                    FilterChip(
+                                        selected = sel,
+                                        onClick = { filterCategory = if (sel) "" else name },
+                                        label = { Text(name, fontSize = 11.sp) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = c.accent.copy(0.15f),
+                                            selectedLabelColor = c.accent,
+                                            containerColor = c.divider,
+                                            labelColor = c.textSecondary
+                                        ),
+                                        border = FilterChipDefaults.filterChipBorder(
+                                            enabled = true, selected = sel,
+                                            selectedBorderColor = c.accent.copy(0.5f),
+                                            borderColor = c.text.copy(0.1f)
+                                        )
+                                    )
+                                }
+                            }
+                        }
+
+                        // ── Active filter summary chips ──────────────────────
+                        if (hasActiveFilters) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (filterType.isNotEmpty()) item {
+                                    InputChip(
+                                        selected = true,
+                                        onClick = { filterType = "" },
+                                        label = { Text(filterType, fontSize = 11.sp) },
+                                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
+                                        colors = InputChipDefaults.inputChipColors(
+                                            selectedContainerColor = c.accent.copy(0.15f),
+                                            selectedLabelColor = c.accent
+                                        )
+                                    )
+                                }
+                                if (filterCategory.isNotEmpty()) item {
+                                    val displayCat = ExpenseCategory.entries.firstOrNull {
+                                        it.name == filterCategory
+                                    }?.displayName ?: filterCategory
+                                    InputChip(
+                                        selected = true,
+                                        onClick = { filterCategory = "" },
+                                        label = { Text(displayCat, fontSize = 11.sp) },
+                                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
+                                        colors = InputChipDefaults.inputChipColors(
+                                            selectedContainerColor = c.accent.copy(0.15f),
+                                            selectedLabelColor = c.accent
+                                        )
+                                    )
+                                }
+                                if (filterAccount.isNotEmpty()) item {
+                                    InputChip(
+                                        selected = true,
+                                        onClick = { filterAccount = "" },
+                                        label = { Text(filterAccount, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                        trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
+                                        modifier = Modifier.widthIn(max = 200.dp),
+                                        colors = InputChipDefaults.inputChipColors(
+                                            selectedContainerColor = c.accent.copy(0.15f),
+                                            selectedLabelColor = c.accent
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Active filter badge row (shown even when panel is collapsed, as a quick-glance reminder)
+        if (hasActiveFilters && !showAdvancedFilter) {
+            item {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp)
+                ) {
+                    if (filterType.isNotEmpty()) item {
+                        InputChip(
+                            selected = true,
+                            onClick = { filterType = "" },
+                            label = { Text(filterType, fontSize = 11.sp) },
+                            trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
+                            colors = InputChipDefaults.inputChipColors(
+                                selectedContainerColor = c.accent.copy(0.15f),
+                                selectedLabelColor = c.accent
+                            )
+                        )
+                    }
+                    if (filterCategory.isNotEmpty()) item {
+                        val displayCat = ExpenseCategory.entries.firstOrNull { it.name == filterCategory }?.displayName ?: filterCategory
+                        InputChip(
+                            selected = true,
+                            onClick = { filterCategory = "" },
+                            label = { Text(displayCat, fontSize = 11.sp) },
+                            trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
+                            colors = InputChipDefaults.inputChipColors(
+                                selectedContainerColor = c.accent.copy(0.15f),
+                                selectedLabelColor = c.accent
+                            )
+                        )
+                    }
+                    if (filterAccount.isNotEmpty()) item {
+                        InputChip(
+                            selected = true,
+                            onClick = { filterAccount = "" },
+                            label = { Text(filterAccount, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
+                            modifier = Modifier.widthIn(max = 200.dp),
+                            colors = InputChipDefaults.inputChipColors(
+                                selectedContainerColor = c.accent.copy(0.15f),
+                                selectedLabelColor = c.accent
+                            )
+                        )
                     }
                 }
             }

@@ -81,59 +81,51 @@ private val SENDER_CODE_MAP: List<Pair<String, String>> = listOf(
     "JKBSNK"   to "JKB",
 )
 
-/** Infers bank short-code from the DLT sender header or SMS body. */
+/** Infers bank short-code from the DLT sender header ONLY.
+ *
+ *  The SMS body is intentionally NOT used as a source for bank-code inference:
+ *  transfer/payment SMS messages frequently mention the PAYEE bank (e.g. "transfer to My HDFC Ac")
+ *  which would falsely identify the recipient's bank as the sender's bank.
+ *
+ *  Lookup order:
+ *    1. Exact match of a sender segment against SENDER_CODE_MAP
+ *    2. Prefix match  — sender segment starts with a known key (handles variants like "IDFCFirstBK")
+ *    3. accountRef prefix  — only when the ref itself encodes the bank (e.g. "HDFC-1234")
+ *    4. Fallback → "Bank"
+ */
 fun inferSmsBankCode(senderHeader: String?, smsBody: String, accountRef: String? = null): String {
     val refBank = accountRef?.substringBefore('-')?.trim()?.uppercase().orEmpty()
     val cleanSender = (senderHeader ?: "").uppercase()
-    val lowerBody = smsBody.lowercase()
 
-    // 1. Match sender code via lookup table (strip non-alpha chars from each segment)
     val senderSegments = cleanSender.split(Regex("[^A-Za-z]+")).filter { it.isNotBlank() }
+
+    // 1. Exact match
     for (segment in senderSegments) {
-        // Try longest match first
         val match = SENDER_CODE_MAP
             .filter { (key, _) -> segment == key }
             .maxByOrNull { (key, _) -> key.length }
         if (match != null) return match.second
     }
 
-    // 2. accountRef prefix (e.g. "HDFC-1234" → "HDFC")
+    // 2. Prefix match — sender segment *starts with* a known key (min key length 3 to avoid noise)
+    //    e.g. "IDFCFIRSTBK" starts with "IDFC" → IDFC First Bank
+    //         "HDFCBANK"    starts with "HDFC" → HDFC
+    for (segment in senderSegments) {
+        if (segment.length < 4) continue
+        val prefixMatch = SENDER_CODE_MAP
+            .filter { (key, _) -> key.length >= 3 && segment.startsWith(key) }
+            .maxByOrNull { (key, _) -> key.length }
+        if (prefixMatch != null) return prefixMatch.second
+    }
+
+    // 3. accountRef prefix  (e.g. accountRef = "HDFC-1234" when passed from ensureAccountExists)
     if (refBank.isNotBlank() && refBank != "BANK" && !refBank.all { it.isDigit() }) {
         val refMatch = SENDER_CODE_MAP.firstOrNull { (key, _) -> refBank == key }
         if (refMatch != null) return refMatch.second
-        if (refBank.length >= 2) return refBank  // use raw prefix as fallback
+        if (refBank.length >= 2) return refBank
     }
 
-    // 3. Body keyword scan
-    val bodyMap = listOf(
-        "indian overseas bank" to "IOB", "iob bank" to "IOB",
-        "bank of india" to "BOI",
-        "bank of baroda" to "BOB", "vijaya bank" to "BOB", "dena bank" to "BOB",
-        "canara bank" to "CANARA", "syndicate bank" to "CANARA",
-        "uco bank" to "UCO",
-        "union bank" to "UNION", "andhra bank" to "UNION", "corporation bank" to "UNION",
-        "punjab national" to "PNB",
-        "indusind" to "INDUS",
-        "kotak mahindra" to "KOTAK", "kotak bank" to "KOTAK",
-        "yes bank" to "YES",
-        "idfc first" to "IDFC", "idfc bank" to "IDFC",
-        "rbl bank" to "RBL",
-        "federal bank" to "FED",
-        "standard chartered" to "SC",
-        "citibank" to "CITI", "citi bank" to "CITI",
-        "central bank of india" to "CENTRAL",
-        "south indian bank" to "SIB",
-        "dcb bank" to "DCB",
-        "allahabad bank" to "IND",
-        "indian bank" to "IND", "indianbank" to "IND",
-        "state bank" to "SBI",
-        "hdfc" to "HDFC",
-        "icici" to "ICICI",
-        "axis" to "AXIS",
-    )
-    bodyMap.forEach { (kw, code) -> if (lowerBody.contains(kw)) return code }
-    if (SBI_REGEX.containsMatchIn(lowerBody)) return "SBI"
-
+    // Body scan intentionally removed — see function doc above.
     return "Bank"
 }
 

@@ -701,4 +701,54 @@ class SmsParserTest {
         assertNotNull(result)
         assertEquals("EXPENSE", result!!.type)
     }
+
+    // ─── Bank name must come from sender, NOT from body payee mentions ────────
+
+    @Test fun `IDFC First transfer to HDFC — accountRef must be IDFC-based, not HDFC`() {
+        // Reported bug: "Az-IDFCFirstBK-S" was creating "HDFC Bank ·5678" instead of "IDFC First ·5678"
+        val result = SmsParser.parseOffline(
+            "Your Ac x5678 debited Rs.30,000.00 for transfer to My HDFC Ac x1234 " +
+            "dt 08.07.26 Ref 536019608407. If not done by you, call 1800111109. Your IDFCBANK.",
+            "Az-IDFCFirstBK-S"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+        assertEquals(30000.0, result.amount, 0.01)
+        // accountRef should be the DEBIT account (x5678), not the payee account (x1234)
+        assertEquals("5678", result.accountRef)
+        // sender prefix should reflect IDFC, not HDFC
+        assertTrue(
+            "sender/accountRef prefix should be IDFC-based, got: ${result.sender}",
+            result.sender?.uppercase()?.contains("IDFC") == true
+        )
+    }
+
+    @Test fun `SBI debit to ICICI — accountRef must be SBI-based`() {
+        val result = SmsParser.parseOffline(
+            "INR 5000.00 debited from your SBI A/c X1234 to ICICI Ac X5678 via NEFT on 08-Jul-26.",
+            "VM-SBI-S"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+        assertEquals("1234", result.accountRef)
+        assertTrue(
+            "sender should start with SBI, got: ${result.sender}",
+            result.sender?.uppercase()?.startsWith("SBI") == true
+        )
+    }
+
+    @Test fun `HDFC to SBI transfer — accountRef must be HDFC-based`() {
+        val result = SmsParser.parseOffline(
+            "Rs.10,000.00 debited from HDFC Bank A/c XX4321 on 08/07/26. " +
+            "Transfer to SBI Account XX9876. Available Bal Rs.25,000.",
+            "HD-HDFCBK-T"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+        assertEquals("4321", result.accountRef)
+        assertTrue(
+            "sender should start with HDFC, got: ${result.sender}",
+            result.sender?.uppercase()?.startsWith("HDFC") == true
+        )
+    }
 }

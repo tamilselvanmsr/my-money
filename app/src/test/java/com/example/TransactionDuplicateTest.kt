@@ -350,9 +350,8 @@ class TransactionDuplicateTest {
     }
 
     @Test fun `debit SMS with avl balance appended parses as EXPENSE`() {
-        // The parser intentionally does NOT extract availableBalance for EXPENSE transactions —
-        // avl-bal appended after a debit is informational only; balance-sync uses the
-        // INCOME/balance-update path.  Assert the type and amount are correct.
+        // Since v1.88 avlBalance is extracted for ALL transaction types (income + expense)
+        // so the Balance Sync can be created from any debit+balance SMS.
         val result = SmsParser.parseOffline(
             "Rs.500.00 debited from HDFC Bank a/c XX9553 via UPI. Avl Bal Rs.12,000.00",
             "HD-HDFC-T"
@@ -360,7 +359,8 @@ class TransactionDuplicateTest {
         assertNotNull(result)
         assertEquals("EXPENSE", result!!.type)
         assertEquals(500.0, result.amount, 0.01)
-        assertNull("availableBalance is not extracted for EXPENSE type", result.availableBalance)
+        // availableBalance IS now extracted for EXPENSE — enables Balance Sync for debit+bal SMS
+        assertEquals(12000.0, result.availableBalance ?: 0.0, 0.01)
     }
 
     // ── SmsParser: same timestamp, different senders ──────────────────────────

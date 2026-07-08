@@ -1054,7 +1054,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                         ) {
                         // Header (non-interactive label — no min-height needed)
                         Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-                            Text("VIEW", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
+                            Text("PERIOD", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                         }
 
                         val modes = listOf(
@@ -2380,7 +2380,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                             modifier = Modifier.width(180.dp)
                         ) {
                             DropdownMenuItem(
-                                text = { Text("VIEW", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary) },
+                                text = { Text("PERIOD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary) },
                                 onClick = {},
                                 enabled = false,
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp)
@@ -8595,6 +8595,7 @@ fun getAnalyticsRange(monthYear: String, filter: String, anchorTimeMs: Long = -1
     val anchor = if (anchorTimeMs > 0) anchorTimeMs else System.currentTimeMillis()
     // Use the same period logic as Records view so both tabs show identical date ranges
     return when (filter) {
+        "DAILY"   -> getPeriodRange(DisplayMode.DAILY, anchor)
         "WEEKLY"  -> getPeriodRange(DisplayMode.WEEKLY, anchor)
         "MONTHLY" -> getPeriodRange(DisplayMode.MONTHLY, anchor)
         "3M"      -> getPeriodRange(DisplayMode.THREE_MONTHS, anchor)
@@ -8646,6 +8647,7 @@ fun shiftAnalyticsPeriod(viewModel: FinanceViewModel, monthYear: String, timeFil
         }
     }
     when (timeFilter) {
+        "DAILY"  -> cal.add(Calendar.DAY_OF_YEAR, amount)
         "WEEKLY" -> cal.add(Calendar.DAY_OF_YEAR, amount * 7)
         "MONTHLY" -> cal.add(Calendar.MONTH, amount)
         "3M" -> cal.add(Calendar.MONTH, amount * 3)

@@ -2354,6 +2354,19 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
 
+            // Balance Sync: if the SMS also reported an available balance (e.g. "Avl Bal Rs.X")
+            // create a balance snapshot for ANY transaction type (income OR expense).
+            if (enableBalanceSync.value && parsed.availableBalance != null && parsed.accountRef != null) {
+                val balAcc = repository.getAccountByLastFour(parsed.accountRef)
+                    ?: repository.getAccountByRef(parsed.accountRef)
+                    ?: allAccounts.value.find { it.name == walletName }
+                if (balAcc != null && balAcc.type != "CREDIT_CARD") {
+                    val bsTs = targetTime + 1L
+                    val projected = mutableListOf<TransactionEntry>()
+                    createBalanceAdjustIfNeeded(balAcc, parsed.availableBalance!!, bsTs, smsBody, sender, projected)
+                }
+            }
+
             // Update available + total credit limits for CC accounts
             if (parsed.accountRef != null) {
                 val limitAcc = repository.getAccountByRef(parsed.accountRef)

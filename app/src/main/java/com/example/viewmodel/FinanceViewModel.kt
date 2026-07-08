@@ -312,10 +312,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     updatedCount++
                 }
             }
-            _toastMessage.emit(
-                if (updatedCount > 0) "Re-categorized $updatedCount existing record(s) using merchant rules."
-                else "No existing records needed re-categorization."
-            )
+            if (updatedCount > 0) {
+                _toastMessage.emit("Re-categorized $updatedCount existing record(s) using merchant rules.")
+                addNotification("Rules Applied", "Re-categorized $updatedCount record(s) using Merchant → Category rules.")
+            } else {
+                _toastMessage.emit("No existing records needed re-categorization.")
+                addNotification("Rules Applied", "No records updated — all already match current merchant rules.")
+            }
         }
     }
 
@@ -1360,14 +1363,20 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 monthYear = _selectedMonthYear.value
             )
             repository.insertBudget(budget)
-            _toastMessage.emit("Budget set for $categoryDisplayName: ₹$amount")
+            val action = if (existingBudget != null) "updated" else "set"
+            _toastMessage.emit("Budget $action for $categoryDisplayName: ₹$amount")
+            addNotification("Budget ${action.replaceFirstChar { it.uppercase() }}",
+                "$categoryDisplayName budget ${action} to ₹$amount for ${_selectedMonthYear.value}.")
         }
     }
 
     fun deleteBudget(budgetId: Int) {
         viewModelScope.launch {
+            val budget = monthlyBudgets.value.firstOrNull { it.id == budgetId }
             repository.deleteBudget(budgetId)
-            _toastMessage.emit("Budget removed")
+            val catName = budget?.category ?: "category"
+            _toastMessage.emit("Budget removed for $catName")
+            addNotification("Budget Removed", "Budget for '$catName' (${_selectedMonthYear.value}) was removed.")
         }
     }
 
@@ -1394,8 +1403,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     copied++
                 }
             }
-            if (copied > 0) _toastMessage.emit("Copied $copied budget(s) from $prevMonth")
-            else _toastMessage.emit("No new budgets to copy from $prevMonth")
+            if (copied > 0) {
+                _toastMessage.emit("Copied $copied budget(s) from $prevMonth")
+                addNotification("Budgets Copied", "Copied $copied budget(s) from $prevMonth to $currentMonth.")
+            } else {
+                _toastMessage.emit("No new budgets to copy from $prevMonth")
+            }
         }
     }
 
@@ -2190,7 +2203,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         _isSmsParsing.value = false
 
         if (parsed == null) {
-            _toastMessage.emit("Could not parse this SMS. Check the Sender ID and SMS body format.")
+            val reason = "Could not parse this SMS. Check the Sender ID and SMS body format."
+            _toastMessage.emit(reason)
+            addNotification("SMS Import Skipped",
+                "Sender: ${sender.ifBlank { "—" }}\nReason: Parser returned no result (invalid sender or unrecognised format).\nBody: ${smsBody.take(80)}${if (smsBody.length > 80) "…" else ""}")
             return
         }
 
@@ -2245,6 +2261,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val walletName = ensureAccountExists(parsed.accountRef, sender, smsBody)
             if (walletName == null) {
                 _toastMessage.emit("SMS import skipped because this wallet is blocked from tracking.")
+                addNotification("SMS Import Skipped",
+                    "Wallet blocked — ₹${parsed.amount} at ${parsed.title} not imported.\nAccount ref: ${parsed.accountRef ?: "—"}")
                 return
             }
             val potentialDuplicates = repository.getPotentialDuplicates(parsed.amount, parsed.type, targetTime)
@@ -2283,6 +2301,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     }
                 }
                 _toastMessage.emit("Detected potential duplicate transaction of ₹${parsed.amount} at ${parsed.title}. Skipped.")
+                addNotification("SMS Import Skipped",
+                    "Duplicate detected — ₹${parsed.amount} at ${parsed.title} already exists.\nBody: ${smsBody.take(80)}${if (smsBody.length > 80) "…" else ""}")
                 return
             }
 

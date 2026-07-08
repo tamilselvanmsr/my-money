@@ -105,12 +105,34 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
 
             prefs.edit().putLong("last_backup_time", System.currentTimeMillis()).apply()
             Log.i(TAG, "Auto-backup completed: $fileName")
+            addAppNotification("Auto-Backup Completed", "Backup saved: $fileName")
             Result.success()
 
         } catch (e: Exception) {
             Log.e(TAG, "Auto-backup failed: ${e.message}", e)
+            addAppNotification("Auto-Backup Failed", "Backup failed: ${e.message ?: "Unknown error"}")
             Result.failure()
         }
+    }
+
+    /** Writes a notification entry directly into the shared SharedPreferences store used
+     *  by FinanceViewModel, so the bell badge lights up when the user next opens the app. */
+    private fun addAppNotification(title: String, message: String) {
+        try {
+            val p = applicationContext.getSharedPreferences("finance_settings", Context.MODE_PRIVATE)
+            val existing = try {
+                org.json.JSONArray(p.getString("app_notifications_json", "[]") ?: "[]")
+            } catch (_: Exception) { org.json.JSONArray() }
+            val notif = org.json.JSONObject().apply {
+                val now = System.currentTimeMillis()
+                put("id", now); put("title", title); put("message", message)
+                put("timestamp", now); put("isRead", false)
+            }
+            val updated = org.json.JSONArray()
+            updated.put(notif)
+            for (i in 0 until minOf(existing.length(), 199)) updated.put(existing.getJSONObject(i))
+            p.edit().putString("app_notifications_json", updated.toString()).apply()
+        } catch (_: Exception) {}
     }
 }
 

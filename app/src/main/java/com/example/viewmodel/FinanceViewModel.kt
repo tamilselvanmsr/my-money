@@ -2326,7 +2326,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
 
-            _toastMessage.emit("Auto-Tracked Expense: ₹${parsed.amount} at ${parsed.title}")
+            _toastMessage.emit("Auto-Tracked ${if (txType == "INCOME") "Income" else "Expense"}: ₹${parsed.amount} at ${parsed.title}")
     }
 
     // ── CSV Backup / Restore ──────────────────────────────────────────────────

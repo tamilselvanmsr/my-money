@@ -89,11 +89,22 @@ object SmsParser {
         // 7. Amount
         val amount = extractAmount(lowerBody) ?: run { Log.d(TAG, "Excluded: no amount"); return null }
 
-        // 8. Type
-        val type = if (lowerBody.contains("credited") || lowerBody.contains("received") ||
-            lowerBody.contains("deposited") || lowerBody.contains("salary") ||
-            lowerBody.contains("added to your wallet") || lowerBody.contains("refund")
-        ) "INCOME" else "EXPENSE"
+        // 8. Type — check explicit EXPENSE signals FIRST so credit-card "spent on" SMS
+        //    can never be mis-classified as INCOME even if the body mentions "credit"
+        val type = when {
+            lowerBody.contains("debited") ||
+            lowerBody.contains("spent on") ||
+            lowerBody.contains("charged to") ||
+            lowerBody.contains("withdrawn") ||
+            lowerBody.contains("deducted") -> "EXPENSE"
+            lowerBody.contains("credited") ||
+            lowerBody.contains("received") ||
+            lowerBody.contains("deposited") ||
+            lowerBody.contains("salary") ||
+            lowerBody.contains("added to your wallet") ||
+            lowerBody.contains("refund") -> "INCOME"
+            else -> "EXPENSE"
+        }
 
         // 9. Account reference (last 3–4 digits)
         val last4Digits = extractAccountRef(lowerBody) ?: run { Log.d(TAG, "Excluded: no account ref"); return null }

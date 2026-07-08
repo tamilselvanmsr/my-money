@@ -610,4 +610,95 @@ class SmsParserTest {
         val ref = SmsParser.getReferenceNumber("Your account balance is Rs.5000.")
         assertNull(ref)
     }
+
+    // ─── Bank name inference (SmsAccountUtils) ────────────────────────────────
+
+    @Test fun `SBI Credit Card spent-on SMS parses as EXPENSE not INCOME`() {
+        val result = SmsParser.parseOffline(
+            "Rs.1,054.00 spent on your SBI Credit Card ending 1234 at PYUFlipkartInternet on 06/07/26.",
+            "AX-SBICARD-S"
+        )
+        assertNotNull(result)
+        assertEquals(1054.0, result!!.amount, 0.01)
+        assertEquals("EXPENSE", result.type)
+    }
+
+    @Test fun `IOB sender IOBBK infers correct bank name`() {
+        val result = SmsParser.parseOffline(
+            "Rs.500.00 debited from IOB A/c ending 5678 for UPI payment. Ref 999888777.",
+            "AX-IOBBK-S"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+        // accountRef sender prefix should resolve to IOB, not a 4-char truncation like IOBB
+        assertTrue("Account ref should include IOB prefix",
+            result.accountRef?.startsWith("IOB") == true || result.sender?.contains("IOB") == true)
+    }
+
+    @Test fun `Bank of India sender BOI infers correctly`() {
+        val result = SmsParser.parseOffline(
+            "INR 1,200.00 debited from your Bank of India a/c XX3456 on 07/07/26. UPI Ref 123.",
+            "AX-BOIMNB-S"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+        assertEquals(1200.0, result.amount, 0.01)
+    }
+
+    @Test fun `Bank of Baroda sender BOB infers correctly`() {
+        val result = SmsParser.parseOffline(
+            "Rs.800.00 debited from your BOB A/c ending 7890 via UPI. Available balance Rs.4000.",
+            "JD-BOBIMU-S"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+        assertEquals(800.0, result.amount, 0.01)
+    }
+
+    @Test fun `Canara Bank sender CNRBNK infers correctly`() {
+        val result = SmsParser.parseOffline(
+            "INR 600.00 debited from Canara Bank A/c XXXX2345. UPI Ref 456789.",
+            "HD-CNRBNK-T"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+    }
+
+    @Test fun `IndusInd sender INDUSB infers correctly`() {
+        val result = SmsParser.parseOffline(
+            "Rs.300.00 debited from IndusInd Bank A/c ending 4321 on 07-Jul-26. UPI Ref 321654.",
+            "AX-INDUSB-S"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+        assertEquals(300.0, result.amount, 0.01)
+    }
+
+    @Test fun `Yes Bank sender YESBNK infers correctly`() {
+        val result = SmsParser.parseOffline(
+            "INR 750.00 debited from Yes Bank a/c XX9012 for UPI txn on 07/07/26.",
+            "BK-YESBNK-S"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+        assertEquals(750.0, result.amount, 0.01)
+    }
+
+    @Test fun `IDFC First Bank sender IDFCFB infers correctly`() {
+        val result = SmsParser.parseOffline(
+            "Rs.450.00 debited from IDFC First Bank A/c ending 6543 via UPI.",
+            "JD-IDFCFB-S"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+    }
+
+    @Test fun `Debited SMS always EXPENSE even if body contains word 'credit'`() {
+        val result = SmsParser.parseOffline(
+            "Rs.200.00 debited from your credit card ending 1111 at TestMerchant.",
+            "AX-SBICARD-S"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+    }
 }

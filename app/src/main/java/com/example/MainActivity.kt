@@ -2247,7 +2247,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
     var timeFilter by remember { mutableStateOf("MONTHLY") }
     val selectedModeIdx by viewModel.selectedAnalyticsModeIdx.collectAsStateWithLifecycle()
     val selectedMode = AnalyticsMode.entries.getOrElse(selectedModeIdx) { AnalyticsMode.EXPENSE_OVERVIEW }
-    var showModeMenu by remember { mutableStateOf(false) }
+    var showModeMenu by remember { mutableStateOf(false) }  // kept for compat; not used by chip UI
     var showPeriodMenu by remember { mutableStateOf(false) }
 
     // Sync Analytics period with Records view so both tabs show the same window
@@ -2383,85 +2383,31 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                     }
                 }
 
-                OutlinedButton(
-                        onClick = { showModeMenu = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
-                        border = BorderStroke(1.dp, c.divider),
-                        shape = RoundedCornerShape(18.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(horizontalAlignment = Alignment.Start) {
-                                Text(
-                                    text = "Analysis Mode",
-                                    fontSize = 11.sp,
-                                    color = c.textSecondary,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = selectedMode.label,
-                                    fontSize = 15.sp,
-                                    color = c.text,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Icon(
-                                imageVector = if (showModeMenu) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                contentDescription = "Select analysis mode",
-                                tint = c.accent
+                // Analysis mode — scrollable chip row (no popup needed)
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(AnalyticsMode.entries.size) { i ->
+                        val mode = AnalyticsMode.entries[i]
+                        val isSelected = mode == selectedMode
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { viewModel.setSelectedAnalyticsModeIdx(i) },
+                            label = { Text(mode.label, fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = c.accent.copy(alpha = 0.18f),
+                                selectedLabelColor = c.accent,
+                                containerColor = c.divider,
+                                labelColor = c.textSecondary
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true, selected = isSelected,
+                                selectedBorderColor = c.accent.copy(0.4f),
+                                borderColor = c.text.copy(0.1f)
                             )
-                        }
+                        )
                     }
-
-                if (showModeMenu) {
-                    AlertDialog(
-                        onDismissRequest = { showModeMenu = false },
-                        containerColor = c.surface,
-                        title = {
-                            Text("Analysis Mode", fontWeight = FontWeight.Bold, color = c.text)
-                        },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                AnalyticsMode.entries.forEach { mode ->
-                                    val isSelected = mode == selectedMode
-                                    Surface(
-                                        onClick = {
-                                            viewModel.setSelectedAnalyticsModeIdx(AnalyticsMode.entries.indexOf(mode))
-                                            showModeMenu = false
-                                        },
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = if (isSelected) c.accentDim else c.surfaceVariant,
-                                        border = if (isSelected) BorderStroke(1.dp, c.accent.copy(alpha = 0.5f)) else null,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                mode.label,
-                                                color = if (isSelected) c.accent else c.text,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                fontSize = 14.sp
-                                            )
-                                            if (isSelected) Icon(
-                                                Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = c.accent,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        confirmButton = {}
-                    )
                 }
             }
         }
@@ -3700,6 +3646,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
     var showBudgetAmountDialog by remember { mutableStateOf<DisplayCategory?>(null) }
     var showCategoryMenuFor by remember { mutableStateOf<String?>(null) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var showBudgetSettings by remember { mutableStateOf(false) }
     var activeCategoryTypeTab by remember { mutableStateOf("EXPENSE") }
     var categoryOrderKeys by remember(activeCategoryTypeTab) { mutableStateOf<List<String>>(emptyList()) }
     var draggingItemKey by remember { mutableStateOf<String?>(null) }
@@ -3787,22 +3734,59 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         }
                     }
 
-                    Button(
-                        onClick = { showAddCategoryDialog = true },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = c.accent.copy(alpha = 0.15f),
-                            contentColor = c.accent
-                        ),
-                        border = BorderStroke(1.dp, c.accent.copy(alpha = 0.5f)),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                        modifier = Modifier.testTag("add_custom_category_button")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Category", modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add Category", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        IconButton(
+                            onClick = { showBudgetSettings = true },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = "Budget Settings",
+                                tint = c.textSecondary, modifier = Modifier.size(20.dp))
+                        }
+                        Button(
+                            onClick = { showAddCategoryDialog = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = c.accent.copy(alpha = 0.15f),
+                                contentColor = c.accent
+                            ),
+                            border = BorderStroke(1.dp, c.accent.copy(alpha = 0.5f)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            modifier = Modifier.testTag("add_custom_category_button")
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Add Category", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add Category", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
                     }
                 }
             }
+        }
+
+        if (showBudgetSettings) {
+            AlertDialog(
+                onDismissRequest = { showBudgetSettings = false },
+                containerColor = c.surface,
+                title = { Text("Budget Settings", fontWeight = FontWeight.Bold, color = c.text) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(
+                            onClick = { viewModel.copyBudgetsFromPreviousMonth(); showBudgetSettings = false },
+                            shape = RoundedCornerShape(12.dp), color = c.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp))
+                                Text("Copy budgets from last month", color = c.text, fontSize = 14.sp)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = { TextButton(onClick = { showBudgetSettings = false }) { Text("Close", color = c.text) } }
+            )
         }
 
         // Tab Selector for Expense vs Income Categories
@@ -3850,7 +3834,9 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
         val globalBudgetLimit = activeBudgets
             .filter { expenseCatNames.contains(it.category.lowercase()) }
             .sumOf { it.amountLimit }
-        val globalBudgetSpend = monthExpenses.sumOf { it.amount }
+        val globalBudgetSpend = monthExpenses.filter { tx ->
+            budgetCategoryNames.contains(tx.category.lowercase())
+        }.sumOf { it.amount }
         
         if (activeCategoryTypeTab == "EXPENSE" && globalBudgetLimit > 0) {
             item {
@@ -5972,37 +5958,69 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // Category picker
+                    // Category picker — styled clickable surface + rounded dropdown
                     Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedTextField(
-                            value = merchantCategoryInput,
-                            onValueChange = { merchantCategoryInput = it },
-                            label = { Text("Target Category") },
-                            trailingIcon = {
-                                IconButton(onClick = { merchantCategoryDropdownExpanded = !merchantCategoryDropdownExpanded }) {
-                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Color(0xFF7C4DFF))
-                                }
-                            },
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = c.text, unfocusedTextColor = c.text,
-                                focusedBorderColor = Color(0xFF7C4DFF), unfocusedBorderColor = Color(0xFF2D3748),
-                                focusedLabelColor = Color(0xFF7C4DFF), unfocusedLabelColor = c.textSecondary
+                        val selectedCatDisplay = remember(merchantCategoryInput, allMerchantCategoryOptions) {
+                            allMerchantCategoryOptions.firstOrNull { it.first == merchantCategoryInput }?.second
+                        }
+                        Surface(
+                            onClick = { merchantCategoryDropdownExpanded = !merchantCategoryDropdownExpanded },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.Transparent,
+                            border = BorderStroke(
+                                1.dp,
+                                if (merchantCategoryDropdownExpanded) Color(0xFF7C4DFF)
+                                else Color(0xFF2D3748)
                             ),
                             modifier = Modifier.fillMaxWidth()
-                        )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Target Category",
+                                        fontSize = 11.sp,
+                                        color = if (merchantCategoryDropdownExpanded) Color(0xFF7C4DFF) else c.textSecondary
+                                    )
+                                    if (selectedCatDisplay != null) {
+                                        Text(selectedCatDisplay, color = c.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                                Icon(
+                                    imageVector = if (merchantCategoryDropdownExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = null,
+                                    tint = Color(0xFF7C4DFF),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                         DropdownMenu(
                             expanded = merchantCategoryDropdownExpanded,
                             onDismissRequest = { merchantCategoryDropdownExpanded = false },
-                            modifier = Modifier.background(c.border).heightIn(max = 280.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            containerColor = c.surfaceVariant,
+                            shadowElevation = 10.dp,
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp)
                         ) {
                             allMerchantCategoryOptions.forEach { (catName, catDisplay) ->
+                                val isSelected = catName == merchantCategoryInput
                                 DropdownMenuItem(
-                                    text = { Text(catDisplay, fontSize = 13.sp, color = c.text) },
-                                    onClick = {
-                                        merchantCategoryInput = catName
-                                        merchantCategoryDropdownExpanded = false
-                                    }
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(catDisplay, fontSize = 13.sp,
+                                                color = if (isSelected) Color(0xFF7C4DFF) else c.text,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                                            if (isSelected) Icon(Icons.Default.Check, contentDescription = null,
+                                                tint = Color(0xFF7C4DFF), modifier = Modifier.size(14.dp))
+                                        }
+                                    },
+                                    onClick = { merchantCategoryInput = catName; merchantCategoryDropdownExpanded = false }
                                 )
                             }
                         }

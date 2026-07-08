@@ -98,7 +98,7 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
                 } ?: throw Exception("Could not create backup file in chosen folder.")
             } else {
                 val folder = if (customPath.isNotEmpty()) java.io.File(customPath)
-                             else java.io.File(applicationContext.getExternalFilesDir(null), "autoledgerBackups")
+                             else java.io.File(applicationContext.getExternalFilesDir(null), "Backups")
                 folder.mkdirs()
                 java.io.File(folder, fileName).writeText(content, Charsets.UTF_8)
             }

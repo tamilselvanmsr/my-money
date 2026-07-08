@@ -3646,7 +3646,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
     var showBudgetAmountDialog by remember { mutableStateOf<DisplayCategory?>(null) }
     var showCategoryMenuFor by remember { mutableStateOf<String?>(null) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
-    var showBudgetSettings by remember { mutableStateOf(false) }
+    var showBudgetedOnly by remember { mutableStateOf(false) }
     var activeCategoryTypeTab by remember { mutableStateOf("EXPENSE") }
     var categoryOrderKeys by remember(activeCategoryTypeTab) { mutableStateOf<List<String>>(emptyList()) }
     var draggingItemKey by remember { mutableStateOf<String?>(null) }
@@ -3738,12 +3738,19 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        IconButton(
-                            onClick = { showBudgetSettings = true },
+                        FilledTonalIconButton(
+                            onClick = { showBudgetedOnly = !showBudgetedOnly },
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = if (showBudgetedOnly) c.accent.copy(alpha = 0.18f) else c.divider,
+                                contentColor = if (showBudgetedOnly) c.accent else c.textSecondary
+                            ),
                             modifier = Modifier.size(36.dp)
                         ) {
-                            Icon(Icons.Default.Settings, contentDescription = "Budget Settings",
-                                tint = c.textSecondary, modifier = Modifier.size(20.dp))
+                            Icon(
+                                imageVector = if (showBudgetedOnly) Icons.Default.FilterList else Icons.Default.GridView,
+                                contentDescription = if (showBudgetedOnly) "Showing budgeted only" else "Showing all spending",
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                         Button(
                             onClick = { showAddCategoryDialog = true },
@@ -3762,31 +3769,6 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                     }
                 }
             }
-        }
-
-        if (showBudgetSettings) {
-            AlertDialog(
-                onDismissRequest = { showBudgetSettings = false },
-                containerColor = c.surface,
-                title = { Text("Budget Settings", fontWeight = FontWeight.Bold, color = c.text) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Surface(
-                            onClick = { viewModel.copyBudgetsFromPreviousMonth(); showBudgetSettings = false },
-                            shape = RoundedCornerShape(12.dp), color = c.surfaceVariant,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp))
-                                Text("Copy budgets from last month", color = c.text, fontSize = 14.sp)
-                            }
-                        }
-                    }
-                },
-                confirmButton = {},
-                dismissButton = { TextButton(onClick = { showBudgetSettings = false }) { Text("Close", color = c.text) } }
-            )
         }
 
         // Tab Selector for Expense vs Income Categories
@@ -3834,9 +3816,11 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
         val globalBudgetLimit = activeBudgets
             .filter { expenseCatNames.contains(it.category.lowercase()) }
             .sumOf { it.amountLimit }
-        val globalBudgetSpend = monthExpenses.filter { tx ->
-            budgetCategoryNames.contains(tx.category.lowercase())
-        }.sumOf { it.amount }
+        val globalBudgetSpend = if (showBudgetedOnly) {
+            monthExpenses.filter { tx -> budgetCategoryNames.contains(tx.category.lowercase()) }.sumOf { it.amount }
+        } else {
+            monthExpenses.sumOf { it.amount }
+        }
         
         if (activeCategoryTypeTab == "EXPENSE" && globalBudgetLimit > 0) {
             item {
@@ -7667,7 +7651,9 @@ fun BackupDialog(
                                     customBackupPath.isEmpty() -> viewModel.getBackupFolder(false, "").absolutePath
                                     customBackupPath.startsWith("content://") -> {
                                         try {
-                                            val docId = android.net.Uri.parse(customBackupPath).lastPathSegment ?: customBackupPath
+                                            val uri = android.net.Uri.parse(customBackupPath)
+                                            // Use DocumentsContract to get the full document ID (avoids lastPathSegment only returning the last folder)
+                                            val docId = android.provider.DocumentsContract.getTreeDocumentId(uri)
                                             val decoded = java.net.URLDecoder.decode(docId, "UTF-8")
                                             if (decoded.startsWith("primary:")) "/storage/emulated/0/" + decoded.removePrefix("primary:")
                                             else decoded

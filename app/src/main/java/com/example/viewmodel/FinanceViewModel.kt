@@ -977,7 +977,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         return if (customPath.isNotEmpty()) {
             java.io.File(customPath)
         } else {
-            java.io.File(getApplication<Application>().getExternalFilesDir(null), "AutoLedgerBackups")
+            java.io.File(getApplication<Application>().getExternalFilesDir(null), "Backups")
         }
     }
 

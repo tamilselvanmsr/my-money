@@ -144,7 +144,7 @@ object SmsParser {
         // Extract appended available balance for ALL transaction types (income, expense, transfer).
         // Banks often append "Avl Bal Rs.X" or "Available Balance Rs.X" after debit/credit SMS.
         val avlBalance = Pattern.compile(
-            "(?:avl|avail\.?|available)\\s+bal(?:ance)?\\s+(?:inr|rs\.?|\u20b9)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)",
+            "(?:avl|avail\\.?|available)\\s+bal(?:ance)?\\s+(?:inr|rs\\.?|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)",
             Pattern.CASE_INSENSITIVE
         ).let { pat -> val m = pat.matcher(cleanBody); if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null }
 

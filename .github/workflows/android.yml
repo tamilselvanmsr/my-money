@@ -24,8 +24,10 @@ jobs:
       - name: Install Android SDK packages
         run: $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Build with Gradle
-        run: ./gradlew assembleDebug --no-configuration-cache
+      - name: Build APK + Run Unit Tests
+        # Single Gradle invocation: compiled .class files are shared between both tasks.
+        # assembleDebug compiles; testDebugUnitTest reuses those artifacts — no double compile.
+        run: ./gradlew assembleDebug testDebugUnitTest --no-configuration-cache
 
       - name: Rename APK to AutoLedger
         run: mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/AutoLedger-debug.apk
@@ -35,29 +37,6 @@ jobs:
         with:
           name: AutoLedger-debug
           path: app/build/outputs/apk/debug/AutoLedger-debug.apk
-
-  unit-test:
-    runs-on: ubuntu-latest
-    needs: build
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Set up JDK
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: temurin
-          cache: gradle
-
-      - name: Accept Android SDK licenses
-        run: yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
-
-      - name: Install Android SDK packages
-        run: $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Run Unit Tests
-        run: ./gradlew testDebugUnitTest --no-configuration-cache
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v5

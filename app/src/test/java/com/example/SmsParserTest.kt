@@ -829,3 +829,4 @@ class SmsParserTest {
             result == null || result.isBalanceUpdate
         )
     }
+}

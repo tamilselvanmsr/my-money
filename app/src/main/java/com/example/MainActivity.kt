@@ -290,6 +290,11 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     var currentTab by remember { mutableStateOf(AppTab.DASHBOARD) }
     val dashboardListState = rememberLazyListState()
+    // Persistent list states for all tabs — created here so they survive tab switches
+    val analyticsListState  = rememberLazyListState()
+    val budgetsListState    = rememberLazyListState()
+    val accountsListState   = rememberLazyListState()
+    val smsScanListState    = rememberLazyListState()
     val fabAlpha by animateFloatAsState(
         targetValue = if (currentTab == AppTab.DASHBOARD &&
             dashboardListState.canScrollBackward && dashboardListState.canScrollForward) 0f else 1f,
@@ -609,10 +614,10 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             ) { targetTab ->
                 when (targetTab) {
                     AppTab.DASHBOARD -> DashboardScreen(viewModel, dashboardListState)
-                    AppTab.BUDGETS -> BudgetsScreen(viewModel)
-                    AppTab.ANALYTICS -> AnalyticsScreen(viewModel)
-                    AppTab.ACCOUNT -> AccountScreen(viewModel)
-                    AppTab.AUTO_SCAN -> AutoScanHubScreen(viewModel)
+                    AppTab.BUDGETS -> BudgetsScreen(viewModel, budgetsListState)
+                    AppTab.ANALYTICS -> AnalyticsScreen(viewModel, analyticsListState)
+                    AppTab.ACCOUNT -> AccountScreen(viewModel, accountsListState)
+                    AppTab.AUTO_SCAN -> AutoScanHubScreen(viewModel, smsScanListState)
                 }
             }
         }
@@ -1090,8 +1095,8 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("Carry Over Opening Balance", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
-                                        Text("Include prior period balance in totals", fontSize = 9.sp, color = c.textSecondary, maxLines = 1)
+                                        Text("Carry Over Balance", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
+                                        Text("Include prior balance in totals", fontSize = 9.sp, color = c.textSecondary, maxLines = 1)
                                     }
                                     Switch(
                                         checked = carryOverPreviousAmount,
@@ -1118,7 +1123,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("Running Balance", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
-                                        Text("Cumulative wallet total per transaction", fontSize = 9.sp, color = c.textSecondary, maxLines = 1)
+                                        Text("Pet-tx cumulative total", fontSize = 9.sp, color = c.textSecondary, maxLines = 1)
                                     }
                                     Switch(
                                         checked = showRunningBalance,
@@ -2238,7 +2243,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
 
 // 2. ANALYSIS / ANALYTICS SCREEN
 @Composable
-fun AnalyticsScreen(viewModel: FinanceViewModel) {
+fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememberLazyListState()) {
     val c = LocalAppColors.current
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
     val rawMonthYear by viewModel.selectedMonthYear.collectAsStateWithLifecycle()
@@ -2303,6 +2308,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
     }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .testTag("analytics_scroll_column"),
@@ -2376,7 +2382,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                             DropdownMenuItem(
                                 text = { Text("VIEW", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary) },
                                 onClick = {},
-                                enabled = false
+                                enabled = false,
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp)
                             )
                             listOf("DAILY" to "Daily", "WEEKLY" to "Weekly", "MONTHLY" to "Monthly", "3M" to "3 Months", "6M" to "6 Months", "1Y" to "1 Year").forEach { (key, label) ->
                                 DropdownMenuItem(
@@ -2390,7 +2397,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                                             if (timeFilter == key) Icon(Icons.Default.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
                                         }
                                     },
-                                    onClick = { timeFilter = key; showPeriodMenu = false }
+                                    onClick = { timeFilter = key; showPeriodMenu = false },
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
                                 )
                             }
                         }
@@ -2924,39 +2932,15 @@ private fun AnalyticsFlowSection(
                         Text(emptyMessage, color = c.textSecondary, fontSize = 12.sp)
                     }
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        // Chart with overlay tooltip (active point info shown on tap, not fixed above)
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(220.dp)
                         ) {
-                            Text(
-                                text = activePoint?.fullLabel ?: title,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = c.text
-                            )
-                            Surface(
-                                color = accent.copy(alpha = 0.12f),
-                                shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, accent.copy(alpha = 0.4f))
+                            Row(
+                                modifier = Modifier.fillMaxWidth().fillMaxHeight(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Text(
-                                    text = decFormat.format(activeValue),
-                                    color = accent,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                )
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(220.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
                             Column(
                                 modifier = Modifier.fillMaxHeight(),
                                 verticalArrangement = Arrangement.SpaceBetween,
@@ -3038,6 +3022,28 @@ private fun AnalyticsFlowSection(
                                 }
                             }
                         }
+                        // Tooltip overlay: appears on tap, aligned to top of chart
+                        activePoint?.let { point ->
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 6.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = accent.copy(alpha = 0.92f),
+                                shadowElevation = 4.dp
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(point.fullLabel, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("\u00b7", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                                    Text(decFormat.format(activeValue), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                        } // end Box
 
                         Row(
                             modifier = Modifier
@@ -3671,7 +3677,7 @@ val categoryColorsList = listOf(
 
 // 3. BUDGETS SCREEN
 @Composable
-fun BudgetsScreen(viewModel: FinanceViewModel) {
+fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememberLazyListState()) {
     val c = LocalAppColors.current
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
     val rawMonthYear by viewModel.selectedMonthYear.collectAsStateWithLifecycle()
@@ -3717,6 +3723,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
     val decFormat = DecimalFormat("₹#,##0.00")
 
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .testTag("budgets_scroll_column"),
@@ -4740,7 +4747,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
 // 4. ACCOUNTS / WALLETS MANAGEMENT SCREEN
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AccountScreen(viewModel: FinanceViewModel) {
+fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememberLazyListState()) {
     val c = LocalAppColors.current
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
@@ -4776,6 +4783,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
     val totalExpenseSoFar = txs.filter { it.type == "EXPENSE" }.sumOf { it.amount }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .testTag("accounts_scroll_column"),
@@ -5478,7 +5486,7 @@ fun AccountScreen(viewModel: FinanceViewModel) {
 // 5. AUTO-SCAN SMS UTILITY HUB
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AutoScanHubScreen(viewModel: FinanceViewModel) {
+fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = rememberLazyListState()) {
     val c = LocalAppColors.current
     val context = LocalContext.current
     var manualSmsSender by remember { mutableStateOf("") }
@@ -5531,6 +5539,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
     var merchantCategoryInput by remember { mutableStateOf("") }
     var merchantCategoryDropdownExpanded by remember { mutableStateOf(false) }
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .testTag("auto_scan_hub_screen"),
@@ -8652,6 +8661,7 @@ fun formatAnalyticsPeriodLabel(monthYear: String, timeFilter: String, anchorTime
     val startCal = Calendar.getInstance().apply { timeInMillis = startMs }
     val endCal = Calendar.getInstance().apply { timeInMillis = endMs }
     return when (timeFilter) {
+        "DAILY"  -> SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(endCal.time)
         "WEEKLY" -> {
             val sdf = SimpleDateFormat("MMM d", Locale.getDefault())
             val sdfY = SimpleDateFormat("yyyy", Locale.getDefault())

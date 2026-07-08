@@ -3137,8 +3137,8 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
     val yAxisValues = remember(maxActivity) {
         listOf(maxActivity, maxActivity * 0.66, maxActivity * 0.33, 0.0)
     }
-    var activeAccountIndex by remember(accountStats) { mutableStateOf(if (accountStats.isEmpty()) 0 else 0) }
-    val activeAccount = accountStats.getOrNull(activeAccountIndex)
+    var activeAccountIndex by remember(accountStats) { mutableStateOf(-1) }
+    val activeAccount = if (activeAccountIndex >= 0) accountStats.getOrNull(activeAccountIndex) else null
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -3180,7 +3180,9 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                                         detectTapGestures { offset ->
                                             if (accountStats.isNotEmpty()) {
                                                 val slotWidth = size.width / accountStats.size
-                                                activeAccountIndex = (offset.x / slotWidth).toInt().coerceIn(0, accountStats.lastIndex)
+                                                val tapped = (offset.x / slotWidth).toInt().coerceIn(0, accountStats.lastIndex)
+                                                // Tap same bar again to dismiss tooltip
+                                                activeAccountIndex = if (activeAccountIndex == tapped) -1 else tapped
                                             }
                                         }
                                     }
@@ -3209,7 +3211,7 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                                     val incomeY = topPad + chartHeight - ((stats.income / maxActivity) * chartHeight).toFloat()
                                     val expenseY = topPad + chartHeight - ((stats.expense / maxActivity) * chartHeight).toFloat()
                                     val barBottom = topPad + chartHeight
-                                    val barAlpha = if (index == activeAccountIndex) 1f else 0.65f
+                                    val barAlpha = if (activeAccountIndex < 0 || index == activeAccountIndex) 1f else 0.65f
 
                                     if (index == activeAccountIndex) {
                                         drawRoundRect(
@@ -3221,19 +3223,23 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                                     }
 
                                     if (stats.income > 0.0) {
+                                        val barHeight = (barBottom - incomeY).coerceAtLeast(4.dp.toPx())
+                                        val startY = barBottom - barHeight
                                         drawRoundRect(
                                             color = c.income,
-                                            topLeft = Offset(incomeCenterX - barWidth / 2f, incomeY),
-                                            size = Size(barWidth, (barBottom - incomeY).coerceAtLeast(4.dp.toPx())),
+                                            topLeft = Offset(incomeCenterX - barWidth / 2f, startY),
+                                            size = Size(barWidth, barHeight),
                                             cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
                                             alpha = barAlpha
                                         )
                                     }
                                     if (stats.expense > 0.0) {
+                                        val barHeight = (barBottom - expenseY).coerceAtLeast(4.dp.toPx())
+                                        val startY = barBottom - barHeight
                                         drawRoundRect(
                                             color = c.expense,
-                                            topLeft = Offset(expenseCenterX - barWidth / 2f, expenseY),
-                                            size = Size(barWidth, (barBottom - expenseY).coerceAtLeast(4.dp.toPx())),
+                                            topLeft = Offset(expenseCenterX - barWidth / 2f, startY),
+                                            size = Size(barWidth, barHeight),
                                             cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
                                             alpha = barAlpha
                                         )

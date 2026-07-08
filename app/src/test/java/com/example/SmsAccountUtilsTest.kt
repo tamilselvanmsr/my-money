@@ -152,23 +152,23 @@ class SmsAccountUtilsTest {
     // ─── 5. accountRef prefix fallback ────────────────────────────────────────
 
     @Test fun `accountRef HDFC prefix used when sender is generic`() {
-        val result = infer("VM-GENERIC-S", "Some body", accountRef = "HDFC-1234")
+        val result = infer("VM-GENERIC-S", "Some body", ref = "HDFC-1234")
         assertEquals("HDFC", result)
     }
 
     @Test fun `accountRef SBI prefix used when sender is generic`() {
-        val result = infer("JD-UNRECOGNISED-S", "Some body", accountRef = "SBI-5678")
+        val result = infer("JD-UNRECOGNISED-S", "Some body", ref = "SBI-5678")
         assertEquals("SBI", result)
     }
 
     @Test fun `accountRef digits-only is ignored`() {
         // Pure-digit accountRef should not be treated as a bank code
-        val result = infer("VM-BNKMSG-S", "Some body", accountRef = "1234-5678")
+        val result = infer("VM-BNKMSG-S", "Some body", ref = "1234-5678")
         assertEquals("Bank", result)
     }
 
     @Test fun `accountRef BANK is ignored`() {
-        val result = infer("VM-BNKMSG-S", "Some body", accountRef = "BANK-1234")
+        val result = infer("VM-BNKMSG-S", "Some body", ref = "BANK-1234")
         assertEquals("Bank", result)
     }
 

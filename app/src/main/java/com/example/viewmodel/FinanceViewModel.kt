@@ -1035,7 +1035,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val customPath = _customBackupPath.value
                 val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-                val fileName = "autoledger_backup_${sdf.format(Date())}.json"
+                val fileName = "backup_${sdf.format(Date())}.json"
 
                 // Build JSON payload
                 val accArray = JSONArray()

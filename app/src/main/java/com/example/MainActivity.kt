@@ -386,7 +386,8 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                     BadgedBox(
                         badge = {
                             if (unreadCount > 0) Badge(
-                                containerColor = if (c.isDark) Color(0xFFE53935) else c.accent
+                                containerColor = Color(0xFFE53935),
+                                contentColor = Color.White
                             ) {
                                 Text(
                                     if (unreadCount > 99) "99+" else unreadCount.toString(),
@@ -2247,7 +2248,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
     var timeFilter by remember { mutableStateOf("MONTHLY") }
     val selectedModeIdx by viewModel.selectedAnalyticsModeIdx.collectAsStateWithLifecycle()
     val selectedMode = AnalyticsMode.entries.getOrElse(selectedModeIdx) { AnalyticsMode.EXPENSE_OVERVIEW }
-    var showModeMenu by remember { mutableStateOf(false) }  // kept for compat; not used by chip UI
+    var showModeMenu by remember { mutableStateOf(false) }
     var showPeriodMenu by remember { mutableStateOf(false) }
 
     // Sync Analytics period with Records view so both tabs show the same window
@@ -2383,31 +2384,56 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                     }
                 }
 
-                // Analysis mode — wrap-flow chip grid (all visible, no scroll)
-                @OptIn(ExperimentalLayoutApi::class)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    AnalyticsMode.entries.forEachIndexed { i, mode ->
-                        val isSelected = mode == selectedMode
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { viewModel.setSelectedAnalyticsModeIdx(i) },
-                            label = { Text(mode.label, fontSize = 12.sp) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = c.accent.copy(alpha = 0.18f),
-                                selectedLabelColor = c.accent,
-                                containerColor = c.divider,
-                                labelColor = c.textSecondary
-                            ),
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true, selected = isSelected,
-                                selectedBorderColor = c.accent.copy(0.4f),
-                                borderColor = c.text.copy(0.1f)
+                // Analysis mode — compact dropdown button
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { showModeMenu = !showModeMenu },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
+                        border = BorderStroke(1.dp, if (showModeMenu) c.accent else c.divider),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(selectedMode.label, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = c.text)
+                            Icon(
+                                imageVector = if (showModeMenu) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp)
                             )
-                        )
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = showModeMenu,
+                        onDismissRequest = { showModeMenu = false },
+                        shape = RoundedCornerShape(16.dp),
+                        containerColor = c.surface,
+                        shadowElevation = 10.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        AnalyticsMode.entries.forEachIndexed { i, mode ->
+                            val isSelected = mode == selectedMode
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(mode.label,
+                                            color = if (isSelected) c.accent else c.text,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 14.sp)
+                                        if (isSelected) Icon(Icons.Default.Check, contentDescription = null,
+                                            tint = c.accent, modifier = Modifier.size(16.dp))
+                                    }
+                                },
+                                onClick = { viewModel.setSelectedAnalyticsModeIdx(i); showModeMenu = false }
+                            )
+                        }
                     }
                 }
             }
@@ -3176,7 +3202,7 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
 
                                 accountStats.forEachIndexed { index, stats ->
                                     val centerX = slotWidth * index + slotWidth / 2f
-                                    val barWidth = slotWidth * 0.28f
+                                    val barWidth = slotWidth * 0.40f
                                     val gap = slotWidth * 0.05f
                                     val incomeCenterX = centerX - barWidth / 2f - gap / 2f
                                     val expenseCenterX = centerX + barWidth / 2f + gap / 2f
@@ -3248,24 +3274,21 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        // Match y-axis column width using the same text (transparent)
-                        Column(
-                            horizontalAlignment = Alignment.End
-                        ) {
-                            yAxisValues.forEach { value ->
-                                Text(compactCurrency(value), fontSize = 10.sp, color = Color.Transparent)
-                            }
-                        }
+                        // Match y-axis column width using single transparent line (no height bloat)
+                        Text(
+                            text = compactCurrency(yAxisValues.firstOrNull() ?: 0.0),
+                            fontSize = 10.sp,
+                            color = Color.Transparent
+                        )
                         Row(modifier = Modifier.weight(1f)) {
                             accountStats.forEachIndexed { index, stats ->
-                                val maxNameChars = if (accountStats.size >= 5) 3 else 4
                                 Text(
                                     text = run {
                                         val n = stats.accountName
                                         val upper = n.uppercase(java.util.Locale.getDefault())
                                         val isCreditCard = upper.contains("CARD") || upper.contains("CREDIT")
                                         val digits = n.filter { it.isDigit() }.takeLast(2)
-                                        val prefix = n.split(" ").first().take(maxNameChars)
+                                        val prefix = n.split(" ").first().take(4)
                                             .uppercase(java.util.Locale.getDefault())
                                         when {
                                             isCreditCard && digits.isNotEmpty() -> "$prefix $digits"
@@ -5702,9 +5725,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         "Only SMS from senders ending in -S or -T (verified bank/fintech format) are processed — this rule is always enforced.\n" +
                         "Select core keys and/or add custom patterns to filter the SMS body:\n" +
                         "  balance  →  any SMS containing \"balance\"\n" +
-                        "  (Avl bal)  →  exact phrase \"Avl bal\"\n" +
                         "  !(salary)  →  skip SMS containing \"salary\"\n" +
-                        "  !(salary credited)  →  skip SMS containing \"salary credited\"\n" +
                         "Hit \"Scan Inbox with These Rules\" to apply globally.",
                         fontSize = 11.sp,
                         color = c.textSecondary
@@ -7912,7 +7933,7 @@ fun BackupDialog(
                         OutlinedButton(
                             onClick = {
                                 val date = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date())
-                                createDocLauncher.launch("autoledger_backup_$date.csv")
+                                createDocLauncher.launch("exported_backup_$date.csv")
                             },
                             border = BorderStroke(1.dp, c.border),
                             shape = RoundedCornerShape(8.dp),

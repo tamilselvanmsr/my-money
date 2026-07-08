@@ -3664,8 +3664,8 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
     var showBudgetAmountDialog by remember { mutableStateOf<DisplayCategory?>(null) }
     var showCategoryMenuFor by remember { mutableStateOf<String?>(null) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
-    var showBudgetedOnly by remember { mutableStateOf(false) }
-    var activeCategoryTypeTab by remember { mutableStateOf("EXPENSE") }
+    val showBudgetedOnly by viewModel.budgetShowBudgetedOnly.collectAsStateWithLifecycle()
+    val activeCategoryTypeTab by viewModel.budgetCategoryTab.collectAsStateWithLifecycle()
     var categoryOrderKeys by remember(activeCategoryTypeTab) { mutableStateOf<List<String>>(emptyList()) }
     var draggingItemKey by remember { mutableStateOf<String?>(null) }
     var draggingItemOffsetY by remember { mutableStateOf(0f) }
@@ -3757,7 +3757,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         FilledTonalIconButton(
-                            onClick = { showBudgetedOnly = !showBudgetedOnly },
+                            onClick = { viewModel.setBudgetShowBudgetedOnly(!showBudgetedOnly) },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
                                 containerColor = if (showBudgetedOnly) c.accent.copy(alpha = 0.18f) else c.divider,
                                 contentColor = if (showBudgetedOnly) c.accent else c.textSecondary
@@ -3804,7 +3804,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (isExp) c.accent.copy(alpha = 0.15f) else Color.Transparent)
                         .border(1.dp, if (isExp) c.accent else Color.Transparent, RoundedCornerShape(8.dp))
-                        .clickable { activeCategoryTypeTab = "EXPENSE" }
+                        .clickable { viewModel.setBudgetCategoryTab("EXPENSE") }
                         .padding(vertical = 10.dp)
                         .testTag("categories_tab_expense"),
                     contentAlignment = Alignment.Center
@@ -3817,7 +3817,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (!isExp) c.accent.copy(alpha = 0.15f) else Color.Transparent)
                         .border(1.dp, if (!isExp) c.accent else Color.Transparent, RoundedCornerShape(8.dp))
-                        .clickable { activeCategoryTypeTab = "INCOME" }
+                        .clickable { viewModel.setBudgetCategoryTab("INCOME") }
                         .padding(vertical = 10.dp)
                         .testTag("categories_tab_income"),
                     contentAlignment = Alignment.Center

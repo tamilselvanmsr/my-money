@@ -183,6 +183,21 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     val selectedAnalyticsModeIdx: StateFlow<Int> = _selectedAnalyticsModeIdx.asStateFlow()
     fun setSelectedAnalyticsModeIdx(idx: Int) { _selectedAnalyticsModeIdx.value = idx }
 
+    // ── Budgets screen — persist tab + budgeted-only toggle across navigation and restarts ──
+    private val _budgetCategoryTab = MutableStateFlow(prefs.getString("budget_category_tab", "EXPENSE") ?: "EXPENSE")
+    val budgetCategoryTab: StateFlow<String> = _budgetCategoryTab.asStateFlow()
+    fun setBudgetCategoryTab(tab: String) {
+        _budgetCategoryTab.value = tab
+        prefs.edit().putString("budget_category_tab", tab).apply()
+    }
+
+    private val _budgetShowBudgetedOnly = MutableStateFlow(prefs.getBoolean("budget_show_budgeted_only", false))
+    val budgetShowBudgetedOnly: StateFlow<Boolean> = _budgetShowBudgetedOnly.asStateFlow()
+    fun setBudgetShowBudgetedOnly(value: Boolean) {
+        _budgetShowBudgetedOnly.value = value
+        prefs.edit().putBoolean("budget_show_budgeted_only", value).apply()
+    }
+
     // ── Light / Dark theme preference ─────────────────────────────────────────
     // themeMode: "system" (follow device) | "light" | "dark"
     private val _themeMode = MutableStateFlow(prefs.getString("theme_mode", "system") ?: "system")

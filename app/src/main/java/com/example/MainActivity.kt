@@ -8638,7 +8638,7 @@ fun resolveBudgetCategoryName(category: DisplayCategory, editedName: String): St
 
 fun shiftAnalyticsPeriod(viewModel: FinanceViewModel, monthYear: String, timeFilter: String, amount: Int, anchorTimeMs: Long = -1L) {
     val sdf = SimpleDateFormat("yyyy-MM", Locale.getDefault())
-    val cal = if (timeFilter == "WEEKLY" && anchorTimeMs > 0) {
+    val cal = if ((timeFilter == "WEEKLY" || timeFilter == "DAILY") && anchorTimeMs > 0) {
         Calendar.getInstance().apply { timeInMillis = anchorTimeMs }
     } else {
         Calendar.getInstance().apply {

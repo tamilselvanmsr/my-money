@@ -52,7 +52,11 @@ fun isDuplicateImportedTransaction(
     //    can't catch them. If an existing TRANSFER has [To: <account>] matching the incoming
     //    INCOME's account, with the same amount and within a 4-hour window, it's the receiver
     //    leg of that transfer — skip re-insertion.
-    if (incomingType == "INCOME" && existing.type == "TRANSFER") {
+    //    IMPORTANT: only apply this when the TRANSFER was auto-created from SMS (smsBody != null).
+    //    A manually-created TRANSFER to the same account must NOT block a legitimate external
+    //    INCOME arriving to that account (e.g. salary/IMPS to an account that also received an
+    //    internal transfer on the same day).
+    if (incomingType == "INCOME" && existing.type == "TRANSFER" && existing.smsBody != null) {
         if (existing.amount == incomingAmount &&
             existing.note?.contains("[To: $incomingAccountName]") == true &&
             abs(existing.timestamp - incomingTimestamp) < CROSS_BANK_TRANSFER_WINDOW_MS) {

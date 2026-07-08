@@ -740,7 +740,7 @@ class SmsParserTest {
     @Test fun `HDFC to SBI transfer — accountRef must be HDFC-based`() {
         val result = SmsParser.parseOffline(
             "Rs.10,000.00 debited from HDFC Bank A/c XX4321 on 08/07/26. " +
-            "Transfer to SBI Account XX9876. Available Bal Rs.25,000.",
+            "Transfer to SBI Account XX9876. Ref No 123456789.",
             "HD-HDFCBK-T"
         )
         assertNotNull(result)

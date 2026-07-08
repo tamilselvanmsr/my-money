@@ -1049,16 +1049,16 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                         ) {
                         // Header (non-interactive label — no min-height needed)
                         Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-                            Text("DISPLAY MODE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
+                            Text("VIEW", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                         }
 
                         val modes = listOf(
-                            DisplayMode.DAILY to "Daily View",
-                            DisplayMode.WEEKLY to "Weekly View",
-                            DisplayMode.MONTHLY to "Monthly View",
-                            DisplayMode.THREE_MONTHS to "3 Months View",
-                            DisplayMode.SIX_MONTHS to "6 Months View",
-                            DisplayMode.ONE_YEAR to "1 Year View"
+                            DisplayMode.DAILY to "Daily",
+                            DisplayMode.WEEKLY to "Weekly",
+                            DisplayMode.MONTHLY to "Monthly",
+                            DisplayMode.THREE_MONTHS to "3 Months",
+                            DisplayMode.SIX_MONTHS to "6 Months",
+                            DisplayMode.ONE_YEAR to "1 Year"
                         )
 
                         modes.forEach { (mode, label) ->
@@ -1090,8 +1090,8 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("Carry over Balances", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
-                                        Text("Include previous initial totals", fontSize = 9.sp, color = c.textSecondary)
+                                        Text("Carry Over Opening Balance", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
+                                        Text("Include prior period balance in totals", fontSize = 9.sp, color = c.textSecondary, maxLines = 1)
                                     }
                                     Switch(
                                         checked = carryOverPreviousAmount,
@@ -1118,7 +1118,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("Running Balance", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
-                                        Text("Per-tx cumulative total", fontSize = 9.sp, color = c.textSecondary)
+                                        Text("Cumulative wallet total per transaction", fontSize = 9.sp, color = c.textSecondary, maxLines = 1)
                                     }
                                     Switch(
                                         checked = showRunningBalance,
@@ -2251,10 +2251,11 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
     var showModeMenu by remember { mutableStateOf(false) }
     var showPeriodMenu by remember { mutableStateOf(false) }
 
-    // Sync Analytics period with Records view so both tabs show the same window
+    // Records↔Analytics bidirectional period sync
     val activeMode by viewModel.displayMode.collectAsStateWithLifecycle()
     LaunchedEffect(activeMode) {
         timeFilter = when (activeMode) {
+            DisplayMode.DAILY        -> "DAILY"
             DisplayMode.WEEKLY       -> "WEEKLY"
             DisplayMode.MONTHLY      -> "MONTHLY"
             DisplayMode.THREE_MONTHS -> "3M"
@@ -2262,6 +2263,18 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
             DisplayMode.ONE_YEAR     -> "1Y"
             else                     -> "MONTHLY"
         }
+    }
+    LaunchedEffect(timeFilter) {
+        val mode = when (timeFilter) {
+            "DAILY"   -> DisplayMode.DAILY
+            "WEEKLY"  -> DisplayMode.WEEKLY
+            "MONTHLY" -> DisplayMode.MONTHLY
+            "3M"      -> DisplayMode.THREE_MONTHS
+            "6M"      -> DisplayMode.SIX_MONTHS
+            "1Y"      -> DisplayMode.ONE_YEAR
+            else      -> DisplayMode.MONTHLY
+        }
+        if (activeMode != mode) viewModel.setDisplayMode(mode)
     }
     val (analysisStart, analysisEnd) = getAnalyticsRange(rawMonthYear, timeFilter, anchorTime)
 
@@ -2361,11 +2374,11 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                             modifier = Modifier.width(180.dp)
                         ) {
                             DropdownMenuItem(
-                                text = { Text("PERIOD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary) },
+                                text = { Text("VIEW", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary) },
                                 onClick = {},
                                 enabled = false
                             )
-                            listOf("WEEKLY" to "Weekly", "MONTHLY" to "Monthly", "3M" to "3 Months", "6M" to "6 Months", "1Y" to "1 Year").forEach { (key, label) ->
+                            listOf("DAILY" to "Daily", "WEEKLY" to "Weekly", "MONTHLY" to "Monthly", "3M" to "3 Months", "6M" to "6 Months", "1Y" to "1 Year").forEach { (key, label) ->
                                 DropdownMenuItem(
                                     text = {
                                         Row(
@@ -4137,15 +4150,19 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                                             DropdownMenu(
                                                 expanded = showCategoryMenuFor == cat.name,
                                                 onDismissRequest = { showCategoryMenuFor = null },
-                                                containerColor = c.border
+                                                shape = RoundedCornerShape(12.dp),
+                                                containerColor = c.surface,
+                                                shadowElevation = 8.dp
                                             ) {
                                                 DropdownMenuItem(
                                                     text = { Text(if (activeCategoryTypeTab == "INCOME") "Edit Expected Amount" else "Edit Budget", color = c.text, fontSize = 13.sp) },
-                                                    onClick = { showBudgetAmountDialog = cat; showCategoryMenuFor = null }
+                                                    onClick = { showBudgetAmountDialog = cat; showCategoryMenuFor = null },
+                                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                                                 )
                                                 DropdownMenuItem(
                                                     text = { Text("Remove Budget", color = c.expense, fontSize = 13.sp) },
-                                                    onClick = { viewModel.deleteBudget(budgetObj.id); showCategoryMenuFor = null }
+                                                    onClick = { viewModel.deleteBudget(budgetObj.id); showCategoryMenuFor = null },
+                                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                                                 )
                                             }
                                         }
@@ -4450,40 +4467,42 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
 
         AlertDialog(
             onDismissRequest = { showBudgetAmountDialog = null },
+            containerColor = c.surface,
             title = {
-                Text(
-                    if (cat.type == "INCOME") "Set Expected Income" else "Set Budget Limit",
-                    fontWeight = FontWeight.Bold,
-                    color = c.text,
-                    fontSize = 16.sp
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(shape = CircleShape, color = cat.color.copy(alpha = 0.15f), modifier = Modifier.size(40.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(cat.icon, contentDescription = null, tint = cat.color, modifier = Modifier.size(22.dp))
+                        }
+                    }
+                    Column {
+                        Text(
+                            cat.displayName,
+                            fontWeight = FontWeight.Bold, color = c.text, fontSize = 16.sp
+                        )
+                        Text(
+                            if (cat.type == "INCOME") "Expected monthly income" else "Monthly budget limit",
+                            fontSize = 11.sp, color = c.textSecondary
+                        )
+                    }
+                }
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = if (cat.type == "INCOME")
-                            "Set the expected monthly income for ${cat.displayName}"
-                        else
-                            "Set a monthly budget limit for ${cat.displayName}",
-                        fontSize = 12.sp,
-                        color = c.textSecondary
-                    )
-                    OutlinedTextField(
-                        value = budgetValStr,
-                        onValueChange = { budgetValStr = it },
-                        label = { Text(if (cat.type == "INCOME") "Expected Amount (₹)" else "Budget Limit (₹)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = c.text,
-                            unfocusedTextColor = c.text,
-                            focusedBorderColor = c.accent,
-                            focusedLabelColor = c.accent,
-                            unfocusedBorderColor = c.textTertiary,
-                            unfocusedLabelColor = c.textSecondary
-                        ),
-                        modifier = Modifier.fillMaxWidth().testTag("edit_category_budget_field")
-                    )
-                }
+                OutlinedTextField(
+                    value = budgetValStr,
+                    onValueChange = { budgetValStr = it },
+                    label = { Text("₹ Amount") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = c.text,
+                        unfocusedTextColor = c.text,
+                        focusedBorderColor = cat.color,
+                        focusedLabelColor = cat.color,
+                        unfocusedBorderColor = c.textTertiary,
+                        unfocusedLabelColor = c.textSecondary
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("edit_category_budget_field")
+                )
             },
             confirmButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -4502,16 +4521,16 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
                             }
                             showBudgetAmountDialog = null
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
+                        colors = ButtonDefaults.buttonColors(containerColor = cat.color, contentColor = Color.White),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text(if (checkCurrent != null) "Update" else "Set Budget", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(if (checkCurrent != null) "Update" else "Set", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showBudgetAmountDialog = null }) { Text("Cancel", color = c.text) }
-            },
-            containerColor = c.surface
+                TextButton(onClick = { showBudgetAmountDialog = null }) { Text("Cancel", color = c.textSecondary) }
+            }
         )
     }
 

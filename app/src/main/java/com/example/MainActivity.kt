@@ -386,7 +386,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                     BadgedBox(
                         badge = {
                             if (unreadCount > 0) Badge(
-                                containerColor = if (c.isDark) Color(0xFFE53935) else Color(0xFFEF5350).copy(alpha = 0.75f)
+                                containerColor = if (c.isDark) Color(0xFFE53935) else c.accent
                             ) {
                                 Text(
                                     if (unreadCount > 99) "99+" else unreadCount.toString(),
@@ -2383,13 +2383,14 @@ fun AnalyticsScreen(viewModel: FinanceViewModel) {
                     }
                 }
 
-                // Analysis mode — scrollable chip row (no popup needed)
-                LazyRow(
+                // Analysis mode — wrap-flow chip grid (all visible, no scroll)
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(AnalyticsMode.entries.size) { i ->
-                        val mode = AnalyticsMode.entries[i]
+                    AnalyticsMode.entries.forEachIndexed { i, mode ->
                         val isSelected = mode == selectedMode
                         FilterChip(
                             selected = isSelected,
@@ -3122,171 +3123,165 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                         Text("No account activity available for this period.", color = c.textSecondary, fontSize = 12.sp)
                     }
                 } else {
-                    activeAccount?.let { stats ->
-                        Text(
-                            text = stats.accountName,
-                            color = stats.color,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 16.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                    // Chart with compact tooltip overlay (replaces the large header block)
+                    Box(modifier = Modifier.fillMaxWidth()) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Surface(
-                                color = c.income.copy(alpha = 0.12f),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
+                            Column(
+                                modifier = Modifier.fillMaxHeight(),
+                                verticalArrangement = Arrangement.SpaceBetween,
+                                horizontalAlignment = Alignment.End
                             ) {
-                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                                    Text("INCOME", color = c.textSecondary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(compactCurrency(stats.income), color = c.income, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                                yAxisValues.forEach { value ->
+                                    Text(
+                                        text = compactCurrency(value),
+                                        color = c.textSecondary,
+                                        fontSize = 10.sp,
+                                        textAlign = TextAlign.End
+                                    )
                                 }
                             }
-                            Surface(
-                                color = c.expense.copy(alpha = 0.12f),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
+
+                            Canvas(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .pointerInput(accountStats) {
+                                        detectTapGestures { offset ->
+                                            if (accountStats.isNotEmpty()) {
+                                                val slotWidth = size.width / accountStats.size
+                                                activeAccountIndex = (offset.x / slotWidth).toInt().coerceIn(0, accountStats.lastIndex)
+                                            }
+                                        }
+                                    }
                             ) {
-                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                                    Text("EXPENSE", color = c.textSecondary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(compactCurrency(stats.expense), color = c.expense, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                                val topPad = 12.dp.toPx()
+                                val bottomPad = 18.dp.toPx()
+                                val chartHeight = size.height - topPad - bottomPad
+                                val slotWidth = size.width / accountStats.size
+
+                                yAxisValues.forEachIndexed { index, _ ->
+                                    val y = topPad + chartHeight * index / (yAxisValues.lastIndex.coerceAtLeast(1)).toFloat()
+                                    drawLine(
+                                        color = c.divider,
+                                        start = Offset(0f, y),
+                                        end = Offset(size.width, y),
+                                        strokeWidth = 1.dp.toPx()
+                                    )
+                                }
+
+                                accountStats.forEachIndexed { index, stats ->
+                                    val centerX = slotWidth * index + slotWidth / 2f
+                                    val barWidth = slotWidth * 0.28f
+                                    val gap = slotWidth * 0.05f
+                                    val incomeCenterX = centerX - barWidth / 2f - gap / 2f
+                                    val expenseCenterX = centerX + barWidth / 2f + gap / 2f
+                                    val incomeY = topPad + chartHeight - ((stats.income / maxActivity) * chartHeight).toFloat()
+                                    val expenseY = topPad + chartHeight - ((stats.expense / maxActivity) * chartHeight).toFloat()
+                                    val barBottom = topPad + chartHeight
+                                    val barAlpha = if (index == activeAccountIndex) 1f else 0.65f
+
+                                    if (index == activeAccountIndex) {
+                                        drawRoundRect(
+                                            color = c.divider,
+                                            topLeft = Offset(slotWidth * index + 4.dp.toPx(), topPad),
+                                            size = Size(slotWidth - 8.dp.toPx(), chartHeight),
+                                            cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
+                                        )
+                                    }
+
+                                    if (stats.income > 0.0) {
+                                        drawRoundRect(
+                                            color = c.income,
+                                            topLeft = Offset(incomeCenterX - barWidth / 2f, incomeY),
+                                            size = Size(barWidth, (barBottom - incomeY).coerceAtLeast(4.dp.toPx())),
+                                            cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
+                                            alpha = barAlpha
+                                        )
+                                    }
+                                    if (stats.expense > 0.0) {
+                                        drawRoundRect(
+                                            color = c.expense,
+                                            topLeft = Offset(expenseCenterX - barWidth / 2f, expenseY),
+                                            size = Size(barWidth, (barBottom - expenseY).coerceAtLeast(4.dp.toPx())),
+                                            cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
+                                            alpha = barAlpha
+                                        )
+                                    }
                                 }
                             }
+                        }
+
+                        // Compact info tooltip at top-end (appears when a bar is tapped)
+                        activeAccount?.let { stats ->
                             Surface(
-                                color = (if (stats.net >= 0) c.accent else Color(0xFFFF7043)).copy(alpha = 0.12f),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                color = c.surface,
+                                border = BorderStroke(1.dp, stats.color.copy(alpha = 0.5f)),
+                                shadowElevation = 6.dp
                             ) {
-                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                                    Text("NET", color = c.textSecondary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(compactCurrency(stats.net), color = if (stats.net >= 0) c.accent else Color(0xFFFF7043), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(stats.accountName, color = stats.color, fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text("In  ${compactCurrency(stats.income)}", color = c.income, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("Out ${compactCurrency(stats.expense)}", color = c.expense, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("Net ${compactCurrency(stats.net)}",
+                                            color = if (stats.net >= 0) c.accent else Color(0xFFFF7043),
+                                            fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
                                 }
                             }
                         }
                     }
 
+                    // Labels row aligned with bars (invisible y-axis placeholder ensures correct offset)
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(240.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        // Match y-axis column width using the same text (transparent)
                         Column(
-                            modifier = Modifier.fillMaxHeight(),
-                            verticalArrangement = Arrangement.SpaceBetween,
                             horizontalAlignment = Alignment.End
                         ) {
                             yAxisValues.forEach { value ->
-                                Text(
-                                    text = compactCurrency(value),
-                                    color = c.textSecondary,
-                                    fontSize = 10.sp,
-                                    textAlign = TextAlign.End
-                                )
+                                Text(compactCurrency(value), fontSize = 10.sp, color = Color.Transparent)
                             }
                         }
-
-                        Canvas(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .pointerInput(accountStats) {
-                                    detectTapGestures { offset ->
-                                        if (accountStats.isNotEmpty()) {
-                                            val slotWidth = size.width / accountStats.size
-                                            activeAccountIndex = (offset.x / slotWidth).toInt().coerceIn(0, accountStats.lastIndex)
-                                        }
-                                    }
-                                }
-                        ) {
-                            val topPad = 12.dp.toPx()
-                            val bottomPad = 18.dp.toPx()
-                            val chartHeight = size.height - topPad - bottomPad
-                            val slotWidth = size.width / accountStats.size
-
-                            yAxisValues.forEachIndexed { index, _ ->
-                                val y = topPad + chartHeight * index / (yAxisValues.lastIndex.coerceAtLeast(1)).toFloat()
-                                drawLine(
-                                    color = c.divider,
-                                    start = Offset(0f, y),
-                                    end = Offset(size.width, y),
-                                    strokeWidth = 1.dp.toPx()
-                                )
-                            }
-
+                        Row(modifier = Modifier.weight(1f)) {
                             accountStats.forEachIndexed { index, stats ->
-                                val centerX = slotWidth * index + slotWidth / 2f
-                                val barWidth = slotWidth * 0.28f
-                                val gap = slotWidth * 0.05f
-                                val incomeCenterX = centerX - barWidth / 2f - gap / 2f
-                                val expenseCenterX = centerX + barWidth / 2f + gap / 2f
-                                val incomeY = topPad + chartHeight - ((stats.income / maxActivity) * chartHeight).toFloat()
-                                val expenseY = topPad + chartHeight - ((stats.expense / maxActivity) * chartHeight).toFloat()
-                                val barBottom = topPad + chartHeight
-                                val barAlpha = if (index == activeAccountIndex) 1f else 0.65f
-
-                                if (index == activeAccountIndex) {
-                                    drawRoundRect(
-                                        color = c.divider,
-                                        topLeft = Offset(slotWidth * index + 4.dp.toPx(), topPad),
-                                        size = Size(slotWidth - 8.dp.toPx(), chartHeight),
-                                        cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
-                                    )
-                                }
-
-                                if (stats.income > 0.0) {
-                                    drawRoundRect(
-                                        color = c.income,
-                                        topLeft = Offset(incomeCenterX - barWidth / 2f, incomeY),
-                                        size = Size(barWidth, (barBottom - incomeY).coerceAtLeast(4.dp.toPx())),
-                                        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
-                                        alpha = barAlpha
-                                    )
-                                }
-                                if (stats.expense > 0.0) {
-                                    drawRoundRect(
-                                        color = c.expense,
-                                        topLeft = Offset(expenseCenterX - barWidth / 2f, expenseY),
-                                        size = Size(barWidth, (barBottom - expenseY).coerceAtLeast(4.dp.toPx())),
-                                        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
-                                        alpha = barAlpha
-                                    )
-                                }
+                                val maxNameChars = if (accountStats.size >= 5) 3 else 4
+                                Text(
+                                    text = run {
+                                        val n = stats.accountName
+                                        val upper = n.uppercase(java.util.Locale.getDefault())
+                                        val isCreditCard = upper.contains("CARD") || upper.contains("CREDIT")
+                                        val digits = n.filter { it.isDigit() }.takeLast(2)
+                                        val prefix = n.split(" ").first().take(maxNameChars)
+                                            .uppercase(java.util.Locale.getDefault())
+                                        when {
+                                            isCreditCard && digits.isNotEmpty() -> "$prefix $digits"
+                                            isCreditCard -> "$prefix CC"
+                                            else -> prefix
+                                        }
+                                    },
+                                    color = if (index == activeAccountIndex) stats.color else c.textSecondary,
+                                    fontSize = 9.sp,
+                                    fontWeight = if (index == activeAccountIndex) FontWeight.Bold else FontWeight.Medium,
+                                    modifier = Modifier.weight(1f),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        accountStats.forEachIndexed { index, stats ->
-                            val maxNameChars = if (accountStats.size >= 5) 3 else 4
-                            Text(
-                                text = run {
-                                    val n = stats.accountName
-                                    val upper = n.uppercase(java.util.Locale.getDefault())
-                                    val isCreditCard = upper.contains("CARD") || upper.contains("CREDIT")
-                                    val digits = n.filter { it.isDigit() }.takeLast(2)
-                                    val prefix = n.split(" ").first().take(maxNameChars)
-                                        .uppercase(java.util.Locale.getDefault())
-                                    when {
-                                        isCreditCard && digits.isNotEmpty() -> "$prefix $digits"
-                                        isCreditCard                       -> "$prefix CC"
-                                        else                               -> prefix
-                                    }
-                                },
-                                color = if (index == activeAccountIndex) stats.color else c.textSecondary,
-                                fontSize = 9.sp,
-                                fontWeight = if (index == activeAccountIndex) FontWeight.Bold else FontWeight.Medium,
-                                modifier = Modifier.weight(1f),
-                                textAlign = TextAlign.Center,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
                         }
                     }
                 }
@@ -3918,12 +3913,16 @@ fun BudgetsScreen(viewModel: FinanceViewModel) {
         }
 
         if (activeCategoryTypeTab == "INCOME") {
-            val incomeExpectedTotal = activeBudgets
+            val incomeBudgetCatNames = activeBudgets
                 .filter { incomeCatNames.contains(it.category.lowercase()) }
-                .sumOf { it.amountLimit }
+                .map { it.category.lowercase() }.toSet()
+            val incomeExpectedTotal = incomeBudgetCatNames.sumOf { catLower ->
+                activeBudgets.firstOrNull { it.category.lowercase() == catLower }?.amountLimit ?: 0.0
+            }
             val incomeReceivedTotal = txs.filter {
                 val txMonth = sdfMonth.format(Date(it.timestamp))
-                txMonth == rawMonthYear && it.type == "INCOME"
+                txMonth == rawMonthYear && it.type == "INCOME" &&
+                    (!showBudgetedOnly || incomeBudgetCatNames.contains(it.category.lowercase()))
             }.sumOf { it.amount }
             if (incomeExpectedTotal > 0) {
                 item {
@@ -5478,8 +5477,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
     val allMerchantCategoryOptions = remember(customCatsForMerchant) {
         CategoryResolver.getAll(customCatsForMerchant)
             .filter { it.type == "EXPENSE" }
-            .map { it.name to it.displayName }
-            .sortedBy { it.second }
+            .sortedBy { it.displayName }
     }
     var merchantPatternInput by remember { mutableStateOf("") }
     var merchantCategoryInput by remember { mutableStateOf("") }
@@ -5942,69 +5940,67 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel) {
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // Category picker — styled clickable surface + rounded dropdown
+                    // Category picker — OutlinedTextField style with icon + dropdown
                     Box(modifier = Modifier.fillMaxWidth()) {
-                        val selectedCatDisplay = remember(merchantCategoryInput, allMerchantCategoryOptions) {
-                            allMerchantCategoryOptions.firstOrNull { it.first == merchantCategoryInput }?.second
+                        val selectedResolved = remember(merchantCategoryInput, allMerchantCategoryOptions) {
+                            allMerchantCategoryOptions.firstOrNull { it.name == merchantCategoryInput }
                         }
-                        Surface(
-                            onClick = { merchantCategoryDropdownExpanded = !merchantCategoryDropdownExpanded },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.Transparent,
-                            border = BorderStroke(
-                                1.dp,
-                                if (merchantCategoryDropdownExpanded) Color(0xFF7C4DFF)
-                                else Color(0xFF2D3748)
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        "Target Category",
-                                        fontSize = 11.sp,
-                                        color = if (merchantCategoryDropdownExpanded) Color(0xFF7C4DFF) else c.textSecondary
-                                    )
-                                    if (selectedCatDisplay != null) {
-                                        Text(selectedCatDisplay, color = c.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                    }
-                                }
+                        OutlinedTextField(
+                            value = selectedResolved?.displayName ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Target Category") },
+                            leadingIcon = selectedResolved?.let { cat ->
+                                { Icon(cat.icon, contentDescription = null, tint = cat.color, modifier = Modifier.size(18.dp)) }
+                            },
+                            trailingIcon = {
                                 Icon(
                                     imageVector = if (merchantCategoryDropdownExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                    contentDescription = null,
-                                    tint = Color(0xFF7C4DFF),
-                                    modifier = Modifier.size(20.dp)
+                                    contentDescription = null, tint = Color(0xFF7C4DFF), modifier = Modifier.size(22.dp)
                                 )
-                            }
-                        }
+                            },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = c.text, unfocusedTextColor = c.text,
+                                focusedBorderColor = Color(0xFF7C4DFF), unfocusedBorderColor = Color(0xFF2D3748),
+                                focusedLabelColor = Color(0xFF7C4DFF), unfocusedLabelColor = c.textSecondary,
+                                disabledTextColor = c.text, disabledBorderColor = Color(0xFF2D3748),
+                                disabledLabelColor = c.textSecondary,
+                                disabledLeadingIconColor = selectedResolved?.color ?: c.textSecondary,
+                                disabledTrailingIconColor = Color(0xFF7C4DFF)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        // Invisible overlay to intercept taps (readOnly TextField doesn't fire onClick)
+                        Box(modifier = Modifier.matchParentSize().clickable {
+                            merchantCategoryDropdownExpanded = !merchantCategoryDropdownExpanded
+                        })
                         DropdownMenu(
                             expanded = merchantCategoryDropdownExpanded,
                             onDismissRequest = { merchantCategoryDropdownExpanded = false },
                             shape = RoundedCornerShape(16.dp),
                             containerColor = c.surfaceVariant,
                             shadowElevation = 10.dp,
-                            modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp)
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)
                         ) {
-                            allMerchantCategoryOptions.forEach { (catName, catDisplay) ->
-                                val isSelected = catName == merchantCategoryInput
+                            allMerchantCategoryOptions.forEach { cat ->
+                                val isSelected = cat.name == merchantCategoryInput
                                 DropdownMenuItem(
                                     text = {
                                         Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Text(catDisplay, fontSize = 13.sp,
+                                            Icon(cat.icon, contentDescription = null, tint = cat.color, modifier = Modifier.size(16.dp))
+                                            Text(cat.displayName, fontSize = 13.sp, modifier = Modifier.weight(1f),
                                                 color = if (isSelected) Color(0xFF7C4DFF) else c.text,
                                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
                                             if (isSelected) Icon(Icons.Default.Check, contentDescription = null,
                                                 tint = Color(0xFF7C4DFF), modifier = Modifier.size(14.dp))
                                         }
                                     },
-                                    onClick = { merchantCategoryInput = catName; merchantCategoryDropdownExpanded = false }
+                                    onClick = { merchantCategoryInput = cat.name; merchantCategoryDropdownExpanded = false }
                                 )
                             }
                         }

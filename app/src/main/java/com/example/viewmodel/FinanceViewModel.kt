@@ -2203,10 +2203,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         _isSmsParsing.value = false
 
         if (parsed == null) {
-            val reason = "Could not parse this SMS. Check the Sender ID and SMS body format."
-            _toastMessage.emit(reason)
-            addNotification("SMS Import Skipped",
-                "Sender: ${sender.ifBlank { "—" }}\nReason: Parser returned no result (invalid sender or unrecognised format).\nBody: ${smsBody.take(80)}${if (smsBody.length > 80) "…" else ""}")
+            _toastMessage.emit("Could not parse this SMS. Check the Sender ID and SMS body format.")
             return
         }
 

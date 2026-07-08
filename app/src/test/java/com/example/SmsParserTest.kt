@@ -740,7 +740,7 @@ class SmsParserTest {
     @Test fun `HDFC to SBI transfer — accountRef must be HDFC-based`() {
         val result = SmsParser.parseOffline(
             "Rs.10,000.00 debited from HDFC Bank A/c XX4321 on 08/07/26. " +
-            "Transfer to SBI Account XX9876. Ref No 123456789.",
+            "Transfer to SBI Account XX9876. Available Bal Rs.25,000.",
             "HD-HDFCBK-T"
         )
         assertNotNull(result)
@@ -750,5 +750,82 @@ class SmsParserTest {
             "sender should start with HDFC, got: ${result.sender}",
             result.sender?.uppercase()?.startsWith("HDFC") == true
         )
+        // Balance from "Available Bal Rs.25,000" must also be captured
+        assertEquals(25000.0, result.availableBalance ?: 0.0, 0.01)
     }
-}
+
+    // ─── Available-balance extraction for all transaction types ──────────────
+
+    @Test fun `Expense SMS with Available Bal — EXPENSE + balance captured`() {
+        val result = SmsParser.parseOffline(
+            "Your A/c XX7890 debited by Rs.1,500.00 on 08-Jul-26 for UPI payment at Zomato. " +
+            "Avl Bal INR 12,400.50. -SBI",
+            "VM-SBI-S"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+        assertEquals(1500.0, result.amount, 0.01)
+        assertEquals("7890", result.accountRef)
+        // Available balance must be captured (not swallowed by balance-update path)
+        assertEquals(12400.50, result.availableBalance ?: 0.0, 0.01)
+    }
+
+    @Test fun `Income SMS with Available Bal — INCOME + balance captured`() {
+        val result = SmsParser.parseOffline(
+            "Rs.50,000.00 credited to your A/c XX1234 on 08/07/26. " +
+            "Salary from EMPLOYER LTD. Avl Bal Rs.75,000.00.",
+            "VM-SBI-S"
+        )
+        assertNotNull(result)
+        assertEquals("INCOME", result!!.type)
+        assertEquals(50000.0, result.amount, 0.01)
+        assertEquals("1234", result.accountRef)
+        assertEquals(75000.0, result.availableBalance ?: 0.0, 0.01)
+    }
+
+    @Test fun `Transfer debit SMS with Available Bal — EXPENSE + balance captured`() {
+        // Classic bank transfer: debits one account and shows remaining balance
+        val result = SmsParser.parseOffline(
+            "Dear Customer, Rs.30,000.00 debited from A/c x5678 dt 08.07.26. " +
+            "Transferred to ICICI A/c x1234. Available Balance Rs.45,200.00. IDFCBANK.",
+            "Az-IDFCFirstBK-S"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+        assertEquals(30000.0, result.amount, 0.01)
+        assertEquals("5678", result.accountRef)
+        // Sender bank is IDFC, not ICICI (payee)
+        assertTrue(
+            "sender should reflect IDFC, got: ${result.sender}",
+            result.sender?.uppercase()?.contains("IDFC") == true
+        )
+        assertEquals(45200.0, result.availableBalance ?: 0.0, 0.01)
+    }
+
+    @Test fun `Expense debit SMS with Avl Bal inline — EXPENSE type not swallowed`() {
+        // Axis Bank style: debit + inline balance, no payment channel keyword
+        val result = SmsParser.parseOffline(
+            "INR 2,000.00 debited from Axis Bank A/c XX3456 for POS purchase. Avl Bal INR 8,500.00.",
+            "AX-AXIS-T"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+        assertEquals(2000.0, result.amount, 0.01)
+        assertEquals("3456", result.accountRef)
+        assertEquals(8500.0, result.availableBalance ?: 0.0, 0.01)
+    }
+
+    @Test fun `Pure balance SMS without transaction action — parsed as balance update`() {
+        // Only balance info, no debit/credit/transfer → should remain a balance update
+        val result = SmsParser.parseOffline(
+            "Your account balance: A/c XX1234 INR 18,500.00. Available Balance INR 18,500.00.",
+            "HD-HDFC-T",
+            bypassExclusionFilter = true
+        )
+        // Pure balance SMS → either null (filtered) or isBalanceUpdate=true
+        // The key assertion is: it must NOT produce a regular EXPENSE/INCOME transaction
+        assertTrue(
+            "pure balance SMS should be null or isBalanceUpdate",
+            result == null || result.isBalanceUpdate
+        )
+    }

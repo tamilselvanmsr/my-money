@@ -1666,14 +1666,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     repository.updateAccountAvailableLimit(linkedAccount.id, item.parsedAvailableLimit)
                                 }
                             }
-                            // If the income SMS also reported an available balance (e.g. "Avl bal INR 30,210.12"),
-                            // create a Balance Sync snapshot so the balance is not lost.
-                            if (item.tx.type == "INCOME" && item.parsedAvailableBalance != null && item.parsedAccountRef != null) {
-                                val incomeAcct = repository.getAccountByLastFour(item.parsedAccountRef)
-                                if (incomeAcct != null && incomeAcct.type != "CREDIT_CARD") {
+                            // If the SMS also reported an available balance (e.g. "Avl bal INR 30,210.12")
+                            // for ANY transaction type (income or expense), create a Balance Sync snapshot.
+                            if (item.parsedAvailableBalance != null && item.parsedAccountRef != null) {
+                                val txAcct = repository.getAccountByLastFour(item.parsedAccountRef)
+                                if (txAcct != null && txAcct.type != "CREDIT_CARD") {
                                     val bsTs = item.tx.timestamp + 1L
                                     if (createBalanceAdjustIfNeeded(
-                                        incomeAcct, item.parsedAvailableBalance,
+                                        txAcct, item.parsedAvailableBalance,
                                         bsTs,
                                         item.tx.smsBody ?: "", item.tx.smsSender ?: "",
                                         projectedTransactions

@@ -141,12 +141,12 @@ object SmsParser {
 
         // 12. Payee / title
         val title = extractPayeeTitle(cleanBody, lowerBody, body, type, bankName)
-        val avlBalance = if (type == "INCOME") {
-            Pattern.compile(
-                "(?:avl|avail\\.?|available)\\s+bal(?:ance)?\\s+(?:inr|rs\\.?|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)",
-                Pattern.CASE_INSENSITIVE
-            ).let { pat -> val m = pat.matcher(cleanBody); if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null }
-        } else null
+        // Extract appended available balance for ALL transaction types (income, expense, transfer).
+        // Banks often append "Avl Bal Rs.X" or "Available Balance Rs.X" after debit/credit SMS.
+        val avlBalance = Pattern.compile(
+            "(?:avl|avail\.?|available)\\s+bal(?:ance)?\\s+(?:inr|rs\.?|\u20b9)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)",
+            Pattern.CASE_INSENSITIVE
+        ).let { pat -> val m = pat.matcher(cleanBody); if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null }
 
         return SmsParsingResult(
             title = title,
@@ -666,20 +666,17 @@ object SmsParser {
         if (!isBalanceSms) return null
 
         // ── Transaction SMS with appended balance info — NOT a pure balance update ──────
-        // Pattern: "INR X,XX,XXX deposited / credited … for NEFT/IMPS/UPI … Avl bal INR Y,YY,YYY"
-        //          "Received! INR 2,960.00 in HDFC Bank A/c xx1234 … Avl bal INR 15,233.12"
-        // The "Avl bal" here is just post-transaction info shown by the bank, not the
-        // primary content of the SMS.  Let the income / expense parser handle it instead.
+        // Any debit/credit/transfer keyword means this is a real transaction;
+        // the "Avl bal" is just post-transaction info appended by the bank.
+        // Let the main parser handle it — it will extract both the transaction AND the balance.
         val hasTransactionAction = lowerBody.contains("deposited") ||
             lowerBody.contains("credited") ||
             lowerBody.contains("debited") ||
             lowerBody.contains("transferred") ||
-            lowerBody.contains("received")   // e.g. "Received! INR X in A/c … Avl bal INR Y"
-        val hasPaymentChannel = lowerBody.contains("neft") ||
-            lowerBody.contains("imps") ||
-            lowerBody.contains("upi") ||
+            lowerBody.contains("received")
+        if (hasTransactionAction) return null   // ← no longer requires payment channel
             lowerBody.contains("rtgs")
-        if (hasTransactionAction && hasPaymentChannel) return null
+        if (hasTransactionAction) return null   // ← no longer requires payment channel
 
         val allPairs = mutableListOf<Pair<String, Double>>()
 

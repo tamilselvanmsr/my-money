@@ -167,8 +167,7 @@ object SmsParser {
         lower.contains("otp") || lower.contains("one time password") ||
         lower.contains("verification code") || lower.contains("code is") ||
         lower.contains("do not share") || lower.contains("code to verify") ||
-        lower.contains("secure code") || lower.contains("use code") ||
-        lower.contains("verification otp")
+        lower.contains("secure code") || lower.contains("use code")
 
     // Rejects bank-side NEFT/IMPS/RTGS credit confirmations sent to the sender.
     // The user's debit is already recorded; parsing this would create a phantom credit.
@@ -182,21 +181,21 @@ object SmsParser {
         lower.contains("is due on") ||
         (lower.contains("due on") && !lower.contains("credited") && !lower.contains("debited") && !lower.contains("received")) ||
         (lower.contains("due by") && !lower.contains("credited") && !lower.contains("debited")) ||
-        lower.contains("total amt due") || lower.contains("total amount due") ||
-        lower.contains("minimum amt due") || lower.contains("minimum amount due") ||
+        lower.contains("total amt due") ||         // "total amount due" covered by "amount due"
+        lower.contains("minimum amt due") ||       // "minimum amount due" covered by "amount due"
         lower.contains("min amt due") || lower.contains("statement due") ||
         lower.contains("stmt due") || lower.contains("amount due") ||
         lower.contains("due amount") || lower.contains("due :") || lower.contains("due:")
 
     private fun isPaymentRequestSms(lower: String) =
-        lower.contains("has requested you") || lower.contains("requesting money") ||
+        lower.contains("requesting money") ||
         lower.contains("requested money") || lower.contains("request to pay") ||
         lower.contains("pay using link") || lower.contains("collect request") ||
         lower.contains("has requested") || lower.contains("requested to pay")
 
     private fun isPromoOrReminderSms(lower: String): Boolean {
         val isPromo =
-            lower.contains("is due") || lower.contains("payment due") || lower.contains("is due by") ||
+            lower.contains("is due") || lower.contains("payment due") ||  // "is due" covers "is due by"
             lower.contains("reminds you") || lower.contains("reminder:") || lower.contains("pay before") ||
             lower.contains("outstanding") || lower.contains("overdue") ||
             (lower.contains("will be debited") && !lower.contains("autopay") && !lower.contains("auto-pay")) ||
@@ -214,8 +213,8 @@ object SmsParser {
     private fun hasTransactionKeywords(lower: String) =
         lower.contains("debited") || lower.contains("credited") || lower.contains("spent") ||
         lower.contains("paid") || lower.contains("received") || lower.contains("withdrawn") ||
-        lower.contains("withdrew") || lower.contains("deposited") || lower.contains("transferred") ||
-        lower.contains("transfer") || lower.contains("deducted") || lower.contains("charged") ||
+        lower.contains("withdrew") || lower.contains("deposited") ||          // "transferred" covered by "transfer"
+        lower.contains("transfer") || lower.contains("deducted") ||           // "charged" covered by "charge"
         lower.contains("charge") || lower.contains("recharge successful") || lower.contains("salary") ||
         lower.contains("added to your wallet") || lower.contains("txn") || lower.contains("payment") ||
         lower.contains("sent") || lower.contains("refund") || lower.contains("autopay") ||
@@ -674,9 +673,7 @@ object SmsParser {
             lowerBody.contains("debited") ||
             lowerBody.contains("transferred") ||
             lowerBody.contains("received")
-        if (hasTransactionAction) return null   // ← no longer requires payment channel
-            lowerBody.contains("rtgs")
-        if (hasTransactionAction) return null   // ← no longer requires payment channel
+        if (hasTransactionAction) return null
 
         val allPairs = mutableListOf<Pair<String, Double>>()
 

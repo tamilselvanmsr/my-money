@@ -203,6 +203,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Persist user-defined category order for the budget screen (survives restart). */
+    fun saveCategoryOrder(type: String, order: List<String>) {
+        prefs.edit().putString("category_order_$type", order.joinToString(",")).apply()
+    }
+    /** Load the previously saved category order. Returns empty list if none saved. */
+    fun getCategoryOrder(type: String): List<String> =
+        prefs.getString("category_order_$type", null)
+            ?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+
     // SMS Scan range (months back) — persisted across app restarts
     private val _smsScanMonthsBack = MutableStateFlow(prefs.getInt("sms_scan_months_back", 1))
     val smsScanMonthsBack: StateFlow<Int> = _smsScanMonthsBack.asStateFlow()
@@ -642,18 +651,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val list = repository.allTransactions.first()
                 for (tx in list) {
-                    val currentAcc = tx.getAccountName()
-                    if (currentAcc == oldName) {
-                        val noteStr = tx.note ?: ""
-                        val updatedNote = if (noteStr.contains("[Acc: $oldName]")) {
-                            noteStr.replace("[Acc: $oldName]", "[Acc: $newName]")
-                        } else {
-                            if (noteStr.contains("[Acc: ")) {
-                                noteStr.replace("\\[Acc: [^\\]]+\\]".toRegex(), "[Acc: $newName]")
-                            } else {
-                                if (noteStr.isBlank()) "[Acc: $newName]" else "$noteStr [Acc: $newName]"
-                            }
-                        }
+                    val noteStr = tx.note ?: ""
+                    // Update both source [Acc:] and transfer-destination [To:] references
+                    val updatedNote = noteStr
+                        .replace("[Acc: $oldName]", "[Acc: $newName]")
+                        .replace("[To: $oldName]", "[To: $newName]")
+                    if (updatedNote != noteStr) {
                         repository.updateTransaction(tx.copy(note = updatedNote))
                     }
                 }
@@ -1588,7 +1591,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     smsSender = sender,
                                     smsBody = body,
                                     timestamp = targetTime,
-                                    note = "$body [Acc: $walletName]"
+                                    note = "[Acc: $walletName]"
                                 )
                                 pendingPass1.add(PendingTxItem(tx, incomingRef, walletName, parsed.availableLimit, parsed.accountRef, parsed.availableBalance))
                             }
@@ -1871,7 +1874,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 smsSender = sender,
                                 smsBody = body,
                                 timestamp = targetTime,
-                                note = "$body [Acc: $walletName]"
+                                note = "[Acc: $walletName]"
                             )
                             repository.insertTransaction(tx)
                             adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
@@ -1943,7 +1946,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             smsSender = sender,
             smsBody = smsBody,
             timestamp = timestamp,
-            note = "$smsBody [Acc: ${account.name}]"
+            note = "[Acc: ${account.name}]"
         )
         repository.insertTransaction(tx)
         projectedTransactions.add(tx)
@@ -2001,13 +2004,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
             processManualSmsImport(
                 smsBody = cleanBody,
-                parserBody = assistedBody,
+                parserBody = cleanBody,  // use original body — force keys must NOT pollute type detection
                 sender = cleanSender,
-                bypassExclusionFilter = customPatternList.isNotEmpty(),
+                bypassExclusionFilter = true,  // user explicitly chose to import this SMS
                 progressMessage = if (customPatternList.isEmpty()) {
-                    "Analyzing pasted SMS with selected parser keys..."
+                    "Analyzing pasted SMS..."
                 } else {
-                    "Analyzing pasted SMS with selected keys and custom pattern..."
+                    "Analyzing pasted SMS with custom patterns..."
                 }
             )
         }
@@ -2082,33 +2085,34 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             if (isExcluded) continue
                         }
 
-                        // 1. Standard parse
-                        var parsed = com.example.utils.SmsParser.parseOffline(body, sender, smsDate, false)
-
-                        // Check if body explicitly matches a custom pattern (used to decide wallet/PF inclusion)
+                        // Check if body matches any selected/custom pattern FIRST
+                        // When force patterns are configured, ONLY include SMS that match a selected key —
+                        // global INCLUSION_KEYWORDS from SmsFilterUtility are intentionally bypassed here.
                         val lowerBodyForMatch = body.lowercase()
                         val customPatternMatchesBody = allPatterns.isNotEmpty() && allPatterns.any { pattern ->
                             runCatching { Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(body) }
                                 .getOrDefault(lowerBodyForMatch.contains(pattern))
                         }
+                        if (allPatterns.isNotEmpty() && !customPatternMatchesBody) continue
+
+                        // 1. Parse with bypass since we already applied our own inclusion check above
+                        var parsed = com.example.utils.SmsParser.parseOffline(body, sender, smsDate, allPatterns.isNotEmpty())
 
                         // Wallet/PF entries: only import when a custom pattern explicitly matches the body
                         if (parsed != null && isWalletOrPfResult(parsed) && !customPatternMatchesBody) continue
 
-                        // 2. Retry with custom rules if default parse failed and body matches any pattern
-                        if (parsed == null && allPatterns.isNotEmpty()) {
-                            if (customPatternMatchesBody) {
-                                val assistedBody = buildString {
-                                    append(body)
-                                    val helpers = allPatterns.flatMap { p ->
-                                        p.split(Regex("[^A-Za-z0-9@._-]+"))
-                                            .map { it.trim() }
-                                            .filter { it.length > 1 }
-                                    }.distinct()
-                                    if (helpers.isNotEmpty()) { append(' '); append(helpers.joinToString(" ")) }
-                                }
-                                parsed = com.example.utils.SmsParser.parseOffline(assistedBody, sender, smsDate, true)
+                        // 2. Retry with assisted body if default parse failed and body matches a pattern
+                        if (parsed == null && customPatternMatchesBody) {
+                            val assistedBody = buildString {
+                                append(body)
+                                val helpers = allPatterns.flatMap { p ->
+                                    p.split(Regex("[^A-Za-z0-9@._-]+"))
+                                        .map { it.trim() }
+                                        .filter { it.length > 1 }
+                                }.distinct()
+                                if (helpers.isNotEmpty()) { append(' '); append(helpers.joinToString(" ")) }
                             }
+                            parsed = com.example.utils.SmsParser.parseOffline(assistedBody, sender, smsDate, true)
                         }
 
                         if (parsed != null) {
@@ -2173,7 +2177,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     smsSender = sender,
                                     smsBody = body,
                                     timestamp = targetTime,
-                                    note = "$body [Acc: $walletName]"
+                                    note = "[Acc: $walletName]"
                                 )
                                 repository.insertTransaction(tx)
                                 adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
@@ -2355,7 +2359,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     smsSender = sender,
                     smsBody = smsBody,
                     timestamp = targetTime,
-                    note = "$smsBody [Acc: $walletName]"
+                    note = "[Acc: $walletName]"
                 )
                 repository.insertTransaction(tx)
                 adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)

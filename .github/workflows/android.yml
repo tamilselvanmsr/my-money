@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7        # v7 → Node.js 24 native
 
       - name: Set up JDK
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v5.5.0  # v5.5.0 → Node.js 24 native
         with:
           java-version: '21'
           distribution: temurin
@@ -31,7 +31,7 @@ jobs:
         run: mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/AutoLedger-debug.apk
 
       - name: Upload APK            # ← uploaded before tests run; UT failure cannot block this
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6   # v6 → Node.js 24 native
         with:
           name: AutoLedger-debug
           path: app/build/outputs/apk/debug/AutoLedger-debug.apk
@@ -41,7 +41,7 @@ jobs:
         run: ./gradlew testDebugUnitTest --no-configuration-cache
 
       - name: Upload Test Results
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6   # v6 → Node.js 24 native
         if: always()
         with:
           name: unit-test-results

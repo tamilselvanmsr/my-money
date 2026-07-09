@@ -17,8 +17,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -55,8 +59,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -88,6 +94,7 @@ import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.toArgb
 
 // Enum representing the five core tabs mimicking MyMoney
@@ -147,6 +154,25 @@ fun makeNoteWithAccount(plainNote: String?, accountName: String): String {
     // Strip any pre-existing [Acc: ...] tag to avoid double-tagging on re-save
     val clean = (plainNote ?: "").replace("\\s*\\[Acc:[^]]*]".toRegex(), "").trim()
     return if (clean.isEmpty()) "[Acc: $accountName]" else "$clean [Acc: $accountName]"
+}
+
+/** Strips ALL internal metadata tags, returning only the user-written portion of a note. */
+fun userNoteFrom(note: String?): String = (note ?: "")
+    .replace(Regex("\\s*\\[Acc:[^]]*]"), "")
+    .replace(Regex("\\s*\\[To:[^]]*]"), "")
+    .replace(Regex("\\s*\\[T:A]"), "")
+    .replace(Regex("\\s*\\[IncRef:[^]]*]"), "")
+    .trim()
+
+/** Rebuilds the full note for saving: account tag + preserved transfer metadata + user text. */
+fun rebuildNote(userNote: String?, accountName: String, originalNote: String?): String {
+    val withAccount = makeNoteWithAccount(userNote, accountName)
+    val transferTags = buildString {
+        Regex("\\[To:[^]]*]").find(originalNote ?: "")?.value?.let { append(it) }
+        if ((originalNote ?: "").contains("[T:A]")) append("[T:A]")
+        Regex("\\[IncRef:[^]]*]").find(originalNote ?: "")?.value?.let { append(it) }
+    }
+    return if (transferTags.isNotEmpty()) "$withAccount$transferTags" else withAccount
 }
 
 /** Applies the same consolidation rules as getAccountName(consolidate=true) to a raw name string. */
@@ -288,7 +314,13 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     val c = LocalAppColors.current
     val isDarkTheme by viewModel.isDarkTheme.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val smsScanMonthsBack by viewModel.smsScanMonthsBack.collectAsStateWithLifecycle()
     var currentTab by remember { mutableStateOf(AppTab.DASHBOARD) }
+    // Gesture drawing: disabled by default; double-tap title to toggle.
+    var gestureEnabled by remember { mutableStateOf(false) }
+    var titleTapCount by remember { mutableStateOf(0) }
+    val titleTapScope = rememberCoroutineScope()
+    var titleTapJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val dashboardListState = rememberLazyListState()
     // Persistent list states for all tabs — created here so they survive tab switches
     val analyticsListState  = rememberLazyListState()
@@ -380,7 +412,24 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             fontWeight = FontWeight.Bold,
                             fontSize = 20.sp,
                             letterSpacing = 0.5.sp,
-                            color = c.text
+                            color = c.text,
+                            modifier = Modifier.pointerInput(Unit) {
+                                detectTapGestures {
+                                    titleTapCount++
+                                    titleTapJob?.cancel()
+                                    titleTapJob = titleTapScope.launch {
+                                        kotlinx.coroutines.delay(400)
+                                        if (titleTapCount >= 2) {
+                                            gestureEnabled = !gestureEnabled
+                                            val msg = if (gestureEnabled)
+                                                "Gesture actions ON: draw S=Scan ↻=Backup ↺=Restore"
+                                            else "Gesture actions OFF"
+                                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                        }
+                                        titleTapCount = 0
+                                    }
+                                }
+                            }
                         )
                     }
                 },
@@ -599,27 +648,158 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             }
         }
     ) { innerPadding ->
+        val appTabValues = AppTab.values()
+        val pagerState = rememberPagerState(pageCount = { appTabValues.size })
+        // Gesture state — lives here so the pointerInput is on the PARENT Box,
+        // never on a sibling composable placed on top (which would intercept all touches).
+        var gestureStroke by remember { mutableStateOf<List<androidx.compose.ui.geometry.Offset>>(emptyList()) }
+        var gestureLabel by remember { mutableStateOf<String?>(null) }
+        var showGestureRestoreConfirm by remember { mutableStateOf(false) }
+        val gestureScope = rememberCoroutineScope()
+        val availableBackupsForGesture by viewModel.availableBackups.collectAsStateWithLifecycle()
+
+        LaunchedEffect(currentTab) {
+            val idx = appTabValues.indexOf(currentTab)
+            if (pagerState.currentPage != idx) pagerState.scrollToPage(idx)
+        }
+        LaunchedEffect(pagerState.settledPage) {
+            val tab = appTabValues[pagerState.settledPage]
+            if (tab != currentTab) currentTab = tab
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .background(darkBg)
+                // ── Passive gesture observer on the PARENT Box ──────────────
+                // PointerEventPass.Final = we see events AFTER the pager processes them.
+                // We never call consume() so scrolling/tapping/swipe navigation are unaffected.
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val pts = mutableListOf(down.position)
+                        gestureStroke = listOf(down.position)
+                        do {
+                            val event = awaitPointerEvent(PointerEventPass.Final)
+                            event.changes.firstOrNull { it.id == down.id }?.let {
+                                pts.add(it.position)
+                                if (pts.size % 4 == 0) gestureStroke = pts.toList()
+                            }
+                        } while (event.changes.any { it.pressed })
+                        gestureStroke = pts.toList()
+
+                        val gesture = if (gestureEnabled) detectDrawnGesture(pts) else null
+                        if (gesture != null) {
+                            gestureLabel = when (gesture) {
+                                "SCAN"    -> "✦ Scanning Inbox…"
+                                "BACKUP"  -> "✦ Backing Up…"
+                                "RESTORE" -> "✦ Restore Latest Backup?"
+                                else      -> null
+                            }
+                            gestureScope.launch {
+                                kotlinx.coroutines.delay(150)
+                                when (gesture) {
+                                    "SCAN"    -> {
+                                        val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+                                        if (hasPerm) viewModel.scanDeviceSmsInbox(context, smsScanMonthsBack)
+                                    }
+                                    "BACKUP"  -> viewModel.executeBackupNow("Gesture") { _, _ -> }
+                                    "RESTORE" -> {
+                                        viewModel.refreshAvailableBackups()
+                                        showGestureRestoreConfirm = true
+                                    }
+                                }
+                                kotlinx.coroutines.delay(1500)
+                                gestureLabel = null
+                                gestureStroke = emptyList()
+                            }
+                        } else {
+                            gestureScope.launch {
+                                kotlinx.coroutines.delay(250)
+                                gestureStroke = emptyList()
+                            }
+                        }
+                    }
+                }
         ) {
-            AnimatedContent(
-                targetState = currentTab,
-                transitionSpec = {
-                    fadeIn(animationSpec = tween(220)) togetherWith fadeOut(animationSpec = tween(220))
-                },
-                label = "TabTransition"
-            ) { targetTab ->
-                when (targetTab) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = 1,
+                key = { appTabValues[it].name }
+            ) { page ->
+                when (appTabValues[page]) {
                     AppTab.DASHBOARD -> DashboardScreen(viewModel, dashboardListState)
-                    AppTab.BUDGETS -> BudgetsScreen(viewModel, budgetsListState)
+                    AppTab.BUDGETS   -> BudgetsScreen(viewModel, budgetsListState)
                     AppTab.ANALYTICS -> AnalyticsScreen(viewModel, analyticsListState)
-                    AppTab.ACCOUNT -> AccountScreen(viewModel, accountsListState)
+                    AppTab.ACCOUNT   -> AccountScreen(viewModel, accountsListState)
                     AppTab.AUTO_SCAN -> AutoScanHubScreen(viewModel, smsScanListState)
                 }
             }
+
+            // Stroke trail — only visible when gesture mode is enabled
+            val strokeSnap = if (gestureEnabled) gestureStroke else emptyList()
+            if (strokeSnap.size > 1) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val path = Path()
+                    path.moveTo(strokeSnap.first().x, strokeSnap.first().y)
+                    strokeSnap.drop(1).forEach { path.lineTo(it.x, it.y) }
+                    drawPath(path, color = c.accent.copy(alpha = 0.6f),
+                        style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round))
+                }
+            }
+
+            // Gesture action badge
+            gestureLabel?.let { lbl ->
+                Surface(
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
+                    color = c.accent.copy(alpha = 0.92f),
+                    shape = RoundedCornerShape(20.dp),
+                    shadowElevation = 12.dp
+                ) {
+                    Text(lbl, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 14.dp))
+                }
+            }
+        }
+
+        // Gesture-triggered restore: show the latest backup with a confirm prompt
+        if (showGestureRestoreConfirm) {
+            val latestBackup = availableBackupsForGesture.firstOrNull()
+            AlertDialog(
+                onDismissRequest = { showGestureRestoreConfirm = false },
+                containerColor = c.surface,
+                title = { Text("Restore Latest Backup", fontWeight = FontWeight.Bold, color = c.text) },
+                text = {
+                    if (latestBackup == null) {
+                        Text("No backups found.", color = c.textSecondary)
+                    } else {
+                        val sizeStr = when {
+                            latestBackup.sizeBytes >= 1_000_000 -> "${String.format("%.1f", latestBackup.sizeBytes / 1_000_000.0)} MB"
+                            latestBackup.sizeBytes >= 1_000     -> "${String.format("%.1f", latestBackup.sizeBytes / 1_000.0)} KB"
+                            else                                -> "${latestBackup.sizeBytes} B"
+                        }
+                        Text("Restore \"${latestBackup.name}\" ($sizeStr)?\n\nThis will merge backup data into your current records.",
+                            color = c.text.copy(alpha = 0.8f), fontSize = 13.sp)
+                    }
+                },
+                confirmButton = {
+                    if (latestBackup != null) {
+                        Button(
+                            onClick = {
+                                viewModel.executeRestore(latestBackup, false) { _, _ -> }
+                                showGestureRestoreConfirm = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
+                        ) { Text("Restore", fontWeight = FontWeight.Bold) }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showGestureRestoreConfirm = false }) { Text("Cancel", color = c.text) }
+                }
+            )
         }
     }
 
@@ -2255,6 +2435,9 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
     val selectedMode = AnalyticsMode.entries.getOrElse(selectedModeIdx) { AnalyticsMode.EXPENSE_OVERVIEW }
     var showModeMenu by remember { mutableStateOf(false) }
     var showPeriodMenu by remember { mutableStateOf(false) }
+    var categoryDetailItem by remember { mutableStateOf<Pair<DisplayCategorySpend, List<TransactionEntry>>?>(null) }
+    var expandedNotesTxId by remember { mutableStateOf<Int?>(null) }
+    val allAccountsForAnalytics by viewModel.allAccounts.collectAsStateWithLifecycle()
 
     // Records↔Analytics bidirectional period sync
     val activeMode by viewModel.displayMode.collectAsStateWithLifecycle()
@@ -2469,7 +2652,11 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         totalLabel = "Total Spent",
                         breakdownLabel = "CATEGORY WISE BREAKDOWN",
                         percentSuffix = "of expenses",
-                        emptyMessage = "No expense data available for this period."
+                        emptyMessage = "No expense data available for this period.",
+                        onCategoryTap = { cat ->
+                            val txs = overviewTransactions.filter { it.category.equals(cat.category.name, ignoreCase = true) }
+                            categoryDetailItem = cat to txs
+                        }
                     )
                 }
             }
@@ -2482,7 +2669,11 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         totalLabel = "Total Received",
                         breakdownLabel = "INCOME BREAKDOWN",
                         percentSuffix = "of income",
-                        emptyMessage = "No income data available for this period."
+                        emptyMessage = "No income data available for this period.",
+                        onCategoryTap = { cat ->
+                            val txs = overviewTransactions.filter { it.category.equals(cat.category.name, ignoreCase = true) }
+                            categoryDetailItem = cat to txs
+                        }
                     )
                 }
             }
@@ -2517,6 +2708,100 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                 }
             }
         }
+    }
+
+    // Category detail dialog
+    categoryDetailItem?.let { (cat, txList) ->
+        val decFormat = remember { DecimalFormat("₹#,##0.00") }
+        val sdf = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
+        AlertDialog(
+            onDismissRequest = { categoryDetailItem = null; expandedNotesTxId = null },
+            containerColor = c.surface,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(shape = CircleShape, color = cat.category.color.copy(alpha = 0.15f), modifier = Modifier.size(40.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(cat.category.icon, contentDescription = null, tint = cat.category.color, modifier = Modifier.size(22.dp))
+                        }
+                    }
+                    Column {
+                        Text(cat.category.displayName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text)
+                        Text(decFormat.format(cat.total), fontSize = 13.sp, color = cat.category.color, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            },
+            text = {
+                if (txList.isEmpty()) {
+                    Text("No transactions in this period.", color = c.textSecondary, fontSize = 13.sp)
+                } else {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        txList.sortedByDescending { it.timestamp }.forEach { tx ->
+                            val accountName = tx.getAccountName()
+                            val acctType = allAccountsForAnalytics.find { it.name == accountName }?.type ?: ""
+                            val acctColor = when (acctType) {
+                                "CASH"        -> c.income
+                                "BANK"        -> Color(0xFF3B82F6)
+                                "CREDIT_CARD" -> c.expense
+                                "WALLET"      -> Color(0xFFFF9800)
+                                else          -> c.textSecondary
+                            }
+                            val userNote = userNoteFrom(tx.note)
+                            val hasNote = userNote.isNotBlank()
+                            val isExpanded = expandedNotesTxId == tx.id
+                            Surface(
+                                color = if (isExpanded) acctColor.copy(alpha = 0.06f) else c.divider,
+                                shape = RoundedCornerShape(10.dp),
+                                border = if (isExpanded) BorderStroke(1.dp, acctColor.copy(alpha = 0.3f)) else null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .then(if (hasNote) Modifier.clickable {
+                                        expandedNotesTxId = if (isExpanded) null else tx.id
+                                    } else Modifier)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // Left: title + account chip
+                                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                            Text(tx.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Surface(color = acctColor.copy(alpha = 0.12f), shape = RoundedCornerShape(4.dp)) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Icon(walletIconFor(accountName, acctType.ifEmpty { null }), contentDescription = null, tint = acctColor, modifier = Modifier.size(10.dp))
+                                                        Text(accountName, fontSize = 9.sp, color = acctColor, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    }
+                                                }
+                                                if (hasNote) Icon(Icons.Default.Notes, contentDescription = "Has note", tint = c.textTertiary, modifier = Modifier.size(10.dp))
+                                            }
+                                        }
+                                        // Right: amount + time
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(decFormat.format(tx.amount), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = cat.category.color)
+                                            Text(sdf.format(java.util.Date(tx.timestamp)), fontSize = 10.sp, color = c.textSecondary)
+                                        }
+                                    }
+                                    // Expanded notes section
+                                    if (isExpanded && hasNote) {
+                                        Spacer(Modifier.height(6.dp))
+                                        HorizontalDivider(color = acctColor.copy(alpha = 0.2f))
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(userNote, fontSize = 11.sp, color = c.text.copy(alpha = 0.85f), fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { categoryDetailItem = null; expandedNotesTxId = null }) { Text("Close", color = c.accent) } }
+        )
     }
 }
 
@@ -2559,7 +2844,8 @@ private fun AnalyticsOverviewSection(
     totalLabel: String,
     breakdownLabel: String,
     percentSuffix: String,
-    emptyMessage: String
+    emptyMessage: String,
+    onCategoryTap: ((DisplayCategorySpend) -> Unit)? = null
 ) {
     val c = LocalAppColors.current
     var activeSectorIndex by remember(categoryTotals, totalLabel) { mutableStateOf(-1) }
@@ -2802,6 +3088,7 @@ private fun AnalyticsOverviewSection(
                         .fillMaxWidth()
                         .clickable {
                             activeSectorIndex = if (activeSectorIndex == idx) -1 else idx
+                            onCategoryTap?.invoke(stats)
                         }
                 ) {
                     Row(
@@ -2961,15 +3248,25 @@ private fun AnalyticsFlowSection(
                                     .weight(1f)
                                     .fillMaxHeight()
                                     .pointerInput(points, pointValues) {
-                                        detectTapGestures { offset ->
-                                            if (points.isNotEmpty()) {
-                                                val index = if (points.size == 1) {
-                                                    0
-                                                } else {
-                                                    ((offset.x / size.width) * (points.size - 1)).toInt().coerceIn(0, points.lastIndex)
+                                        // Respond immediately on press AND during drag
+                                        // so every part of the canvas (start/end/middle) is responsive
+                                        awaitEachGesture {
+                                            val down = awaitFirstDown(requireUnconsumed = false)
+                                            fun selectAt(x: Float) {
+                                                if (points.isNotEmpty()) {
+                                                    activePointIndex = if (points.size == 1) 0
+                                                    else ((x / size.width) * (points.size - 1))
+                                                        .toInt().coerceIn(0, points.lastIndex)
                                                 }
-                                                activePointIndex = index
                                             }
+                                            selectAt(down.position.x)
+                                            do {
+                                                val event = awaitPointerEvent()
+                                                event.changes.firstOrNull { it.id == down.id }?.let {
+                                                    it.consume()
+                                                    selectAt(it.position.x)
+                                                }
+                                            } while (event.changes.any { it.pressed })
                                         }
                                     }
                             ) {
@@ -3714,9 +4011,21 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     if (categoryOrderKeys.isEmpty() ||
         categoryOrderKeys.any { key -> baseCategories.none { it.name == key } } ||
         baseCategories.any { cat -> cat.name !in categoryOrderKeys }) {
-        val withBudget = baseCategories.filter { budgetCategoryNames.contains(it.name.lowercase()) }.sortedBy { it.displayName }
-        val withoutBudget = baseCategories.filter { !budgetCategoryNames.contains(it.name.lowercase()) }.sortedBy { it.displayName }
-        categoryOrderKeys = (withBudget + withoutBudget).map { it.name }
+        // Restore persisted order; merge in any new categories at the end
+        val saved = viewModel.getCategoryOrder(activeCategoryTypeTab)
+        val validSaved = saved.filter { key -> baseCategories.any { it.name == key } }
+        val missing = baseCategories.map { it.name }.filter { it !in validSaved }
+        categoryOrderKeys = if (validSaved.isNotEmpty()) validSaved + missing
+        else {
+            val withBudget = baseCategories.filter { budgetCategoryNames.contains(it.name.lowercase()) }.sortedBy { it.displayName }
+            val withoutBudget = baseCategories.filter { !budgetCategoryNames.contains(it.name.lowercase()) }.sortedBy { it.displayName }
+            (withBudget + withoutBudget).map { it.name }
+        }
+    }
+
+    // Auto-save order whenever it changes
+    LaunchedEffect(categoryOrderKeys, activeCategoryTypeTab) {
+        if (categoryOrderKeys.isNotEmpty()) viewModel.saveCategoryOrder(activeCategoryTypeTab, categoryOrderKeys)
     }
     val lookup = baseCategories.associateBy { it.name }
     val standardCategoriesList = categoryOrderKeys.mapNotNull { lookup[it] }
@@ -4093,7 +4402,11 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     )
                 }
                 budgetedCats.forEach { cat ->
+                    // key() tells Compose to track this composable by cat.name (not list position).
+                    // Without this, reordering resets the pointerInput coroutine, breaking multi-step drag.
+                    key(cat.name) {
                     val isDragging = draggingItemKey == cat.name
+                    val dragOffsetDp = with(LocalDensity.current) { draggingItemOffsetY.toDp() }
                     val budgetObj = activeBudgets.first { it.category.equals(cat.name, ignoreCase = true) }
                     val catSpend = if (activeCategoryTypeTab == "EXPENSE") {
                         monthExpenses.filter { it.category.equals(cat.name, ignoreCase = true) }.sumOf { it.amount }
@@ -4112,25 +4425,41 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         color = if (isDragging) Color(0xFF1E3048) else c.surface,
                         shape = RoundedCornerShape(16.dp),
                         border = BorderStroke(1.dp, if (isDragging) cat.color else cat.color.copy(alpha = 0.45f)),
-                        modifier = Modifier.fillMaxWidth().pointerInput(cat.name) {
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .offset(y = if (isDragging) dragOffsetDp else 0.dp)
+                            .scale(if (isDragging) 1.02f else 1f)
+                            .pointerInput(cat.name) {
                             detectDragGesturesAfterLongPress(
                                 onDragStart = { _ -> draggingItemKey = cat.name; draggingItemOffsetY = 0f },
-                                onDragEnd = { draggingItemKey = null; draggingItemOffsetY = 0f },
+                                onDragEnd = {
+                                    draggingItemKey = null
+                                    draggingItemOffsetY = 0f
+                                    viewModel.saveCategoryOrder(activeCategoryTypeTab, categoryOrderKeys)
+                                },
                                 onDragCancel = { draggingItemKey = null; draggingItemOffsetY = 0f },
                                 onDrag = { _, dragAmount ->
                                     val currentKey = draggingItemKey ?: return@detectDragGesturesAfterLongPress
                                     draggingItemOffsetY += dragAmount.y
                                     val currentIndex = categoryOrderKeys.indexOf(currentKey)
                                     if (currentIndex == -1) return@detectDragGesturesAfterLongPress
-                                    val itemHeight = size.height.toFloat().coerceAtLeast(1f)
-                                    val steps = (draggingItemOffsetY / itemHeight).roundToInt()
-                                    val targetIndex = (currentIndex + steps).coerceIn(0, categoryOrderKeys.lastIndex)
-                                    if (targetIndex != currentIndex) {
+                                    // Fixed 40dp threshold: swap each 40dp of drag, reset by 2×threshold.
+                                    // Using size.height caused "one step" bug: after reset offset = -size.height/2,
+                                    // requiring a full item height drag to trigger next swap.
+                                    val thresholdPx = 40.dp.toPx()
+                                    // Swap with next when dragged down
+                                    if (draggingItemOffsetY > thresholdPx && currentIndex < categoryOrderKeys.lastIndex) {
                                         val newOrder = categoryOrderKeys.toMutableList()
-                                        val moved = newOrder.removeAt(currentIndex)
-                                        newOrder.add(targetIndex, moved)
+                                        newOrder.add(currentIndex + 1, newOrder.removeAt(currentIndex))
                                         categoryOrderKeys = newOrder
-                                        draggingItemOffsetY -= (targetIndex - currentIndex) * itemHeight
+                                        draggingItemOffsetY -= thresholdPx * 2f
+                                    }
+                                    // Swap with previous when dragged up
+                                    else if (draggingItemOffsetY < -thresholdPx && currentIndex > 0) {
+                                        val newOrder = categoryOrderKeys.toMutableList()
+                                        newOrder.add(currentIndex - 1, newOrder.removeAt(currentIndex))
+                                        categoryOrderKeys = newOrder
+                                        draggingItemOffsetY += thresholdPx * 2f
                                     }
                                 }
                             )
@@ -4198,7 +4527,8 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 }
                             }
                         }
-                    }
+                    } // end Surface
+                    } // end key(cat.name)
                 }
                 if (unbudgetedCats.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(4.dp))
@@ -6150,11 +6480,17 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                     // EXCLUSION keywords (SmsFilterUtility hard-rejects)
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("AUTO-REJECT if body contains:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.expense)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("due", "emi", "loan", "otp", "mandate", "load", "eligibility", "apply", "approved").forEach { kw ->
-                                Surface(color = c.expense.copy(alpha = 0.12f), shape = RoundedCornerShape(6.dp)) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            maxItemsInEachRow = 5,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            listOf("due", "emi", "otp", "load", "apply", "loan", "eligibility", "mandate", "approved").forEach { kw ->
+                                Surface(color = c.expense.copy(alpha = 0.12f), shape = RoundedCornerShape(6.dp), modifier = Modifier.weight(1f)) {
                                     Text(kw, fontSize = 10.sp, color = c.expense, fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                                        softWrap = false, textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp))
                                 }
                             }
                         }
@@ -6163,14 +6499,46 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                     // OTP / promo exclusions from SmsParser
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("ALSO REJECTED (OTP / Promo / Reminder):", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF9800))
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("one time password", "verification code", "do not share", "is due", "payment due", "reminder:",
-                                "pay before", "outstanding", "will be debited", "scheduled transfer", "pre-approved",
-                                "apply now", "earn cashback", "requesting money", "total amt due", "minimum amt due",
-                                "amount due", "stmt due").forEach { kw ->
-                                Surface(color = Color(0xFFFF9800).copy(alpha = 0.1f), shape = RoundedCornerShape(6.dp)) {
-                                    Text(kw, fontSize = 9.sp, color = Color(0xFFFF9800), fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
+                        val otpItems = listOf(
+                            "reminder:", "pay before", "outstanding", "do not share", "earn cashback",
+                            "will be debited", "requesting money",
+                            "one time password", "verification code", "scheduled transfer"
+                        ) // sorted shortest → longest; items covered by AUTO-REJECT keywords removed
+                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                            val W = maxWidth.value
+                            val estCharW = 5.5f  // conservative: 9sp ≈ 5.5dp/char
+                            val estPad = 10f     // 5dp each side
+                            val gap = 4f
+
+                            // Weight-aware greedy: each row gives equal width to all N chips.
+                            // The LONGEST item in the row determines the minimum chip width.
+                            // Constraint: (W - (N-1)*gap) / N  >=  longestLen * estCharW + estPad
+                            val chipRows = mutableListOf<List<String>>()
+                            var rowStart = 0
+                            while (rowStart < otpItems.size) {
+                                var rowEnd = rowStart
+                                while (rowEnd + 1 < otpItems.size) {
+                                    val newEnd = rowEnd + 1
+                                    val n = newEnd - rowStart + 1
+                                    val longestLen = otpItems[newEnd].length // sorted asc → last is longest
+                                    val chipW = (W - (n - 1) * gap) / n
+                                    if (chipW >= longestLen * estCharW + estPad) rowEnd = newEnd else break
+                                }
+                                chipRows.add(otpItems.subList(rowStart, rowEnd + 1))
+                                rowStart = rowEnd + 1
+                            }
+
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                chipRows.forEach { rowItems ->
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        rowItems.forEach { kw ->
+                                            Surface(color = Color(0xFFFF9800).copy(alpha = 0.1f), shape = RoundedCornerShape(4.dp), modifier = Modifier.weight(1f)) {
+                                                Text(kw, fontSize = 9.sp, color = Color(0xFFFF9800), fontWeight = FontWeight.SemiBold,
+                                                    softWrap = false, textAlign = TextAlign.Center,
+                                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 3.dp))
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -6179,12 +6547,19 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                     // REQUIRED inclusion keywords
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("REQUIRED — must contain at least one:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.income)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("debited", "credited", "spent", "received", "deducted", "sent", "paid", "withdrawn",
-                                "transfer", "payment", "charge", "txn", "salary", "refund", "deposited", "autopay").forEach { kw ->
-                                Surface(color = c.income.copy(alpha = 0.1f), shape = RoundedCornerShape(6.dp)) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            maxItemsInEachRow = 4,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            listOf("debited", "credited", "spent", "received", "deducted", "sent", "paid",
+                                "withdrawn", "transfer", "payment", "charge", "txn", "salary",
+                                "refund", "deposited", "autopay").forEach { kw ->
+                                Surface(color = c.income.copy(alpha = 0.1f), shape = RoundedCornerShape(6.dp), modifier = Modifier.weight(1f)) {
                                     Text(kw, fontSize = 10.sp, color = c.income, fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                                        softWrap = false, textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp))
                                 }
                             }
                         }
@@ -6661,18 +7036,10 @@ fun EditTransactionDialog(
     }
     var accountSelection by remember { mutableStateOf(tx.getAccountName()) }
     var notesStr by remember {
-        val rawNote = (tx.note ?: "").replace("\\s*\\[Acc:[^]]*]".toRegex(), "").trim()
-        // For TRANSFER entries show [To: ...] on the first line, then the SMS body below
-        val displayNote = if (tx.type == "TRANSFER") {
-            val toMatch = Regex("\\[To:[^]]+]").find(rawNote)
-            if (toMatch != null) {
-                val toTag = toMatch.value.trim()
-                val rest = rawNote.removeRange(toMatch.range).trim()
-                if (rest.isEmpty()) toTag else "$toTag\n$rest"
-            } else rawNote
-        } else rawNote
-        mutableStateOf(displayNote)
+        // Show only user-written content — all internal tags ([Acc:], [To:], [T:A], [IncRef:]) stripped
+        mutableStateOf(userNoteFrom(tx.note))
     }
+    var showSmsBody by remember { mutableStateOf(false) }
     var selectedTimestamp by remember { mutableStateOf(tx.timestamp) }
     var showWalletPicker by remember { mutableStateOf(false) }
     var showCategoryPicker by remember { mutableStateOf(false) }
@@ -6779,12 +7146,53 @@ fun EditTransactionDialog(
                 OutlinedTextField(
                     value = notesStr,
                     onValueChange = { notesStr = it },
-                    label = { Text("Details note (Optional)") },
+                    label = { Text("Note (Optional)") },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // SMS Body — hidden by default, tap to reveal
+                if (!tx.smsBody.isNullOrBlank()) {
+                    Surface(
+                        onClick = { showSmsBody = !showSmsBody },
+                        shape = RoundedCornerShape(8.dp),
+                        color = c.surfaceVariant,
+                        border = BorderStroke(1.dp, c.divider),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "SMS Body",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = c.textSecondary
+                                )
+                                Icon(
+                                    if (showSmsBody) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = null,
+                                    tint = c.textSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            if (showSmsBody) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    tx.smsBody ?: "",
+                                    fontSize = 11.sp,
+                                    color = c.textSecondary,
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+                    }
+                }
 
                 // Apply-to-all-payees toggle (opt-in, only for EXPENSE/INCOME when category is not OTHERS)
                 if (!isNoCategoryType && title.isNotBlank() && !categorySelection.equals("OTHERS", ignoreCase = true)) {
@@ -6832,7 +7240,8 @@ fun EditTransactionDialog(
                                     category = categorySelection,
                                     type = editType,
                                     timestamp = selectedTimestamp,
-                                    note = makeNoteWithAccount(notesStr, accountSelection)
+                                    // Preserve [To:][T:A][IncRef:] tags while applying user note + account tag
+                                    note = rebuildNote(notesStr.ifBlank { null }, accountSelection, tx.note)
                                 ),
                                 applyToAllPayees
                             )
@@ -7703,7 +8112,6 @@ fun BackupDialog(
                                     customBackupPath.startsWith("content://") -> {
                                         try {
                                             val uri = android.net.Uri.parse(customBackupPath)
-                                            // Use DocumentsContract to get the full document ID (avoids lastPathSegment only returning the last folder)
                                             val docId = android.provider.DocumentsContract.getTreeDocumentId(uri)
                                             val decoded = java.net.URLDecoder.decode(docId, "UTF-8")
                                             if (decoded.startsWith("primary:")) "/storage/emulated/0/" + decoded.removePrefix("primary:")
@@ -7712,8 +8120,12 @@ fun BackupDialog(
                                     }
                                     else -> customBackupPath
                                 }
+                                // Display path: strip the internal /storage/emulated/0 prefix and leading slash
+                                val displayPath = currentPath.removePrefix("/storage/emulated/0")
+                                    .trimStart('/')
+                                    .let { if (it.isEmpty()) "Internal Storage" else it }
                                     Text(
-                                        currentPath,
+                                        displayPath,
                                         fontSize = 11.sp,
                                         color = c.textSecondary,
                                         maxLines = 2,
@@ -8731,4 +9143,186 @@ fun formatPeriodLabel(mode: DisplayMode, anchorTime: Long): String {
             sdf.format(cal.time)
         }
     }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GESTURE RECOGNITION OVERLAY
+// Passively observes all touch strokes (never consumes events) and triggers:
+//   • Draw "S"               → Scan Inbox
+//   • Draw clockwise arc/⭕  → Backup
+//   • Draw counter-clockwise arc/⭕ → Restore
+// ──────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun GestureRecognitionOverlay(
+    onScan: () -> Unit,
+    onBackup: () -> Unit,
+    onRestore: () -> Unit
+) {
+    val c = LocalAppColors.current
+    var strokePoints by remember { mutableStateOf<List<androidx.compose.ui.geometry.Offset>>(emptyList()) }
+    var label by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Draw the user's stroke as a glowing trail
+        if (strokePoints.size > 1) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val path = Path()
+                path.moveTo(strokePoints.first().x, strokePoints.first().y)
+                strokePoints.drop(1).forEach { path.lineTo(it.x, it.y) }
+                drawPath(
+                    path = path,
+                    color = c.accent.copy(alpha = 0.55f),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = 6.dp.toPx(),
+                        cap = StrokeCap.Round,
+                        join = androidx.compose.ui.graphics.drawscope.Stroke.DefaultMiter.let {
+                            androidx.compose.ui.graphics.StrokeJoin.Round
+                        }
+                    )
+                )
+            }
+        }
+
+        // Gesture feedback badge
+        label?.let { lbl ->
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 32.dp),
+                color = c.accent.copy(alpha = 0.92f),
+                shape = RoundedCornerShape(20.dp),
+                shadowElevation = 12.dp
+            ) {
+                Text(
+                    lbl,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 14.dp)
+                )
+            }
+        }
+
+        // Invisible passthrough layer — observes touches via PointerEventPass.Final
+        // so it never blocks scrolling, tapping, or swipe navigation below.
+        Box(modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val pts = mutableListOf(down.position)
+                    strokePoints = pts.toList()
+
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Final)
+                        event.changes.firstOrNull { it.id == down.id }?.let {
+                            pts.add(it.position)
+                            strokePoints = pts.toList()
+                        }
+                    } while (event.changes.any { it.pressed })
+
+                    // Analyse stroke
+                    val gesture = detectDrawnGesture(pts)
+                    if (gesture != null) {
+                        label = when (gesture) {
+                            "SCAN"    -> "✦ Scanning Inbox…"
+                            "BACKUP"  -> "✦ Backup…"
+                            "RESTORE" -> "✦ Restore…"
+                            else      -> null
+                        }
+                        scope.launch {
+                            kotlinx.coroutines.delay(150)
+                            when (gesture) {
+                                "SCAN"    -> onScan()
+                                "BACKUP"  -> onBackup()
+                                "RESTORE" -> onRestore()
+                            }
+                            kotlinx.coroutines.delay(1400)
+                            label = null
+                            strokePoints = emptyList()
+                        }
+                    } else {
+                        scope.launch {
+                            kotlinx.coroutines.delay(250)
+                            strokePoints = emptyList()
+                        }
+                    }
+                }
+            }
+        )
+    }
+}
+
+/**
+ * Recognises three gesture shapes from a list of screen-space points:
+ *
+ *  "SCAN"    — Letter "S": non-closed stroke with ≥2 horizontal direction reversals
+ *  "BACKUP"  — Clockwise arc/circle (positive shoelace signed area in screen coords)
+ *  "RESTORE" — Counter-clockwise arc/circle (negative signed area)
+ *
+ * Returns null for any stroke that doesn't clearly match a shape, so normal
+ * taps, scrolls, and swipes are never misidentified.
+ */
+private fun detectDrawnGesture(stroke: List<androidx.compose.ui.geometry.Offset>): String? {
+    if (stroke.size < 12) return null
+
+    // Total arc-length of the stroke
+    val strokeLen = stroke.zipWithNext().sumOf { (a, b) ->
+        sqrt(((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)).toDouble())
+    }.toFloat()
+    if (strokeLen < 160f) return null   // too short — filter out taps & micro-swipes
+
+    val minX = stroke.minOf { it.x }; val maxX = stroke.maxOf { it.x }
+    val minY = stroke.minOf { it.y }; val maxY = stroke.maxOf { it.y }
+    val w = maxX - minX
+    val h = maxY - minY
+
+    // ── Closed-loop test ──────────────────────────────────────────────────────
+    val start = stroke.first(); val end = stroke.last()
+    val closure = sqrt(((start.x - end.x) * (start.x - end.x) + (start.y - end.y) * (start.y - end.y)).toDouble()).toFloat()
+    val isClosed = closure < strokeLen * 0.38f && w > 55f && h > 55f
+
+    if (isClosed) {
+        // Signed area via the shoelace formula.
+        // In screen coords (Y downward): positive → clockwise, negative → CCW.
+        var signedArea = 0.0
+        for (i in stroke.indices) {
+            val a = stroke[i]; val b = stroke[(i + 1) % stroke.size]
+            signedArea += (a.x.toDouble() * b.y - b.x.toDouble() * a.y)
+        }
+        return if (signedArea > 0.0) "BACKUP" else "RESTORE"
+    }
+
+    // ── S-shape test ─────────────────────────────────────────────────────────
+    // Must be taller than wide (portrait orientation of the letter),
+    // have significant height, and at least 2 reversals on the X axis.
+    if (h > 80f && w > 35f) {
+        val xChanges = countDirectionChanges(stroke.map { it.x }, minDelta = w * 0.18f)
+        if (xChanges >= 2) return "SCAN"
+    }
+
+    return null
+}
+
+/**
+ * Counts how many times a 1-D sequence of float values reverses direction,
+ * ignoring reversals smaller than [minDelta] to suppress noise.
+ */
+private fun countDirectionChanges(values: List<Float>, minDelta: Float = 15f): Int {
+    var changes = 0
+    var prevDir = 0
+    var anchor = values.firstOrNull() ?: return 0
+    for (v in values) {
+        val delta = v - anchor
+        if (kotlin.math.abs(delta) >= minDelta) {
+            val dir = if (delta > 0) 1 else -1
+            if (prevDir != 0 && dir != prevDir) changes++
+            prevDir = dir
+            anchor = v
+        }
+    }
+    return changes
 }

@@ -93,7 +93,7 @@ class SmsReceiver : BroadcastReceiver() {
                                                 smsSender = sender,
                                                 smsBody = body,
                                                 timestamp = timestampMillis,
-                                                note = "$body [Acc: ${limitAcc.name}]"
+                                                note = "[Acc: ${limitAcc.name}]"
                                             )
                                             dao.insertTransaction(snapTx)
                                         }
@@ -135,7 +135,7 @@ class SmsReceiver : BroadcastReceiver() {
                                                 smsSender = sender,
                                                 smsBody = body,
                                                 timestamp = targetTime,
-                                                note = "$body [Acc: ${linkedAcc.name}]"
+                                                note = "[Acc: ${linkedAcc.name}]"
                                             )
                                             dao.insertTransaction(snapTx)
                                             withContext(Dispatchers.Main) {
@@ -187,7 +187,7 @@ class SmsReceiver : BroadcastReceiver() {
                                 smsSender = sender,
                                 smsBody = body,
                                 timestamp = targetTime,
-                                note = "$body [Acc: $walletName]"
+                                note = "[Acc: $walletName]"
                             )
 
                             // Transfer pair detection: if a recent SMS with the same UPI ref no
@@ -214,7 +214,10 @@ class SmsReceiver : BroadcastReceiver() {
                                     smsSender = sender,
                                     smsBody = body,
                                     timestamp = targetTime,
-                                    note = "$body [Acc: $fromAcc][To: $toAcc]"
+                                    note = run {
+                                        val incRefTag = if (incomingRef != null) "[IncRef: $incomingRef]" else ""
+                                        "[Acc: $fromAcc][To: $toAcc][T:A]$incRefTag"
+                                    }
                                 )
                                 dao.insertTransaction(transferTx)
                                 saveReceiverFingerprint(context, "${transferTx.title}|${transferTx.amount}|TRANSFER|${transferTx.timestamp}")

@@ -88,7 +88,7 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
                 put("v", 1); put("ts", System.currentTimeMillis()); put("encrypted", encrypted)
             }
             val content  = wrapper.toString()
-            val fileName = "backup_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.json"
+            val fileName = "auto_backup_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.json"
 
             if (customPath.startsWith("content://")) {
                 val treeUri   = android.net.Uri.parse(customPath)

@@ -58,6 +58,9 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
                         put("title", tx.title); put("amount", tx.amount)
                         put("category", tx.category); put("type", tx.type)
                         put("timestamp", tx.timestamp); put("note", tx.note ?: JSONObject.NULL)
+                        // Include SMS fields so TRANSFER duplicate detection works after JSON restore
+                        put("smsBody",   tx.smsBody   ?: JSONObject.NULL)
+                        put("smsSender", tx.smsSender ?: JSONObject.NULL)
                     })
                 }
             }

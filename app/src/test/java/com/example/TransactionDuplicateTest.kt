@@ -158,7 +158,8 @@ class TransactionDuplicateTest {
     // ── Check 3: INCOME is receiver-leg of an existing TRANSFER ──────────────
 
     @Test fun `check3 - INCOME within 4h of matching TRANSFER is duplicate`() {
-        val transferNote = "[Acc: HDFC 9553] [To: SBI 1234]"
+        // [T:A] marks this as an SMS-auto-detected transfer — required for rule 3 to fire
+        val transferNote = "[Acc: HDFC 9553] [To: SBI 1234][T:A]"
         val existing = tx(type = "TRANSFER", amount = 5000.0, note = transferNote, smsBody = null)
         assertTrue(isDup(
             existing,
@@ -171,7 +172,7 @@ class TransactionDuplicateTest {
     }
 
     @Test fun `check3 - INCOME beyond 4h of TRANSFER is not duplicate`() {
-        val transferNote = "[Acc: HDFC 9553] [To: SBI 1234]"
+        val transferNote = "[Acc: HDFC 9553] [To: SBI 1234][T:A]"
         val existing = tx(type = "TRANSFER", amount = 5000.0, note = transferNote, smsBody = null)
         assertFalse(isDup(
             existing,
@@ -180,6 +181,37 @@ class TransactionDuplicateTest {
             amount = 5000.0,
             account = "SBI 1234",
             timestamp = T0 + 5 * 60 * 60 * 1000L  // 5 hours later
+        ))
+    }
+
+    @Test fun `check3 - manual TRANSFER (no TA tag) does NOT block external INCOME on same day`() {
+        // User manually created an internal transfer. An unrelated external INCOME for the
+        // same amount arrives on the same day — must NOT be blocked.
+        val manualTransferNote = "[Acc: HDFC 9553][To: SBI 1234]"  // no [T:A]
+        val existing = tx(type = "TRANSFER", amount = 5000.0, note = manualTransferNote, smsBody = null)
+        assertFalse(isDup(
+            existing,
+            body = "Rs.5000 credited to a/c xx1234 for IMPS from SENDER",
+            type = "INCOME",
+            amount = 5000.0,
+            account = "SBI 1234",
+            timestamp = T0 + 1 * 60 * 60 * 1000L  // 1 hour later
+        ))
+    }
+
+    @Test fun `check3 - INCOME blocked by IncRef tag even after CSV restore (no auto-tag, no smsBody)`() {
+        // After CSV restore, a pre-v1.93 auto-TRANSFER has neither smsBody nor [T:A].
+        // [IncRef:] tag is the fallback — if the income SMS reference matches, block it.
+        val transferNote = "[Acc: HDFC 9553][To: SBI 1234][T:A][IncRef: 618423914790]"
+        val existing = tx(type = "TRANSFER", amount = 2960.0, note = transferNote, smsBody = null)
+        assertTrue(isDup(
+            existing,
+            body = "Received! INR 2960 in SBI Ac xx1234. Ref 618423914790.",
+            type = "INCOME",
+            amount = 2960.0,
+            account = "SBI 1234",
+            ref = "618423914790",
+            timestamp = T0 + 30 * 60 * 1000L
         ))
     }
 

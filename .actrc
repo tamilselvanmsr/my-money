@@ -1,0 +1,4 @@
+# Use the full catthehacker image — includes Android SDK, JDK, build tools
+# Same base as GitHub's ubuntu-latest (22.04)
+-P ubuntu-latest=ghcr.io/catthehacker/ubuntu:full-22.04
+--container-architecture linux/amd64

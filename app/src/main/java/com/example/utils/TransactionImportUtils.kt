@@ -22,6 +22,17 @@ private fun normalizeTitle(t: String): String =
         .trimEnd('.', ',', ':', ';', ' ')
         .trim()
 
+/** Extracts the 3-4 digit account/card suffix embedded in a [To: ...] or [Acc: ...] note tag. */
+private fun lastFourFromNoteTag(note: String?, tag: String): String? {
+    val regex = "\\[$tag: [^\\]]*(\\d{3,4})\\]".toRegex()
+    return regex.find(note ?: "")?.groupValues?.getOrNull(1)
+}
+
+/** Returns the value stored inside [IncRef: XXX] in a TRANSFER note, or null. */
+private fun incRefFromNote(note: String?): String? {
+    return "\\[IncRef: ([^\\]]+)\\]".toRegex().find(note ?: "")?.groupValues?.getOrNull(1)
+}
+
 fun isDuplicateImportedTransaction(
     existing: TransactionEntry,
     incomingSmsBody: String,
@@ -49,19 +60,28 @@ fun isDuplicateImportedTransaction(
 
     // 3. Cross-bank NEFT/RTGS: the INCOME leg (bank deposit) arrives minutes or hours after
     //    the EXPENSE leg (bank debit). They carry different reference numbers, so check 2
-    //    can't catch them. If an existing TRANSFER has [To: <account>] matching the incoming
-    //    INCOME's account, with the same amount and within a 4-hour window, it's the receiver
-    //    leg of that transfer — skip re-insertion.
-    //    Guard: only apply for SMS-auto-detected transfers ([T:A] in note, or smsBody != null
-    //    for live-session entries). Manual transfers lack [T:A] and must NOT block external income.
+    //    can't catch them.
+    //    Matching strategy (most to least robust):
+    //      a) [IncRef: XXX] in note  — income SMS ref stored at transfer creation (survives all restores)
+    //      b) last-4 digits in [To: ]  — immune to account rename after restore
+    //      c) exact account name string  — legacy fallback
+    //    Guard: only apply for SMS-auto-detected transfers ([T:A] in note or live smsBody).
     if (incomingType == "INCOME" && existing.type == "TRANSFER") {
         val isAutoTransfer = existing.smsBody != null ||
             existing.note?.contains("[T:A]") == true
-        if (isAutoTransfer &&
-            existing.amount == incomingAmount &&
-            existing.note?.contains("[To: $incomingAccountName]") == true &&
+        if (isAutoTransfer && existing.amount == incomingAmount &&
             abs(existing.timestamp - incomingTimestamp) < CROSS_BANK_TRANSFER_WINDOW_MS) {
-            return true
+
+            val storedIncRef  = incRefFromNote(existing.note)
+            val toLast4       = lastFourFromNoteTag(existing.note, "To")
+            val incomingLast4 = "\\d{3,4}$".toRegex().find(incomingAccountName.trim())?.value
+
+            val accountMatches =
+                existing.note?.contains("[To: $incomingAccountName]") == true ||       // exact
+                (toLast4 != null && toLast4 == incomingLast4) ||                        // last-4 digits
+                (storedIncRef != null && storedIncRef == incomingReference)             // IncRef tag
+
+            if (accountMatches) return true
         }
     }
 

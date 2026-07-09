@@ -7,7 +7,6 @@ object SmsFilterUtility {
     private const val TAG = "SmsFilterUtility"
 
     // 1. Mandatory transaction inclusion keywords
-    // Note: "transfer" covers "transferred"/"transfered"; "charge" covers "charged" — contains() is substring.
     private val INCLUSION_KEYWORDS = listOf(
         "debited", "credited", "spent", "received", "deducted", "sent", "paid",
         "withdrawn", "transfer", "payment", "charge", "txn", "refund", "deposited"

@@ -1084,7 +1084,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         put("category", tx.category)
                         put("type", tx.type)
                         put("timestamp", tx.timestamp)
-                        put("note", tx.note ?: JSONObject.NULL)
+                        put("note",      tx.note      ?: JSONObject.NULL)
+                        put("smsBody",   tx.smsBody   ?: JSONObject.NULL)
+                        put("smsSender", tx.smsSender ?: JSONObject.NULL)
                     })
                 }
                 val budgetArray = JSONArray()
@@ -1655,9 +1657,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             val transferTx = expItem.tx.copy(
                                 category = "TRANSFER",
                                 type = "TRANSFER",
-                                // [T:A] marks this as an auto-SMS-detected transfer (survives CSV export/restore)
-                                // so duplicate detection can distinguish it from manually created transfers.
-                                note = "${expItem.tx.smsBody ?: ""} [Acc: ${expItem.walletName}][To: ${incItem.walletName}][T:A]"
+                                // [T:A]    = auto-SMS-detected (survives CSV restore, separates from manual transfers)
+                                // [IncRef:] = income SMS reference number (survives all restores, enables ref-based dedup)
+                                // SMS body is stored in smsBody field (JSON-backed), NOT prepended to note,
+                                // so the note field remains clean and user-readable.
+                                note = run {
+                                    val incomeRef = SmsParser.getReferenceNumber(incItem.tx.smsBody ?: "")
+                                    val incRefTag = if (incomeRef != null) "[IncRef: $incomeRef]" else ""
+                                    "[Acc: ${expItem.walletName}][To: ${incItem.walletName}][T:A]$incRefTag"
+                                }
                             )
                             repository.insertTransaction(transferTx)
                             projectedTransactions.add(transferTx)
@@ -2521,7 +2529,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     repository.insertTransaction(TransactionEntry(
                         title = title, amount = amount, category = obj.getString("category"),
                         type = type, timestamp = ts,
-                        note = if (obj.isNull("note")) null else obj.optString("note").ifBlank { null }
+                        note     = if (obj.isNull("note"))      null else obj.optString("note").ifBlank { null },
+                        smsBody  = if (obj.isNull("smsBody"))   null else obj.optString("smsBody").ifBlank { null },
+                        smsSender= if (obj.isNull("smsSender")) null else obj.optString("smsSender").ifBlank { null }
                     ))
                     txRestored++
                 }

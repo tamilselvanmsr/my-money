@@ -5502,7 +5502,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
     var selectedForcePatterns by remember { mutableStateOf(defaultSelectedPatterns) }
     var customPatterns by remember { mutableStateOf(emptyList<String>()) }
     // 1 = this month only, 2 = last + this month, 3 = last 3 months (calendar start-of-month boundaries)
-    var smsScanMonthsBack by remember { mutableStateOf(1) }
+    val smsScanMonthsBack by viewModel.smsScanMonthsBack.collectAsStateWithLifecycle()
     val isSmsParsing by viewModel.isSmsParsing.collectAsStateWithLifecycle()
     val isWalletPfScanning by viewModel.isWalletPfScanning.collectAsStateWithLifecycle()
     val enableBalanceSync by viewModel.enableBalanceSync.collectAsStateWithLifecycle()
@@ -5611,7 +5611,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                         scanRangeOptions.forEach { (months, label) ->
                             val selected = smsScanMonthsBack == months
                             Surface(
-                                onClick = { smsScanMonthsBack = months },
+                                onClick = { viewModel.setSmsScanMonthsBack(months) },
                                 color = if (selected) c.accent.copy(alpha = 0.15f) else c.border,
                                 shape = RoundedCornerShape(10.dp),
                                 border = BorderStroke(1.dp, if (selected) c.accent else Color(0xFF2D3748)),
@@ -6181,7 +6181,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                         Text("REQUIRED — must contain at least one:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.income)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf("debited", "credited", "spent", "received", "deducted", "sent", "paid", "withdrawn",
-                                "transfer", "payment", "charge", "txn", "salary", "refund", "autopay").forEach { kw ->
+                                "transfer", "payment", "charge", "txn", "salary", "refund", "deposited", "autopay").forEach { kw ->
                                 Surface(color = c.income.copy(alpha = 0.1f), shape = RoundedCornerShape(6.dp)) {
                                     Text(kw, fontSize = 10.sp, color = c.income, fontWeight = FontWeight.SemiBold,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))

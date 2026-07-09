@@ -203,6 +203,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    // SMS Scan range (months back) — persisted across app restarts
+    private val _smsScanMonthsBack = MutableStateFlow(prefs.getInt("sms_scan_months_back", 1))
+    val smsScanMonthsBack: StateFlow<Int> = _smsScanMonthsBack.asStateFlow()
+    fun setSmsScanMonthsBack(months: Int) {
+        _smsScanMonthsBack.value = months
+        prefs.edit().putInt("sms_scan_months_back", months).apply()
+    }
+
     // ── Light / Dark theme preference ─────────────────────────────────────────
     // themeMode: "system" (follow device) | "light" | "dark"
     private val _themeMode = MutableStateFlow(prefs.getString("theme_mode", "system") ?: "system")
@@ -1647,7 +1655,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             val transferTx = expItem.tx.copy(
                                 category = "TRANSFER",
                                 type = "TRANSFER",
-                                note = "${expItem.tx.smsBody ?: ""} [Acc: ${expItem.walletName}][To: ${incItem.walletName}]"
+                                // [T:A] marks this as an auto-SMS-detected transfer (survives CSV export/restore)
+                                // so duplicate detection can distinguish it from manually created transfers.
+                                note = "${expItem.tx.smsBody ?: ""} [Acc: ${expItem.walletName}][To: ${incItem.walletName}][T:A]"
                             )
                             repository.insertTransaction(transferTx)
                             projectedTransactions.add(transferTx)

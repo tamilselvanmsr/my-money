@@ -1061,6 +1061,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             val customPath = _customBackupPath.value
             val items = mutableListOf<BackupItem>()
+            val isCloudPath = customPath.contains("com.google.android.apps.docs") ||
+                customPath.contains("onedrive") || customPath.contains("dropbox")
             if (customPath.startsWith("content://")) {
                 // Folder was chosen via document picker — use DocumentFile API
                 try {
@@ -1076,7 +1078,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     name = docFile.name ?: "",
                                     timestamp = docFile.lastModified(),
                                     sizeBytes = docFile.length(),
-                                    isGoogleStorage = false
+                                    isGoogleStorage = isCloudPath
                                 ))
                             }
                     }
@@ -1174,8 +1176,20 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     getApplication<Application>().contentResolver.openOutputStream(docFile.uri)?.use { out ->
                         out.write(content.toByteArray(Charsets.UTF_8))
                     } ?: throw Exception("Cannot write to backup file.")
-                    val folderName = docFolder.name ?: "Custom folder"
-                    addNotification("$mode Backup", "Saved: $fileName\nFolder: $folderName")
+                    val folderName = docFolder.name ?: "Cloud folder"
+                    val isCloud = customPath.contains("com.google.android.apps.docs") ||
+                        customPath.contains("onedrive") || customPath.contains("dropbox")
+                    val dest = when {
+                        customPath.contains("com.google.android.apps.docs") -> "Google Drive"
+                        customPath.contains("onedrive") || customPath.contains("microsoft") -> "OneDrive"
+                        customPath.contains("dropbox") -> "Dropbox"
+                        else -> null
+                    }
+                    if (dest != null) {
+                        addNotification("$mode Backup", "Saved: $fileName\nCloud: $dest")
+                    } else {
+                        addNotification("$mode Backup", "Saved: $fileName\nFolder: $folderName")
+                    }
                 } else {
                     val folder = getBackupFolder(false, "")
                     folder.mkdirs()

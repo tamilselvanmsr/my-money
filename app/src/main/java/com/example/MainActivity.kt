@@ -712,7 +712,9 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                         val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
                                         if (hasPerm) viewModel.scanDeviceSmsInbox(context, smsScanMonthsBack)
                                     }
-                                    "BACKUP"  -> viewModel.executeBackupNow("Gesture") { _, _ -> }
+                                    "BACKUP"  -> viewModel.executeBackupNow("Gesture") { success, _ ->
+                                        if (success) Toast.makeText(context, "Backup saved!", Toast.LENGTH_SHORT).show()
+                                    }
                                     "RESTORE" -> {
                                         viewModel.refreshAvailableBackups()
                                         showGestureRestoreConfirm = true
@@ -2528,7 +2530,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
             .fillMaxSize()
             .testTag("analytics_scroll_column"),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3213,7 +3215,7 @@ private fun AnalyticsOverviewSection(
     var activeSectorIndex by remember(categoryTotals, totalLabel) { mutableStateOf(-1) }
     val decFormat = remember { DecimalFormat("₹#,##0.00") }
 
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Surface(
             color = c.surface,
             shape = RoundedCornerShape(24.dp),
@@ -3236,9 +3238,9 @@ private fun AnalyticsOverviewSection(
                 } else {
                     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                         val isCompact = maxWidth < 420.dp
-                        // Chart uses ~68% of the available row width so there's no wasted space
-                        val chartSize = if (isCompact) (maxWidth * 0.65f).coerceIn(160.dp, 210.dp)
-                                        else (maxWidth * 0.68f).coerceIn(180.dp, 260.dp)
+                        // Chart uses ~55% of the available row width — big enough without crowding the legend
+                        val chartSize = if (isCompact) (maxWidth * 0.55f).coerceIn(140.dp, 180.dp)
+                                        else (maxWidth * 0.57f).coerceIn(155.dp, 220.dp)
                         val legendFontSize = if (isCompact) 9.sp else 10.sp
                         val chartContent: @Composable () -> Unit = {
                             Box(
@@ -3434,7 +3436,7 @@ private fun AnalyticsOverviewSection(
         }
 
         if (categoryTotals.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = breakdownLabel,
                 fontWeight = FontWeight.Bold,
@@ -3457,13 +3459,13 @@ private fun AnalyticsOverviewSection(
                         }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
                             shape = CircleShape,
                             color = stats.category.color.copy(alpha = 0.15f),
-                            modifier = Modifier.size(52.dp)
+                            modifier = Modifier.size(46.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
@@ -3474,8 +3476,9 @@ private fun AnalyticsOverviewSection(
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Spacer(modifier = Modifier.height(2.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
@@ -3483,15 +3486,16 @@ private fun AnalyticsOverviewSection(
                                 Text(
                                     stats.category.displayName,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
+                                    fontSize = 15.sp,
                                     color = c.text,
                                     modifier = Modifier.weight(1f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(decFormat.format(stats.total), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.text)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(decFormat.format(stats.total), fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = c.textSecondary)
                             }
+                            Spacer(modifier = Modifier.height(13.dp))
                             LinearProgressIndicator(
                                 progress = { stats.percentage.toFloat() },
                                 color = stats.category.color,
@@ -3501,14 +3505,16 @@ private fun AnalyticsOverviewSection(
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp))
                             )
+                            // Spacer matching the "Remaining" text row height in budget boxes — keeps card height identical
+                            Spacer(modifier = Modifier.height(10.dp))
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "${String.format(Locale.getDefault(), "%.1f", stats.percentage * 100)}%",
-                            fontSize = 16.sp,
+                            fontSize = 14.sp,
                             color = stats.category.color,
-                            fontWeight = FontWeight.ExtraBold,
-                            modifier = Modifier.widthIn(min = 44.dp),
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.widthIn(min = 40.dp),
                             textAlign = TextAlign.End
                         )
                     }
@@ -6290,29 +6296,18 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                                 secIconTapJob = secIconTapScope.launch {
                                     kotlinx.coroutines.delay(1200)
                                     when {
-                                        secIconTapCount >= 5 -> {
-                                            when {
-                                                !parserKeyRulesVisible -> {
-                                                    viewModel.setParserKeyRulesVisible(true)
-                                                    Toast.makeText(context, "\uD83D\uDD13 Parser key rules unlocked", Toast.LENGTH_SHORT).show()
-                                                }
-                                                !parserExclusionVisible -> {
-                                                    viewModel.setParserExclusionVisible(true)
-                                                    Toast.makeText(context, "\uD83D\uDD13 Parser exclusion rules unlocked", Toast.LENGTH_SHORT).show()
-                                                }
-                                                else -> Toast.makeText(context, "Both parser sections already visible", Toast.LENGTH_SHORT).show()
+                                        secIconTapCount >= 3 -> {
+                                            if (!parserExclusionVisible) {
+                                                viewModel.setParserExclusionVisible(true)
+                                                Toast.makeText(context, "\uD83D\uDD13 Parser exclusion rules unlocked", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, "Exclusion rules already visible", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                         secIconTapCount == 2 -> {
-                                            when {
-                                                parserExclusionVisible -> {
-                                                    viewModel.setParserExclusionVisible(false)
-                                                    Toast.makeText(context, "\uD83D\uDD12 Parser exclusion rules hidden", Toast.LENGTH_SHORT).show()
-                                                }
-                                                parserKeyRulesVisible -> {
-                                                    viewModel.setParserKeyRulesVisible(false)
-                                                    Toast.makeText(context, "\uD83D\uDD12 Parser key rules hidden", Toast.LENGTH_SHORT).show()
-                                                }
+                                            if (parserExclusionVisible) {
+                                                viewModel.setParserExclusionVisible(false)
+                                                Toast.makeText(context, "\uD83D\uDD12 Parser exclusion rules hidden", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
@@ -6483,7 +6478,8 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
             }
         }
         // Manual pasted SMS analyzer — shown only when Parser Key Rules are unlocked
-        if (parserKeyRulesVisible) item {
+        // Parser Key Rules — always visible (no unlock needed)
+        item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = c.surface),
                 border = BorderStroke(1.dp, c.border),
@@ -8508,22 +8504,39 @@ fun BackupDialog(
                                         .background(c.accent.copy(alpha = 0.12f), CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
+                                    // Show cloud icon for cloud/Drive paths, folder for local
+                                    val isCloud = customBackupPath.contains("com.google.android.apps.docs") ||
+                                        customBackupPath.contains("cloud") ||
+                                        customBackupPath.contains("onedrive") ||
+                                        customBackupPath.contains("dropbox")
                                     Icon(
-                                        Icons.Default.Folder,
+                                        if (isCloud) Icons.Default.Cloud else Icons.Default.Folder,
                                         contentDescription = null,
                                         tint = c.accent,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
+                                    // Determine if cloud path and pick label accordingly
+                                    val isGoogleDrive = customBackupPath.contains("com.google.android.apps.docs")
+                                    val isOneDrive = customBackupPath.contains("onedrive") || customBackupPath.contains("microsoft")
+                                    val isDropbox = customBackupPath.contains("dropbox")
+                                    val folderLabel = when {
+                                        isGoogleDrive -> "Google Drive"
+                                        isOneDrive    -> "OneDrive"
+                                        isDropbox     -> "Dropbox"
+                                        customBackupPath.isEmpty() -> "Local Backup Folder"
+                                        else          -> "Local Backup Folder"
+                                    }
                                     Text(
-                                        "Local Backup Folder",
+                                        folderLabel,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = c.text
                                     )
                                 val currentPath = when {
                                     customBackupPath.isEmpty() -> viewModel.getBackupFolder(false, "").absolutePath
+                                    isGoogleDrive || isOneDrive || isDropbox -> null  // handled below as cloud
                                     customBackupPath.startsWith("content://") -> {
                                         try {
                                             val uri = android.net.Uri.parse(customBackupPath)
@@ -8535,10 +8548,14 @@ fun BackupDialog(
                                     }
                                     else -> customBackupPath
                                 }
-                                // Display path: strip the internal /storage/emulated/0 prefix and leading slash
-                                val displayPath = currentPath.removePrefix("/storage/emulated/0")
-                                    .trimStart('/')
-                                    .let { if (it.isEmpty()) "Internal Storage" else it }
+                                // Display path
+                                val displayPath = when {
+                                    isGoogleDrive -> "Synced to Google Drive"
+                                    isOneDrive    -> "Synced to OneDrive"
+                                    isDropbox     -> "Synced to Dropbox"
+                                    currentPath == null -> "Cloud Storage"
+                                    else -> currentPath.removePrefix("/storage/emulated/0").trimStart('/').let { if (it.isEmpty()) "Internal Storage" else it }
+                                }
                                     Text(
                                         displayPath,
                                         fontSize = 11.sp,
@@ -8625,7 +8642,15 @@ fun BackupDialog(
                                         viewModel.executeBackupNow { success, errMsg ->
                                             isBackingUp = false
                                             if (success) {
-                                                Toast.makeText(context, "Backup saved successfully!", Toast.LENGTH_SHORT).show()
+                                                val isCloud = customBackupPath.contains("com.google.android.apps.docs") ||
+                                                    customBackupPath.contains("onedrive") || customBackupPath.contains("dropbox")
+                                                val dest = when {
+                                                    isCloud && customBackupPath.contains("com.google.android.apps.docs") -> "Google Drive"
+                                                    isCloud -> "Cloud"
+                                                    customBackupPath.startsWith("content://") -> "Selected Folder"
+                                                    else -> "Local Storage"
+                                                }
+                                                Toast.makeText(context, "Backup saved to $dest!", Toast.LENGTH_SHORT).show()
                                             } else {
                                                 Toast.makeText(context, "Backup failed: ${errMsg ?: "Unknown error"}", Toast.LENGTH_LONG).show()
                                             }
@@ -8957,70 +8982,106 @@ fun RestoreBackupDialog(
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(0.dp)
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // ── Icon + header ──────────────────────────────────────────
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                // ── Icon header ────────────────────────────────────────────
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(c.expense.copy(alpha = 0.15f), CircleShape)
+                        .border(1.5.dp, c.expense.copy(alpha = 0.4f), CircleShape),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .background(c.accent.copy(alpha = 0.12f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Restore, contentDescription = null, tint = c.accent, modifier = Modifier.size(28.dp))
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Text("Restore from Backup", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = c.text)
-                    Text("Pick a CSV backup file to restore", fontSize = 12.sp, color = c.textSecondary, modifier = Modifier.padding(top = 3.dp))
+                    Icon(
+                        Icons.Default.Restore,
+                        contentDescription = null,
+                        tint = c.expense,
+                        modifier = Modifier.size(32.dp)
+                    )
                 }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Import Backup",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = c.text
+                )
+                Text(
+                    "Restore from a CSV or JSON backup file",
+                    fontSize = 12.sp,
+                    color = c.textSecondary,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
 
-                // ── What happens ──────────────────────────────────────────
-                Surface(
-                    color = c.accent.copy(0.06f),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, c.accent.copy(0.2f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                Spacer(Modifier.height(14.dp))
+
+                // ── What gets restored ─────────────────────────────────────
+                Text(
+                    "WHAT GETS RESTORED",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = c.text.copy(0.4f),
+                    modifier = Modifier.align(Alignment.Start)
+                )
+                Spacer(Modifier.height(10.dp))
+                listOf(
+                    Triple(Icons.Default.AccountBalanceWallet,        "Accounts",     "All wallets recreated with their types"),
+                    Triple(Icons.AutoMirrored.Filled.ReceiptLong,     "Transactions", "All records with date, amount, category"),
+                    Triple(Icons.Default.PieChart,                    "Budgets",      "Monthly limits and expected income targets"),
+                    Triple(Icons.Default.MergeType,                   "Existing Data","Preserved — only missing records are added")
+                ).forEachIndexed { idx, (icon, title, sub) ->
+                    val tint = if (idx == 3) c.expense else c.accent
+                    val bg   = if (idx == 3) c.expense.copy(0.1f) else c.accent.copy(0.08f)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 5.dp)
                     ) {
-                        listOf(
-                            Pair(Icons.Default.AccountBalanceWallet, "Accounts restored"),
-                            Pair(Icons.AutoMirrored.Filled.ReceiptLong, "Transactions restored"),
-                            Pair(Icons.Default.ShieldMoon, "Existing data preserved — only new records are added")
-                        ).forEach { (icon, label) ->
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Icon(icon, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
-                                Text(label, fontSize = 12.sp, color = c.text.copy(alpha = 0.85f))
-                            }
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(bg, RoundedCornerShape(8.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text)
+                            Text(sub,   fontSize = 11.sp, color = c.textSecondary)
                         }
                     }
                 }
 
+                Spacer(Modifier.height(14.dp))
+                HorizontalDivider(color = c.text.copy(0.08f))
                 Spacer(Modifier.height(16.dp))
 
                 // ── Action buttons ────────────────────────────────────────
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.textSecondary),
-                        border = BorderStroke(1.dp, c.border)
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text.copy(0.7f)),
+                        border = BorderStroke(1.dp, c.text.copy(0.15f))
                     ) { Text("Cancel") }
 
                     Button(
-                        onClick = { openDocLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "*/*")) },
+                        onClick = { openDocLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "application/json", "*/*")) },
                         modifier = Modifier.weight(2f),
-                        colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = Color.White),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = c.expense,
+                            contentColor = c.text
+                        ),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Browse & Restore", fontWeight = FontWeight.Bold)
+                        Text("Browse File", fontWeight = FontWeight.Bold)
                     }
                 }
             }

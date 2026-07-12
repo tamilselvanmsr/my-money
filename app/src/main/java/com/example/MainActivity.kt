@@ -86,6 +86,7 @@ import com.example.viewmodel.DisplayMode
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import java.text.DecimalFormat
 import android.text.format.DateFormat as SystemDateFormat
 import java.text.SimpleDateFormat
@@ -316,6 +317,13 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val smsScanMonthsBack by viewModel.smsScanMonthsBack.collectAsStateWithLifecycle()
     var currentTab by remember { mutableStateOf(AppTab.DASHBOARD) }
+    // Show SMS Scan only on the very first install, not on every launch
+    LaunchedEffect(Unit) {
+        if (viewModel.isFirstLaunch()) {
+            viewModel.markAppLaunched()
+            currentTab = AppTab.AUTO_SCAN
+        }
+    }
     // Gesture drawing: disabled by default; double-tap title to toggle.
     var gestureEnabled by remember { mutableStateOf(false) }
     var titleTapCount by remember { mutableStateOf(0) }
@@ -2436,8 +2444,19 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
     var showModeMenu by remember { mutableStateOf(false) }
     var showPeriodMenu by remember { mutableStateOf(false) }
     var categoryDetailItem by remember { mutableStateOf<Pair<DisplayCategorySpend, List<TransactionEntry>>?>(null) }
-    var expandedNotesTxId by remember { mutableStateOf<Int?>(null) }
+    var expandedNotesTxId by remember { mutableStateOf<Int?>(null) }  // null = none, -1 = all
+    var accountDetailItem by remember { mutableStateOf<Pair<AccountAnalyticsSummary, List<TransactionEntry>>?>(null) }
+    var flowDayItem by remember { mutableStateOf<Pair<AnalyticsFlowPoint, List<TransactionEntry>>?>(null) }
     val allAccountsForAnalytics by viewModel.allAccounts.collectAsStateWithLifecycle()
+    // Per-mode category filters — each overview keeps its own independent selection
+    val analyticsExpenseCatFilter by viewModel.analyticsExpenseCatFilter.collectAsStateWithLifecycle()
+    val analyticsIncomeCatFilter  by viewModel.analyticsIncomeCatFilter.collectAsStateWithLifecycle()
+    val analyticsCategoryFilter = when (selectedMode) {
+        AnalyticsMode.EXPENSE_OVERVIEW, AnalyticsMode.EXPENSE_FLOW -> analyticsExpenseCatFilter
+        AnalyticsMode.INCOME_OVERVIEW,  AnalyticsMode.INCOME_FLOW  -> analyticsIncomeCatFilter
+        else -> emptySet()
+    }
+    var showAnalyticsCatFilterMenu by remember { mutableStateOf(false) }
 
     // Records↔Analytics bidirectional period sync
     val activeMode by viewModel.displayMode.collectAsStateWithLifecycle()
@@ -2472,7 +2491,10 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
 
     val expenses = filteredTransactions.filter { it.type == "EXPENSE" }
     val incomes = filteredTransactions.filter { it.type == "INCOME" }
-    val overviewTransactions = if (selectedMode == AnalyticsMode.INCOME_OVERVIEW) incomes else expenses
+    val overviewTransactions = when (selectedMode) {
+        AnalyticsMode.INCOME_OVERVIEW, AnalyticsMode.INCOME_FLOW -> incomes
+        else -> expenses
+    }
     val totalOverviewSum = overviewTransactions.sumOf { it.amount }
     val categoryTotals = overviewTransactions.groupBy { it.category }.map { (catName, list) ->
         val sumObj = list.sumOf { it.amount }
@@ -2483,11 +2505,21 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
             percentage = if (totalOverviewSum > 0.0) sumObj / totalOverviewSum else 0.0
         )
     }.sortedByDescending { it.total }
-    val flowPoints = remember(filteredTransactions, analysisStart, analysisEnd) {
-        buildDailyFlowPoints(filteredTransactions, analysisStart, analysisEnd)
+    // Apply analytics category filter
+    val filteredCategoryTotals = if (analyticsCategoryFilter.isEmpty()) categoryTotals
+    else categoryTotals.filter { it.category.name in analyticsCategoryFilter }
+    // Recalculate percentages relative to the filtered subset so the donut fills 100%
+    val filteredOverviewTotal = filteredCategoryTotals.sumOf { it.total }
+    val recalcCategoryTotals = if (analyticsCategoryFilter.isEmpty()) filteredCategoryTotals
+    else filteredCategoryTotals.map { it.copy(percentage = if (filteredOverviewTotal > 0) it.total / filteredOverviewTotal else 0.0) }
+    // Category-filtered transactions for flow & account analysis
+    val categoryFilteredTxns = if (analyticsCategoryFilter.isEmpty()) filteredTransactions
+    else filteredTransactions.filter { it.category in analyticsCategoryFilter }
+    val flowPoints = remember(categoryFilteredTxns, analysisStart, analysisEnd) {
+        buildDailyFlowPoints(categoryFilteredTxns, analysisStart, analysisEnd)
     }
-    val accountStats = remember(filteredTransactions) {
-        buildAccountAnalytics(filteredTransactions, c)
+    val accountStats = remember(categoryFilteredTxns) {
+        buildAccountAnalytics(categoryFilteredTxns, c)
     }
 
     LazyColumn(
@@ -2586,6 +2618,72 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                             }
                         }
                     }
+
+                    // Category filter icon (overview + flow modes)
+                    if (selectedMode == AnalyticsMode.EXPENSE_OVERVIEW || selectedMode == AnalyticsMode.INCOME_OVERVIEW ||
+                        selectedMode == AnalyticsMode.EXPENSE_FLOW || selectedMode == AnalyticsMode.INCOME_FLOW) {
+                        Box {
+                            FilledTonalIconButton(
+                                onClick = { showAnalyticsCatFilterMenu = true },
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = if (analyticsCategoryFilter.isNotEmpty()) c.accent.copy(alpha = 0.18f) else c.divider,
+                                    contentColor = if (analyticsCategoryFilter.isNotEmpty()) c.accent else c.text
+                                ),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(Icons.Default.Category, contentDescription = "Filter categories", modifier = Modifier.size(18.dp))
+                            }
+                            DropdownMenu(
+                                expanded = showAnalyticsCatFilterMenu,
+                                onDismissRequest = { showAnalyticsCatFilterMenu = false },
+                                shape = RoundedCornerShape(16.dp),
+                                containerColor = c.surfaceVariant,
+                                shadowElevation = 10.dp,
+                                modifier = Modifier.widthIn(min = 200.dp, max = 260.dp).heightIn(max = 350.dp)
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                                            Text("All Categories", fontSize = 13.sp, color = if (analyticsCategoryFilter.isEmpty()) c.accent else c.text,
+                                                fontWeight = if (analyticsCategoryFilter.isEmpty()) FontWeight.Bold else FontWeight.Normal)
+                                            if (analyticsCategoryFilter.isEmpty()) Icon(Icons.Default.Check, null, tint = c.accent, modifier = Modifier.size(14.dp))
+                                        }
+                                    },
+                                    onClick = { 
+                                        when (selectedMode) {
+                                            AnalyticsMode.EXPENSE_OVERVIEW, AnalyticsMode.EXPENSE_FLOW -> viewModel.setAnalyticsExpenseCatFilter(emptySet())
+                                            AnalyticsMode.INCOME_OVERVIEW,  AnalyticsMode.INCOME_FLOW  -> viewModel.setAnalyticsIncomeCatFilter(emptySet())
+                                            else -> {}
+                                        }
+                                    }
+                                )
+                                HorizontalDivider(color = c.divider)
+                                categoryTotals.forEach { cat ->
+                                    val selected = cat.category.name in analyticsCategoryFilter
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
+                                                Icon(cat.category.icon, null, tint = cat.category.color, modifier = Modifier.size(15.dp))
+                                                Text(cat.category.displayName, fontSize = 13.sp, modifier = Modifier.weight(1f),
+                                                    color = if (selected) cat.category.color else c.text,
+                                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                                                if (selected) Icon(Icons.Default.Check, null, tint = cat.category.color, modifier = Modifier.size(13.dp))
+                                            }
+                                        },
+                                        onClick = {
+                                            val newFilter = if (selected) analyticsCategoryFilter - cat.category.name
+                                                            else analyticsCategoryFilter + cat.category.name
+                                            when (selectedMode) {
+                                                AnalyticsMode.EXPENSE_OVERVIEW, AnalyticsMode.EXPENSE_FLOW -> viewModel.setAnalyticsExpenseCatFilter(newFilter)
+                                                AnalyticsMode.INCOME_OVERVIEW,  AnalyticsMode.INCOME_FLOW  -> viewModel.setAnalyticsIncomeCatFilter(newFilter)
+                                                else -> {}
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Analysis mode — compact dropdown button
@@ -2647,8 +2745,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
             AnalyticsMode.EXPENSE_OVERVIEW -> {
                 item {
                     AnalyticsOverviewSection(
-                        categoryTotals = categoryTotals,
-                        totalAmount = totalOverviewSum,
+                        categoryTotals = recalcCategoryTotals,
+                        totalAmount = if (analyticsCategoryFilter.isEmpty()) totalOverviewSum else filteredOverviewTotal,
                         totalLabel = "Total Spent",
                         breakdownLabel = "CATEGORY WISE BREAKDOWN",
                         percentSuffix = "of expenses",
@@ -2664,8 +2762,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
             AnalyticsMode.INCOME_OVERVIEW -> {
                 item {
                     AnalyticsOverviewSection(
-                        categoryTotals = categoryTotals,
-                        totalAmount = totalOverviewSum,
+                        categoryTotals = recalcCategoryTotals,
+                        totalAmount = if (analyticsCategoryFilter.isEmpty()) totalOverviewSum else filteredOverviewTotal,
                         totalLabel = "Total Received",
                         breakdownLabel = "INCOME BREAKDOWN",
                         percentSuffix = "of income",
@@ -2685,7 +2783,17 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         points = flowPoints,
                         showIncome = false,
                         accent = c.expense,
-                        emptyMessage = "No expense flow available for this period."
+                        emptyMessage = "No expense flow available for this period.",
+                        onDayClick = { point ->
+                            val cal = java.util.Calendar.getInstance().apply { timeInMillis = point.dateMillis }
+                            val dayTxns = categoryFilteredTxns.filter { tx ->
+                                val tc = java.util.Calendar.getInstance().apply { timeInMillis = tx.timestamp }
+                                tc.get(java.util.Calendar.YEAR) == cal.get(java.util.Calendar.YEAR) &&
+                                tc.get(java.util.Calendar.DAY_OF_YEAR) == cal.get(java.util.Calendar.DAY_OF_YEAR) &&
+                                tx.type == "EXPENSE"
+                            }
+                            flowDayItem = point to dayTxns
+                        }
                     )
                 }
             }
@@ -2697,36 +2805,285 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         points = flowPoints,
                         showIncome = true,
                         accent = c.income,
-                        emptyMessage = "No income flow available for this period."
+                        emptyMessage = "No income flow available for this period.",
+                        onDayClick = { point ->
+                            val cal = java.util.Calendar.getInstance().apply { timeInMillis = point.dateMillis }
+                            val dayTxns = categoryFilteredTxns.filter { tx ->
+                                val tc = java.util.Calendar.getInstance().apply { timeInMillis = tx.timestamp }
+                                tc.get(java.util.Calendar.YEAR) == cal.get(java.util.Calendar.YEAR) &&
+                                tc.get(java.util.Calendar.DAY_OF_YEAR) == cal.get(java.util.Calendar.DAY_OF_YEAR) &&
+                                tx.type == "INCOME"
+                            }
+                            flowDayItem = point to dayTxns
+                        }
                     )
                 }
             }
 
             AnalyticsMode.ACCOUNT_ANALYSIS -> {
                 item {
-                    AnalyticsAccountSection(accountStats = accountStats)
+                    AnalyticsAccountSection(
+                        accountStats = accountStats,
+                        onAccountTap = { stats ->
+                            val txs = categoryFilteredTxns.filter { tx ->
+                                tx.getAccountName() == stats.accountName
+                            }
+                            accountDetailItem = stats to txs
+                        }
+                    )
                 }
             }
         }
+    }
+
+    // Account breakdown detail dialog
+    accountDetailItem?.let { (stats, txList) ->
+        val decFormat = remember { DecimalFormat("₹#,##0.00") }
+        val sdf = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
+        // Track which individual rows have notes expanded; -1 sentinel not needed (managed per-id)
+        var expandedAccountNoteIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
+        var allAccountNotesExpanded by remember { mutableStateOf(false) }
+        val txsWithNotes = txList.filter { userNoteFrom(it.note).isNotBlank() }
+        AlertDialog(
+            onDismissRequest = { accountDetailItem = null },
+            containerColor = c.surface,
+            title = {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(stats.accountName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text)
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text("↑ ${compactCurrency(stats.income)}", fontSize = 12.sp, color = c.income, fontWeight = FontWeight.SemiBold)
+                                Text("↓ ${compactCurrency(stats.expense)}", fontSize = 12.sp, color = c.expense, fontWeight = FontWeight.SemiBold)
+                                Text("= ${compactCurrency(stats.net)}", fontSize = 12.sp, color = if (stats.net >= 0) c.accent else Color(0xFFFF7043), fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        if (txsWithNotes.isNotEmpty()) {
+                            IconButton(
+                                onClick = {
+                                    allAccountNotesExpanded = !allAccountNotesExpanded
+                                    if (!allAccountNotesExpanded) expandedAccountNoteIds = emptySet()
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    if (allAccountNotesExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore,
+                                    contentDescription = if (allAccountNotesExpanded) "Hide all notes" else "Show all notes",
+                                    tint = if (allAccountNotesExpanded) c.accent else c.textSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            text = {
+                if (txList.isEmpty()) {
+                    Text("No transactions in this period.", color = c.textSecondary, fontSize = 13.sp)
+                } else {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        txList.sortedByDescending { it.timestamp }.forEach { tx ->
+                            val resolvedCat = CategoryResolver.resolve(tx.category, customCats)
+                            val hasNote = userNoteFrom(tx.note).isNotBlank()
+                            val isNoteExpanded = allAccountNotesExpanded || tx.id in expandedAccountNoteIds
+                            Surface(
+                                color = if (isNoteExpanded && hasNote) c.accent.copy(alpha = 0.06f) else c.divider,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .then(if (hasNote) Modifier.clickable {
+                                        expandedAccountNoteIds = if (tx.id in expandedAccountNoteIds)
+                                            expandedAccountNoteIds - tx.id
+                                        else
+                                            expandedAccountNoteIds + tx.id
+                                    } else Modifier)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                        Surface(shape = CircleShape, color = resolvedCat.color.copy(0.15f), modifier = Modifier.size(32.dp)) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(resolvedCat.icon, null, tint = resolvedCat.color, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Text(tx.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                                if (hasNote) Icon(Icons.Default.Notes, contentDescription = "Has note", tint = if (isNoteExpanded) c.accent else c.textTertiary, modifier = Modifier.size(10.dp))
+                                            }
+                                            Text(sdf.format(java.util.Date(tx.timestamp)), fontSize = 10.sp, color = c.textSecondary)
+                                        }
+                                    }
+                                    Text(
+                                        if (tx.type == "INCOME") "+${decFormat.format(tx.amount)}" else "-${decFormat.format(tx.amount)}",
+                                        fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                                        color = if (tx.type == "INCOME") c.income else c.expense
+                                    )
+                                    }
+                                    // Expanded notes — shown below the row, separated by a divider
+                                    if (isNoteExpanded && hasNote) {
+                                        val userNote = userNoteFrom(tx.note)
+                                        if (userNote.isNotBlank()) {
+                                            Spacer(Modifier.height(6.dp))
+                                            HorizontalDivider(color = c.accent.copy(alpha = 0.2f))
+                                            Spacer(Modifier.height(4.dp))
+                                            Text(userNote, fontSize = 11.sp, color = c.text.copy(alpha = 0.85f),
+                                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { accountDetailItem = null }) { Text("Close", color = c.accent) } }
+        )
+    }
+
+    // Flow day breakdown dialog — shown when a calendar day is tapped in flow modes
+    flowDayItem?.let { (point, txList) ->
+        val decFormat = remember { DecimalFormat("₹#,##0.00") }
+        val sdf = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
+        val accent = if (txList.firstOrNull()?.type == "INCOME") c.income else c.expense
+        var expandedFlowNoteIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
+        var allFlowNotesExpanded by remember { mutableStateOf(false) }
+        val txsWithNotes = txList.filter { userNoteFrom(it.note).isNotBlank() }
+        AlertDialog(
+            onDismissRequest = { flowDayItem = null },
+            containerColor = c.surface,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(point.fullLabel, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text)
+                        Text(
+                            "${txList.size} transaction${if (txList.size != 1) "s" else ""} · ${decFormat.format(txList.sumOf { it.amount })}",
+                            fontSize = 12.sp, color = accent, fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    if (txsWithNotes.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                allFlowNotesExpanded = !allFlowNotesExpanded
+                                if (!allFlowNotesExpanded) expandedFlowNoteIds = emptySet()
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                if (allFlowNotesExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore,
+                                contentDescription = if (allFlowNotesExpanded) "Hide all notes" else "Show all notes",
+                                tint = if (allFlowNotesExpanded) accent else c.textSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            text = {
+                if (txList.isEmpty()) {
+                    Text("No transactions on this day.", color = c.textSecondary, fontSize = 13.sp)
+                } else {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        txList.sortedByDescending { it.timestamp }.forEach { tx ->
+                            val resolvedCat = CategoryResolver.resolve(tx.category, customCats)
+                            val userNote = userNoteFrom(tx.note)
+                            val hasNote = userNote.isNotBlank()
+                            val isNoteExpanded = allFlowNotesExpanded || tx.id in expandedFlowNoteIds
+                            Surface(
+                                color = if (isNoteExpanded && hasNote) accent.copy(alpha = 0.06f) else c.divider,
+                                shape = RoundedCornerShape(10.dp),
+                                border = if (isNoteExpanded && hasNote) BorderStroke(1.dp, accent.copy(alpha = 0.25f)) else null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .then(if (hasNote) Modifier.clickable {
+                                        expandedFlowNoteIds = if (tx.id in expandedFlowNoteIds)
+                                            expandedFlowNoteIds - tx.id
+                                        else
+                                            expandedFlowNoteIds + tx.id
+                                    } else Modifier)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                            Surface(shape = CircleShape, color = resolvedCat.color.copy(0.15f), modifier = Modifier.size(32.dp)) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(resolvedCat.icon, null, tint = resolvedCat.color, modifier = Modifier.size(16.dp))
+                                                }
+                                            }
+                                            Spacer(Modifier.width(8.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Text(tx.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                                    if (hasNote) Icon(Icons.Default.Notes, contentDescription = "Has note", tint = if (isNoteExpanded) accent else c.textTertiary, modifier = Modifier.size(10.dp))
+                                                }
+                                                Text(sdf.format(java.util.Date(tx.timestamp)), fontSize = 10.sp, color = c.textSecondary)
+                                            }
+                                        }
+                                        Text(
+                                            if (tx.type == "INCOME") "+${decFormat.format(tx.amount)}" else "-${decFormat.format(tx.amount)}",
+                                            fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                                            color = if (tx.type == "INCOME") c.income else c.expense
+                                        )
+                                    }
+                                    // Expanded notes — shown below the row, separated by a divider
+                                    if (isNoteExpanded && hasNote) {
+                                        Spacer(Modifier.height(6.dp))
+                                        HorizontalDivider(color = accent.copy(alpha = 0.2f))
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(userNote, fontSize = 11.sp, color = c.text.copy(alpha = 0.85f),
+                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { flowDayItem = null }) { Text("Close", color = c.accent) } }
+        )
     }
 
     // Category detail dialog
     categoryDetailItem?.let { (cat, txList) ->
         val decFormat = remember { DecimalFormat("₹#,##0.00") }
         val sdf = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
+        val txsWithNotesCat = txList.filter { userNoteFrom(it.note).isNotBlank() }
         AlertDialog(
             onDismissRequest = { categoryDetailItem = null; expandedNotesTxId = null },
             containerColor = c.surface,
             title = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(shape = CircleShape, color = cat.category.color.copy(alpha = 0.15f), modifier = Modifier.size(40.dp)) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(cat.category.icon, contentDescription = null, tint = cat.category.color, modifier = Modifier.size(22.dp))
                         }
                     }
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(cat.category.displayName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text)
                         Text(decFormat.format(cat.total), fontSize = 13.sp, color = cat.category.color, fontWeight = FontWeight.SemiBold)
+                    }
+                    if (txsWithNotesCat.isNotEmpty()) {
+                        val allExpanded = expandedNotesTxId == -1
+                        IconButton(
+                            onClick = { expandedNotesTxId = if (allExpanded) null else -1 },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                if (allExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore,
+                                contentDescription = if (allExpanded) "Hide all notes" else "Show all notes",
+                                tint = if (allExpanded) cat.category.color else c.textSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             },
@@ -2747,15 +3104,20 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                             }
                             val userNote = userNoteFrom(tx.note)
                             val hasNote = userNote.isNotBlank()
-                            val isExpanded = expandedNotesTxId == tx.id
+                            val isExpanded = expandedNotesTxId == -1 || expandedNotesTxId == tx.id
                             Surface(
-                                color = if (isExpanded) acctColor.copy(alpha = 0.06f) else c.divider,
+                                color = if (isExpanded && hasNote) acctColor.copy(alpha = 0.06f) else c.divider,
                                 shape = RoundedCornerShape(10.dp),
-                                border = if (isExpanded) BorderStroke(1.dp, acctColor.copy(alpha = 0.3f)) else null,
+                                border = if (isExpanded && hasNote) BorderStroke(1.dp, acctColor.copy(alpha = 0.3f)) else null,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .then(if (hasNote) Modifier.clickable {
-                                        expandedNotesTxId = if (isExpanded) null else tx.id
+                                        // Individual toggle overrides the "all" sentinel
+                                        if (expandedNotesTxId == -1) {
+                                            expandedNotesTxId = null // collapse all, including this one
+                                        } else {
+                                            expandedNotesTxId = if (isExpanded) null else tx.id
+                                        }
                                     } else Modifier)
                             ) {
                                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -2874,12 +3236,15 @@ private fun AnalyticsOverviewSection(
                 } else {
                     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                         val isCompact = maxWidth < 420.dp
-                        val chartSize = if (isCompact) 170.dp else 180.dp
+                        // Chart uses ~68% of the available row width so there's no wasted space
+                        val chartSize = if (isCompact) (maxWidth * 0.65f).coerceIn(160.dp, 210.dp)
+                                        else (maxWidth * 0.68f).coerceIn(180.dp, 260.dp)
+                        val legendFontSize = if (isCompact) 9.sp else 10.sp
                         val chartContent: @Composable () -> Unit = {
                             Box(
                                 modifier = Modifier
                                     .size(chartSize)
-                                    .padding(8.dp)
+                                    .padding(2.dp)  // minimal padding — chart fills its allotted space
                             ) {
                                 Canvas(
                                     modifier = Modifier
@@ -2987,13 +3352,13 @@ private fun AnalyticsOverviewSection(
                                         val innerRadius = (sizeMin - strokeWidthValue) / 2f - strokeWidthValue * 0.65f
                                         val labelPaint = android.graphics.Paint().apply {
                                             color = c.textSecondary.toArgb()
-                                            textSize = 10.sp.toPx()
+                                            textSize = (sizeMin * 0.072f).coerceIn(8.sp.toPx(), 11.sp.toPx())
                                             isAntiAlias = true
                                             textAlign = android.graphics.Paint.Align.CENTER
                                         }
                                         val amtPaint = android.graphics.Paint().apply {
                                             color = c.text.toArgb()
-                                            textSize = 12.sp.toPx()
+                                            textSize = (sizeMin * 0.085f).coerceIn(9.sp.toPx(), 13.sp.toPx())
                                             isAntiAlias = true
                                             textAlign = android.graphics.Paint.Align.CENTER
                                             typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -3018,7 +3383,7 @@ private fun AnalyticsOverviewSection(
                         }
                         val legendContent: @Composable () -> Unit = {
                             Column(
-                                modifier = Modifier.widthIn(max = 110.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 verticalArrangement = Arrangement.spacedBy(0.dp)
                             ) {
                                 categoryTotals.forEachIndexed { idx, stats ->
@@ -3035,14 +3400,14 @@ private fun AnalyticsOverviewSection(
                                     ) {
                                         Box(
                                             modifier = Modifier
-                                                .size(8.dp)
+                                                .size(7.dp)
                                                 .background(stats.category.color)
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
                                             stats.category.displayName,
                                             color = c.text.copy(alpha = 0.85f),
-                                            fontSize = 10.sp,
+                                            fontSize = legendFontSize,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f)
@@ -3057,10 +3422,10 @@ private fun AnalyticsOverviewSection(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            Box(modifier = Modifier.weight(0.62f), contentAlignment = Alignment.Center) {
                                 chartContent()
                             }
-                            legendContent()
+                            Box(modifier = Modifier.weight(0.38f)) { legendContent() }
                         }
 
                     }
@@ -3160,7 +3525,8 @@ private fun AnalyticsFlowSection(
     points: List<AnalyticsFlowPoint>,
     showIncome: Boolean,
     accent: Color,
-    emptyMessage: String
+    emptyMessage: String,
+    onDayClick: ((AnalyticsFlowPoint) -> Unit)? = null
 ) {
     val c = LocalAppColors.current
     val decFormat = remember { DecimalFormat("₹#,##0.00") }
@@ -3410,6 +3776,7 @@ private fun AnalyticsFlowSection(
                                     .background(
                                         if (point != null && value > 0.0) accent.copy(alpha = 0.09f) else Color.Transparent
                                     )
+                                    .then(if (point != null && onDayClick != null) Modifier.clickable { onDayClick(point) } else Modifier)
                             ) {
                                 if (point != null) {
                                     Column(
@@ -3446,7 +3813,10 @@ private fun AnalyticsFlowSection(
     }
 
 @Composable
-private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>) {
+private fun AnalyticsAccountSection(
+    accountStats: List<AccountAnalyticsSummary>,
+    onAccountTap: ((AccountAnalyticsSummary) -> Unit)? = null
+) {
     val c = LocalAppColors.current
     val decFormat = remember { DecimalFormat("₹#,##0.00") }
     val maxActivity = accountStats.maxOfOrNull { maxOf(it.income, it.expense) }?.coerceAtLeast(1.0) ?: 1.0
@@ -3647,7 +4017,9 @@ private fun AnalyticsAccountSection(accountStats: List<AccountAnalyticsSummary>)
                     color = c.surface,
                     shape = RoundedCornerShape(16.dp),
                     border = BorderStroke(1.dp, stats.color.copy(alpha = 0.45f)),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().then(
+                        if (onAccountTap != null) Modifier.clickable { onAccountTap(stats) } else Modifier
+                    )
                 ) {
                     Row(
                         modifier = Modifier
@@ -4036,8 +4408,8 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         modifier = Modifier
             .fillMaxSize()
             .testTag("budgets_scroll_column"),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // Upper Title HUD
         item {
@@ -4112,12 +4484,12 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 contentColor = c.accent
                             ),
                             border = BorderStroke(1.dp, c.accent.copy(alpha = 0.5f)),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            modifier = Modifier.testTag("add_custom_category_button")
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            modifier = Modifier.height(34.dp).testTag("add_custom_category_button")
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = "Add Category", modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Add Category", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Icon(Icons.Default.Add, contentDescription = "Add Category", modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Add Category", fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1)
                         }
                     }
                 }
@@ -4144,7 +4516,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         .testTag("categories_tab_expense"),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Expense Categories", color = if (isExp) c.accent else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("Expense Categories", color = if (isExp) c.accent else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Box(
                     modifier = Modifier
@@ -4157,7 +4529,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         .testTag("categories_tab_income"),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Income Categories", color = if (!isExp) c.accent else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("Income Categories", color = if (!isExp) c.accent else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -4406,7 +4778,13 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     // Without this, reordering resets the pointerInput coroutine, breaking multi-step drag.
                     key(cat.name) {
                     val isDragging = draggingItemKey == cat.name
-                    val dragOffsetDp = with(LocalDensity.current) { draggingItemOffsetY.toDp() }
+                    val thresholdDp = 48.dp   // swap threshold
+                    // Clamp visual offset so item never flies off screen during fast drag
+                    val dragOffsetDp = with(LocalDensity.current) {
+                        draggingItemOffsetY.coerceIn(-thresholdDp.toPx(), thresholdDp.toPx()).toDp()
+                    }
+                    // Debounce tracker to prevent overbuffering with many categories
+                    val lastSwapMs = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
                     val budgetObj = activeBudgets.first { it.category.equals(cat.name, ignoreCase = true) }
                     val catSpend = if (activeCategoryTypeTab == "EXPENSE") {
                         monthExpenses.filter { it.category.equals(cat.name, ignoreCase = true) }.sumOf { it.amount }
@@ -4429,6 +4807,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             .fillMaxWidth()
                             .offset(y = if (isDragging) dragOffsetDp else 0.dp)
                             .scale(if (isDragging) 1.02f else 1f)
+                            .clickable { showBudgetAmountDialog = cat }
                             .pointerInput(cat.name) {
                             detectDragGesturesAfterLongPress(
                                 onDragStart = { _ -> draggingItemKey = cat.name; draggingItemOffsetY = 0f },
@@ -4443,16 +4822,18 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                     draggingItemOffsetY += dragAmount.y
                                     val currentIndex = categoryOrderKeys.indexOf(currentKey)
                                     if (currentIndex == -1) return@detectDragGesturesAfterLongPress
-                                    // Fixed 40dp threshold: swap each 40dp of drag, reset by 2×threshold.
-                                    // Using size.height caused "one step" bug: after reset offset = -size.height/2,
-                                    // requiring a full item height drag to trigger next swap.
-                                    val thresholdPx = 40.dp.toPx()
+                                    val thresholdPx = thresholdDp.toPx()
+                                    // Clamp + 200ms debounce to prevent multi-skip on fast drag or with many categories
+                                    draggingItemOffsetY = draggingItemOffsetY.coerceIn(-thresholdPx * 1.4f, thresholdPx * 1.4f)
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastSwapMs.longValue < 200L) return@detectDragGesturesAfterLongPress
                                     // Swap with next when dragged down
                                     if (draggingItemOffsetY > thresholdPx && currentIndex < categoryOrderKeys.lastIndex) {
                                         val newOrder = categoryOrderKeys.toMutableList()
                                         newOrder.add(currentIndex + 1, newOrder.removeAt(currentIndex))
                                         categoryOrderKeys = newOrder
                                         draggingItemOffsetY -= thresholdPx * 2f
+                                        lastSwapMs.longValue = now
                                     }
                                     // Swap with previous when dragged up
                                     else if (draggingItemOffsetY < -thresholdPx && currentIndex > 0) {
@@ -4460,6 +4841,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                         newOrder.add(currentIndex - 1, newOrder.removeAt(currentIndex))
                                         categoryOrderKeys = newOrder
                                         draggingItemOffsetY += thresholdPx * 2f
+                                        lastSwapMs.longValue = now
                                     }
                                 }
                             )
@@ -4478,40 +4860,18 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                         Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text,
                                             modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("${compactCurrency(catSpend)} / ${compactCurrency(limit)}", fontSize = 13.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
-                                        Box {
-                                            IconButton(onClick = { showCategoryMenuFor = cat.name }, modifier = Modifier.size(26.dp)) {
-                                                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = c.textSecondary, modifier = Modifier.size(15.dp))
-                                            }
-                                            DropdownMenu(
-                                                expanded = showCategoryMenuFor == cat.name,
-                                                onDismissRequest = { showCategoryMenuFor = null },
-                                                shape = RoundedCornerShape(12.dp),
-                                                containerColor = c.surface,
-                                                shadowElevation = 8.dp
-                                            ) {
-                                                DropdownMenuItem(
-                                                    text = { Text(if (activeCategoryTypeTab == "INCOME") "Edit Expected Amount" else "Edit Budget", color = c.text, fontSize = 13.sp) },
-                                                    onClick = { showBudgetAmountDialog = cat; showCategoryMenuFor = null },
-                                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                                                )
-                                                DropdownMenuItem(
-                                                    text = { Text("Remove Budget", color = c.expense, fontSize = 13.sp) },
-                                                    onClick = { viewModel.deleteBudget(budgetObj.id); showCategoryMenuFor = null },
-                                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                                                )
-                                            }
-                                        }
+                                        Text("${compactCurrency(catSpend)} / ${compactCurrency(limit)}", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, maxLines = 1)
                                     }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(
-                                            text = "Remaining: ${compactCurrency(remaining)}",
-                                            fontSize = 12.sp,
-                                            color = if (remaining < 0) c.expense else c.income
+                                        Text("Remaining: ${compactCurrency(remaining)}",
+                                            fontSize = 11.sp,
+                                            color = if (remaining < 0) c.expense else c.income,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
                                         )
                                         Text(
                                             text = "${String.format(Locale.getDefault(), "%.1f", percent)}%",
@@ -5208,13 +5568,30 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
 
                     Spacer(modifier = Modifier.height(18.dp))
                     Row(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Income so far", fontSize = 11.sp, color = c.textSecondary)
-                            Text(if (showTotal) decFormat.format(totalIncomeSoFar) else "₹ ••••", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.income)
+                        // Income so far
+                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(shape = CircleShape, color = c.income.copy(alpha = 0.15f), modifier = Modifier.size(34.dp)) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.ArrowUpward, contentDescription = "Income", tint = c.income, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Income so far", fontSize = 11.sp, color = c.textSecondary, maxLines = 1)
+                                Text(if (showTotal) decFormat.format(totalIncomeSoFar) else "₹ ••••", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.income, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Expense so far", fontSize = 11.sp, color = c.textSecondary)
-                            Text(if (showTotal) decFormat.format(totalExpenseSoFar) else "₹ ••••", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.expense)
+                        Spacer(Modifier.width(8.dp))
+                        // Expense so far
+                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(shape = CircleShape, color = c.expense.copy(alpha = 0.15f), modifier = Modifier.size(34.dp)) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.ArrowDownward, contentDescription = "Expense", tint = c.expense, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Expense so far", fontSize = 11.sp, color = c.textSecondary, maxLines = 1)
+                                Text(if (showTotal) decFormat.format(totalExpenseSoFar) else "₹ ••••", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.expense, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
                 }
@@ -5868,6 +6245,12 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
     var merchantPatternInput by remember { mutableStateOf("") }
     var merchantCategoryInput by remember { mutableStateOf("") }
     var merchantCategoryDropdownExpanded by remember { mutableStateOf(false) }
+    // Secret tap counter for the security badge icon
+    val parserKeyRulesVisible by viewModel.parserKeyRulesVisible.collectAsStateWithLifecycle()
+    val parserExclusionVisible by viewModel.parserExclusionVisible.collectAsStateWithLifecycle()
+    var secIconTapCount by remember { mutableStateOf(0) }
+    val secIconTapScope = rememberCoroutineScope()
+    var secIconTapJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -5898,7 +6281,44 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                         imageVector = Icons.Default.Security,
                         contentDescription = "Security badge",
                         tint = c.accent,
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clickable(indication = null,
+                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {
+                                secIconTapCount++
+                                secIconTapJob?.cancel()
+                                secIconTapJob = secIconTapScope.launch {
+                                    kotlinx.coroutines.delay(1200)
+                                    when {
+                                        secIconTapCount >= 5 -> {
+                                            when {
+                                                !parserKeyRulesVisible -> {
+                                                    viewModel.setParserKeyRulesVisible(true)
+                                                    Toast.makeText(context, "\uD83D\uDD13 Parser key rules unlocked", Toast.LENGTH_SHORT).show()
+                                                }
+                                                !parserExclusionVisible -> {
+                                                    viewModel.setParserExclusionVisible(true)
+                                                    Toast.makeText(context, "\uD83D\uDD13 Parser exclusion rules unlocked", Toast.LENGTH_SHORT).show()
+                                                }
+                                                else -> Toast.makeText(context, "Both parser sections already visible", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                        secIconTapCount == 2 -> {
+                                            when {
+                                                parserExclusionVisible -> {
+                                                    viewModel.setParserExclusionVisible(false)
+                                                    Toast.makeText(context, "\uD83D\uDD12 Parser exclusion rules hidden", Toast.LENGTH_SHORT).show()
+                                                }
+                                                parserKeyRulesVisible -> {
+                                                    viewModel.setParserKeyRulesVisible(false)
+                                                    Toast.makeText(context, "\uD83D\uDD12 Parser key rules hidden", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    }
+                                    secIconTapCount = 0
+                                }
+                            }
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text("Secure Offline Automated Scanner", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text)
@@ -6031,7 +6451,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    // Wallets & PF scan button
+                    // Scan Wallets button (PF tracking removed)
                     OutlinedButton(
                         onClick = {
                             if (hasReadSmsPermission) {
@@ -6044,33 +6464,26 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = c.accent),
                         border = BorderStroke(1.dp, c.accent.copy(alpha = if (isWalletPfScanning) 0.3f else 0.6f)),
                         shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
+                        modifier = Modifier.fillMaxWidth().height(44.dp)
                     ) {
                         if (isWalletPfScanning) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
-                                color = c.accent,
-                                strokeWidth = 2.dp
-                            )
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), color = c.accent, strokeWidth = 2.dp)
                             Spacer(Modifier.width(6.dp))
                             Text("Scanning…", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         } else {
                             Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                if (hasReadSmsPermission) "Scan Wallets & PF" else "Enable Auto-Import",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
+                                if (hasReadSmsPermission) "Scan Wallets" else "Enable Auto-Import",
+                                fontWeight = FontWeight.SemiBold, fontSize = 14.sp
                             )
                         }
                     }
                 }
             }
         }
-        // Manual pasted SMS analyzer
-        item {
+        // Manual pasted SMS analyzer — shown only when Parser Key Rules are unlocked
+        if (parserKeyRulesVisible) item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = c.surface),
                 border = BorderStroke(1.dp, c.border),
@@ -6456,8 +6869,8 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
             }
         }
 
-        // Parser exclusion rules reference card
-        item {
+        // Parser exclusion rules reference card — shown only when unlocked
+        if (parserExclusionVisible) item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = c.surface),
                 border = BorderStroke(1.dp, c.expense.copy(alpha = 0.25f)),
@@ -6617,8 +7030,8 @@ fun AddTransactionDialog(
     var title by remember { mutableStateOf("") }
     var calcExpr by remember { mutableStateOf("") }
     var transactionType by remember { mutableStateOf("EXPENSE") }
-    var categorySelection by remember { mutableStateOf("FOOD") }
-    var accountSelection by remember { mutableStateOf("") }
+    var categorySelection by remember { mutableStateOf(viewModel.getLastUsedCategory("EXPENSE").ifBlank { "FOOD" }) }
+    var accountSelection by remember { mutableStateOf(viewModel.getLastUsedAccount()) }
     var notesStr by remember { mutableStateOf("") }
     var selectedTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
     var showWalletPicker by remember { mutableStateOf(false) }
@@ -6632,8 +7045,8 @@ fun AddTransactionDialog(
     val selectablesWallets = accounts.map { it.name }
 
     LaunchedEffect(accounts) {
-        if (accounts.isNotEmpty() && !accounts.any { it.name == accountSelection }) {
-            accountSelection = accounts.first().name
+        if (accounts.isNotEmpty() && accountSelection.isBlank()) {
+            accountSelection = viewModel.getLastUsedAccount().ifBlank { accounts.first().name }
         }
     }
 
@@ -6711,6 +7124,8 @@ fun AddTransactionDialog(
                             onClick = {
                                 if (resolvedAmount > 0.0) {
                                     val cleanTitle = if (title.isBlank()) "Merchant Log" else title
+                                    viewModel.saveLastUsedAccount(accountSelection)
+                                    viewModel.saveLastUsedCategory(transactionType, categorySelection)
                                     onConfirm(
                                         cleanTitle, resolvedAmount, categorySelection,
                                         transactionType,
@@ -7232,7 +7647,7 @@ fun EditTransactionDialog(
                 Button(
                     onClick = {
                         val dAmt = amountStr.toDoubleOrNull() ?: 0.0
-                        if (dAmt > 0.0 && title.isNotBlank()) {
+                        if ((if (editType == "BALANCE_UPDATE") dAmt >= 0.0 else dAmt > 0.0) && title.isNotBlank()) {
                             onConfirm(
                                 tx.copy(
                                     title = title,
@@ -8520,7 +8935,6 @@ fun RestoreBackupDialog(
 ) {
     val c = LocalAppColors.current
     val context = LocalContext.current
-    var confirmed by remember { mutableStateOf(false) }
 
     val openDocLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -8543,169 +8957,70 @@ fun RestoreBackupDialog(
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
+                verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                // ── Icon header ────────────────────────────────────────────
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .background(c.expense.copy(alpha = 0.15f), CircleShape)
-                        .border(1.5.dp, c.expense.copy(alpha = 0.4f), CircleShape),
-                    contentAlignment = Alignment.Center
+                // ── Icon + header ──────────────────────────────────────────
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        Icons.Default.Restore,
-                        contentDescription = null,
-                        tint = c.expense,
-                        modifier = Modifier.size(32.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(c.accent.copy(alpha = 0.12f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Restore, contentDescription = null, tint = c.accent, modifier = Modifier.size(28.dp))
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text("Restore from Backup", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = c.text)
+                    Text("Pick a CSV backup file to restore", fontSize = 12.sp, color = c.textSecondary, modifier = Modifier.padding(top = 3.dp))
                 }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "Import Backup",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = c.text
-                )
-                Text(
-                    "Restore from a backup file",
-                    fontSize = 12.sp,
-                    color = c.textSecondary,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
 
-                Spacer(Modifier.height(16.dp))
-
-                // ── Info banner ────────────────────────────────────────
+                // ── What happens ──────────────────────────────────────────
                 Surface(
-                    color = c.accent.copy(0.08f),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, c.accent.copy(0.3f)),
+                    color = c.accent.copy(0.06f),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, c.accent.copy(0.2f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.Top
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp).padding(top = 1.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("Merge Restore (non-destructive)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.accent)
-                            Text(
-                                "Only records missing from your current data are added. Existing accounts and transactions are preserved.",
-                                fontSize = 11.sp,
-                                color = c.accent.copy(0.85f)
-                            )
+                        listOf(
+                            Pair(Icons.Default.AccountBalanceWallet, "Accounts restored"),
+                            Pair(Icons.AutoMirrored.Filled.ReceiptLong, "Transactions restored"),
+                            Pair(Icons.Default.ShieldMoon, "Existing data preserved — only new records are added")
+                        ).forEach { (icon, label) ->
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Icon(icon, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
+                                Text(label, fontSize = 12.sp, color = c.text.copy(alpha = 0.85f))
+                            }
                         }
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-                HorizontalDivider(color = c.text.copy(0.08f))
-                Spacer(Modifier.height(14.dp))
-
-                // ── What gets restored ─────────────────────────────────────
-                Text(
-                    "WHAT GETS RESTORED",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = c.text.copy(0.4f),
-                    modifier = Modifier.align(Alignment.Start)
-                )
-                Spacer(Modifier.height(10.dp))
-                listOf(
-                    Triple(Icons.Default.AccountBalanceWallet, "Accounts",        "All wallets recreated with their types"),
-                    Triple(Icons.AutoMirrored.Filled.ReceiptLong, "Transactions",    "All records with date, amount, category"),
-                    Triple(Icons.Default.LinkOff,              "Existing Data",   "Cleared first — cannot be recovered")
-                ).forEachIndexed { idx, (icon, title, sub) ->
-                    val tint = if (idx == 2) c.expense else c.accent
-                    val bg   = if (idx == 2) c.expense.copy(0.1f) else c.accent.copy(0.08f)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 5.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .background(bg, RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text)
-                            Text(sub,   fontSize = 11.sp, color = c.textSecondary)
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(14.dp))
-                HorizontalDivider(color = c.text.copy(0.08f))
-                Spacer(Modifier.height(12.dp))
-
-                // ── Confirmation toggle ───────────────────────────────────
-                Surface(
-                    color = if (confirmed) c.expense.copy(0.08f) else c.text.copy(0.04f),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, if (confirmed) c.expense.copy(0.4f) else c.text.copy(0.1f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { confirmed = !confirmed }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Checkbox(
-                            checked = confirmed,
-                            onCheckedChange = { confirmed = it },
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = c.expense,
-                                uncheckedColor = c.text.copy(0.3f)
-                            )
-                        )
-                        Text(
-                            "I understand this will overwrite all my existing data",
-                            fontSize = 12.sp,
-                            fontWeight = if (confirmed) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (confirmed) c.text else c.textSecondary
-                        )
                     }
                 }
 
                 Spacer(Modifier.height(16.dp))
 
                 // ── Action buttons ────────────────────────────────────────
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text.copy(0.7f)),
-                        border = BorderStroke(1.dp, c.text.copy(0.15f))
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.textSecondary),
+                        border = BorderStroke(1.dp, c.border)
                     ) { Text("Cancel") }
 
                     Button(
                         onClick = { openDocLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "*/*")) },
                         modifier = Modifier.weight(2f),
-                        enabled = confirmed,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = c.expense,
-                            contentColor = c.text,
-                            disabledContainerColor = c.expense.copy(0.3f),
-                            disabledContentColor = c.text.copy(0.4f)
-                        ),
+                        colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = Color.White),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Browse Backup File", fontWeight = FontWeight.Bold)
+                        Text("Browse & Restore", fontWeight = FontWeight.Bold)
                     }
                 }
             }

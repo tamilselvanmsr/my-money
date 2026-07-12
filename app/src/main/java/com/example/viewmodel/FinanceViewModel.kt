@@ -220,6 +220,44 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         prefs.edit().putInt("sms_scan_months_back", months).apply()
     }
 
+    // ── Last-used account & category (AddTransaction defaults) ────────────────
+    fun getLastUsedAccount(): String = prefs.getString("last_used_account", "") ?: ""
+    fun saveLastUsedAccount(name: String) { prefs.edit().putString("last_used_account", name).apply() }
+    fun getLastUsedCategory(type: String): String = prefs.getString("last_used_category_$type", "") ?: ""
+    fun saveLastUsedCategory(type: String, name: String) { prefs.edit().putString("last_used_category_$type", name).apply() }
+
+    // ── Parser section visibility (developer unlock via security icon taps) ────
+    private val _parserKeyRulesVisible = MutableStateFlow(prefs.getBoolean("parser_key_rules_visible", false))
+    val parserKeyRulesVisible: StateFlow<Boolean> = _parserKeyRulesVisible.asStateFlow()
+    fun setParserKeyRulesVisible(v: Boolean) {
+        _parserKeyRulesVisible.value = v
+        prefs.edit().putBoolean("parser_key_rules_visible", v).apply()
+    }
+    private val _parserExclusionVisible = MutableStateFlow(prefs.getBoolean("parser_exclusion_visible", false))
+    val parserExclusionVisible: StateFlow<Boolean> = _parserExclusionVisible.asStateFlow()
+    fun setParserExclusionVisible(v: Boolean) {
+        _parserExclusionVisible.value = v
+        prefs.edit().putBoolean("parser_exclusion_visible", v).apply()
+    }
+
+    // ── First-launch flag ──────────────────────────────────────────────────────
+    fun isFirstLaunch(): Boolean = !prefs.getBoolean("app_launched_before", false)
+    fun markAppLaunched() { prefs.edit().putBoolean("app_launched_before", true).apply() }
+
+    // ── Analytics category filter — separate per overview mode ─────────────────
+    private val _analyticsExpenseCatFilter = MutableStateFlow<Set<String>>(emptySet())
+    val analyticsExpenseCatFilter: StateFlow<Set<String>> = _analyticsExpenseCatFilter.asStateFlow()
+    fun setAnalyticsExpenseCatFilter(f: Set<String>) { _analyticsExpenseCatFilter.value = f }
+
+    private val _analyticsIncomeCatFilter = MutableStateFlow<Set<String>>(emptySet())
+    val analyticsIncomeCatFilter: StateFlow<Set<String>> = _analyticsIncomeCatFilter.asStateFlow()
+    fun setAnalyticsIncomeCatFilter(f: Set<String>) { _analyticsIncomeCatFilter.value = f }
+
+    // Legacy single-filter kept for other modes (flow, account analysis)
+    private val _analyticsCategoryFilter = MutableStateFlow<Set<String>>(emptySet())
+    val analyticsCategoryFilter: StateFlow<Set<String>> = _analyticsCategoryFilter.asStateFlow()
+    fun setAnalyticsCategoryFilter(filter: Set<String>) { _analyticsCategoryFilter.value = filter }
+
     // ── Light / Dark theme preference ─────────────────────────────────────────
     // themeMode: "system" (follow device) | "light" | "dark"
     private val _themeMode = MutableStateFlow(prefs.getString("theme_mode", "system") ?: "system")
@@ -342,16 +380,20 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun reapplyMerchantRulesToExisting() {
         viewModelScope.launch {
             var updatedCount = 0
+            val changeDetails = mutableListOf<String>()
             allTransactions.value.forEach { tx ->
                 val override = applyMerchantRulesToCategory(tx.title)
                 if (override != null && !override.equals(tx.category, ignoreCase = true)) {
                     repository.updateTransaction(tx.copy(category = override))
                     updatedCount++
+                    changeDetails.add("• ${tx.title}: ${tx.category} → $override")
                 }
             }
             if (updatedCount > 0) {
                 _toastMessage.emit("Re-categorized $updatedCount existing record(s) using merchant rules.")
-                addNotification("Rules Applied", "Re-categorized $updatedCount record(s) using Merchant → Category rules.")
+                val detail = changeDetails.take(15).joinToString("\n") +
+                    if (changeDetails.size > 15) "\n…and ${changeDetails.size - 15} more" else ""
+                addNotification("Rules Applied", "Re-categorized $updatedCount record(s):\n$detail")
             } else {
                 _toastMessage.emit("No existing records needed re-categorization.")
                 addNotification("Rules Applied", "No records updated — all already match current merchant rules.")
@@ -1396,10 +1438,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 monthYear = _selectedMonthYear.value
             )
             repository.insertBudget(budget)
+            val prevAmount = existingBudget?.amountLimit
             val action = if (existingBudget != null) "updated" else "set"
             _toastMessage.emit("Budget $action for $categoryDisplayName: ₹$amount")
-            addNotification("Budget ${action.replaceFirstChar { it.uppercase() }}",
-                "$categoryDisplayName budget ${action} to ₹$amount for ${_selectedMonthYear.value}.")
+            val notifMsg = if (prevAmount != null)
+                "$categoryDisplayName budget updated: ₹${String.format("%.2f", prevAmount)} → ₹${String.format("%.2f", amount)} for ${_selectedMonthYear.value}."
+            else
+                "$categoryDisplayName budget set to ₹${String.format("%.2f", amount)} for ${_selectedMonthYear.value}."
+            addNotification("Budget ${action.replaceFirstChar { it.uppercase() }}", notifMsg)
         }
     }
 
@@ -1479,10 +1525,32 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Returns true for Apay Wallet, NeuCoins, and EPFO passbook results — excluded from the regular scan. */
-    private fun isWalletOrPfResult(parsed: com.example.utils.SmsParsingResult): Boolean =
-        parsed.accountRef == "APAY_WALLET" ||
-        parsed.accountRef == "NEUCOINS_WALLET" ||
-        parsed.title == "PF Contribution"
+    private fun isWalletOrPfResult(parsed: com.example.utils.SmsParsingResult): Boolean {
+        val ref = parsed.accountRef ?: ""
+        return ref == "APAY_WALLET" ||
+            ref == "NEUCOINS_WALLET" ||
+            ref == "PAYTM_WALLET" ||
+            ref == "PHONEPE_WALLET" ||
+            ref == "MOBIKWIK_WALLET" ||
+            ref == "FREECHARGE_WALLET" ||
+            ref == "JIOMONEY_WALLET" ||
+            ref == "AIRTEL_WALLET" ||
+            ref == "OLAMONEY_WALLET" ||
+            ref == "CRED_WALLET" ||
+            ref == "LAZYPAY_WALLET" ||
+            ref == "SIMPL_WALLET" ||
+            ref == "SLICE_WALLET" ||
+            ref == "FAMPAY_WALLET" ||
+            ref == "JUPITER_WALLET" ||
+            ref == "FI_WALLET" ||
+            ref == "NIYO_WALLET" ||
+            ref == "BHARATPE_WALLET" ||
+            ref == "OXIGEN_WALLET" ||
+            ref == "ITZCASH_WALLET" ||
+            ref == "VODAFONEMPESA_WALLET" ||
+            ref == "POCKETAPP_WALLET" ||
+            parsed.title == "PF Contribution"
+    }
 
     fun scanDeviceSmsInbox(context: android.content.Context, monthsBack: Int = 3) {
         viewModelScope.launch {
@@ -1862,7 +1930,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             isDuplicateImportedTransaction(existing, body, parsed.title, parsed.amount, parsed.type, targetTime, incomingRef, walletName)
                         }
                         // Skip PF Contribution INCOME when Bal Sync is ON — balance tracked by the Balance Sync snapshot
-                        val skipPfIncome = parsed.title == "PF Contribution" && enableBalanceSync.value
+                        val skipPfIncome = false // parsed.title == "PF Contribution" && enableBalanceSync.value
                         if (!duplicate && !skipPfIncome && !matchesSmsBlocklistPattern(walletName)) {
                             val finalCategory = applyMerchantRulesToCategory(parsed.title) ?: parsed.category.name
                             val txType = parsed.type
@@ -1882,7 +1950,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                             matchedCount++
                         }
-                        // Sync passbook total to PF account balance (only when Bal Sync is enabled)
+                        // PF passbook balance sync — disabled (wallets-only mode)
+                        /*
                         if (parsed.title == "PF Contribution" && parsed.availableBalance != null &&
                             enableBalanceSync.value && !matchesSmsBlocklistPattern(walletName)) {
                             val pfAcc = repository.getAccountByRef(parsed.accountRef ?: "")
@@ -1894,6 +1963,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 }
                             }
                         }
+                        */
                     }
                     cursor.close()
                 }
@@ -1904,11 +1974,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 if (matchedCount > 0) {
                     _toastMessage.emit("Imported $matchedCount wallet/PF transaction(s)!")
                 } else {
-                    _toastMessage.emit("Wallets & PF scan complete. No new entries found.")
+                    _toastMessage.emit("Wallets scan complete. No new entries found.")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Wallets/PF scan failed: ${e.message}", e)
-                _toastMessage.emit("Wallets & PF scan failed. Check SMS permission.")
+                _toastMessage.emit("Wallets scan failed. Check SMS permission.")
             } finally {
                 _isWalletPfScanning.value = false
             }
@@ -2062,6 +2132,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     .map { it.trimStart().removePrefix("!").trim().removeSurrounding("(", ")").trim().lowercase() }
                     .filter { it.isNotBlank() }
                 val allPatterns = (forcePatterns + positiveCustom).map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
+                val importDetails = mutableListOf<String>() // tracks per-tx detail for notification
 
                 if (cursor != null) {
                     val bodyIndex = cursor.getColumnIndex("body")
@@ -2183,6 +2254,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
                                 newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                                 projectedTransactions.add(tx)
+                                // Track import details for notification
+                                val matchedKey = allPatterns.firstOrNull { p ->
+                                    runCatching { Regex(p, RegexOption.IGNORE_CASE).containsMatchIn(body) }
+                                        .getOrDefault(body.lowercase().contains(p))
+                                }
+                                importDetails.add("[${matchedKey ?: "?"}] ${parsed.title} ₹${String.format("%.2f", parsed.amount)}")
                                 matchedCount++
                             }
                             // Sync passbook total to PF account balance (only when Bal Sync is enabled)
@@ -2206,6 +2283,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val rulesDesc = if (allPatterns.isNotEmpty()) " (with ${allPatterns.size} custom rule${if (allPatterns.size > 1) "s" else ""})" else ""
                 if (matchedCount > 0) {
                     _toastMessage.emit("Imported $matchedCount transaction(s) from inbox$rulesDesc!")
+                    val detail = importDetails.take(15).joinToString("\n") +
+                        if (importDetails.size > 15) "\n…and ${importDetails.size - 15} more" else ""
+                    addNotification("Custom Scan Imported", "Imported $matchedCount transaction(s)$rulesDesc:\n$detail")
                 } else {
                     _toastMessage.emit("Scan complete$rulesDesc. No new transactions matched.")
                 }

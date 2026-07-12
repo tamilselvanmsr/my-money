@@ -76,6 +76,7 @@ object SmsParser {
         parseApayWallet(cleanBody, lowerBody, smsTimestamp)?.let { return it }
         parseNeuCoins(cleanBody, lowerBody, smsTimestamp)?.let { return it }
         parseEpfoContribution(cleanBody, lowerBody, smsTimestamp)?.let { return it }
+        parseIndianWallet(cleanBody, lowerBody, upper, smsTimestamp)?.let { return it }
 
         // 5. Soft validation (bypassable)
         if (!bypassExclusionFilter) {
@@ -296,6 +297,174 @@ object SmsParser {
         return SmsParsingResult(
             title = title, amount = amount, category = category,
             type = type, accountRef = "NEUCOINS_WALLET",
+            parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp)
+        )
+    }
+
+    // ─── Comprehensive Indian digital wallet parser ───────────────────────────────
+    // Covers Paytm, PhonePe, MobiKwik, FreeCharge, JioMoney, Airtel Money,
+    // Ola Money, CRED, LazyPay, Simpl, Slice, Fampay, and others.
+    // Each wallet is identified by sender-ID substring OR body keyword.
+    private data class WalletDef(
+        val ref: String,          // accountRef stored in DB (e.g. "PAYTM_WALLET")
+        val displayName: String,  // human-readable name used in title
+        val senderSubstrings: List<String>,   // substrings matched against UPPER sender ID
+        val bodyKeywords: List<String>        // substrings matched against lower body
+    )
+
+    private val INDIA_WALLETS = listOf(
+        WalletDef("PAYTM_WALLET", "Paytm",
+            listOf("PYTMBN", "PAYTMB", "PAYTMW", "PAYTM", "PYTM"),
+            listOf("paytm wallet", "paytm balance", "paytm postpaid", "paytm cashback",
+                   "your paytm", "into paytm")),
+        WalletDef("PHONEPE_WALLET", "PhonePe",
+            listOf("PHNEPE", "PHONPE", "PTAXIS", "YPHPE", "YPHONE"),
+            listOf("phonepe wallet", "phone pe wallet", "phonepe cashback", "via phonepe")),
+        WalletDef("MOBIKWIK_WALLET", "MobiKwik",
+            listOf("MOBIKW", "MBKWIK", "ZSTLSE"),
+            listOf("mobikwik", "mbikwik", "zip coins", "zipcoins", "via zip")),
+        WalletDef("FREECHARGE_WALLET", "FreeCharge",
+            listOf("FRECHG", "FREECHG", "FRCHRG"),
+            listOf("freecharge wallet", "freecharge balance", "freecharge cashback")),
+        WalletDef("JIOMONEY_WALLET", "JioMoney",
+            listOf("JIOMNY", "JIOPAY", "JIOPMT"),
+            listOf("jio money", "jiomoney", "jio wallet", "jio payment")),
+        WalletDef("AIRTEL_WALLET", "Airtel Money",
+            listOf("AIRTLM", "AIRMON", "AIRPAY", "AIRTLB"),
+            listOf("airtel money", "airtel payments bank wallet", "airtel wallet",
+                   "airtel pay", "airtel upi")),
+        WalletDef("OLAMONEY_WALLET", "Ola Money",
+            listOf("OLAMNY", "OLAPY", "OLAMON"),
+            listOf("ola money", "ola postpaid", "ola wallet")),
+        WalletDef("CRED_WALLET", "CRED",
+            listOf("CREDPY", "CREDLT"),
+            listOf("cred pay", "cred coins", "cred cashback", "cred wallet",
+                   "cred upi", "credited to cred")),
+        WalletDef("LAZYPAY_WALLET", "LazyPay",
+            listOf("LAZYPY", "LAZPAY", "LAZYBE"),
+            listOf("lazypay", "lazy pay")),
+        WalletDef("SIMPL_WALLET", "Simpl",
+            listOf("SIMPLP", "SIMPAY"),
+            listOf("simpl wallet", "simpl pay", "simpl bill", "using simpl")),
+        WalletDef("SLICE_WALLET", "Slice",
+            listOf("SLICEC", "SLCPAY"),
+            listOf("slice card", "slice account", "slice cashback", "slice wallet")),
+        WalletDef("FAMPAY_WALLET", "FamPay",
+            listOf("FAMPAY", "FAMAPP"),
+            listOf("fampay", "fam card")),
+        WalletDef("JUPITER_WALLET", "Jupiter",
+            listOf("JUPMNY", "JUPTER"),
+            listOf("jupiter wallet", "jupiter account", "jupiter upi")),
+        WalletDef("FI_WALLET", "Fi Money",
+            listOf("FIBANK", "FIMNYS"),
+            listOf("fi money", "fi account", "fi wallet")),
+        WalletDef("NIYO_WALLET", "Niyo",
+            listOf("NIYOPB", "NIYOGL"),
+            listOf("niyo wallet", "niyo account")),
+        WalletDef("BHARATPE_WALLET", "BharatPe",
+            listOf("BHARPE", "BRTPE"),
+            listOf("bharatpe wallet", "bharatpe cashback")),
+        WalletDef("OXIGEN_WALLET", "Oxigen",
+            listOf("OXIGEN"),
+            listOf("oxigen wallet", "oxigen money")),
+        WalletDef("ITZCASH_WALLET", "ItzCash",
+            listOf("ITZCSH"),
+            listOf("itzcash wallet", "itzcash")),
+        WalletDef("VODAFONEMPESA_WALLET", "Vodafone M-Pesa",
+            listOf("VODMPS", "VMPESA"),
+            listOf("m-pesa wallet", "mpesa wallet", "vodafone m-pesa")),
+        WalletDef("POCKETAPP_WALLET", "Pockets by ICICI",
+            listOf("ICICIP", "PKTAPP"),
+            listOf("icici pockets", "pockets wallet")),
+    )
+
+    private fun parseIndianWallet(cleanBody: String, lower: String, upperSender: String, smsTimestamp: Long?): SmsParsingResult? {
+        val wallet = INDIA_WALLETS.firstOrNull { w ->
+            w.senderSubstrings.any { upperSender.contains(it) } ||
+            w.bodyKeywords.any { lower.contains(it) }
+        } ?: return null
+
+        // Extract amount
+        val amount = Pattern.compile(
+            "(?:rs\\.?|inr|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)",
+            Pattern.CASE_INSENSITIVE
+        ).let { p ->
+            val m = p.matcher(cleanBody)
+            if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null
+        } ?: Pattern.compile(
+            "([0-9,]+(?:\\.[0-9]{1,2})?)\\s*(?:rs|inr)",
+            Pattern.CASE_INSENSITIVE
+        ).let { p ->
+            val m = p.matcher(cleanBody)
+            if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null
+        } ?: return null
+        if (amount <= 0.0) return null
+
+        // Determine type
+        val type = when {
+            lower.contains("debited") || lower.contains("deducted") ||
+            lower.contains("paid") || lower.contains("spent") ||
+            lower.contains("charged") || lower.contains("withdrawn") ||
+            lower.contains("used") -> "EXPENSE"
+            lower.contains("credited") || lower.contains("added") ||
+            lower.contains("received") || lower.contains("cashback") ||
+            lower.contains("refund") || lower.contains("reward") ||
+            lower.contains("earn") -> "INCOME"
+            else -> "EXPENSE"
+        }
+
+        // Extract payee/merchant for expense; or source for income
+        val title: String = run {
+            // UPI VPA handle
+            Pattern.compile("\\b([a-zA-Z0-9.\\-_]+@[a-zA-Z0-9]{2,})\\b").matcher(cleanBody).let { m ->
+                if (m.find()) return@run m.group(1) ?: "${wallet.displayName} Transfer"
+            }
+            // "at <Merchant>" or "to <Merchant>"
+            val vendorMatcher = Pattern.compile(
+                "(?:at|to|paid to|for|merchant)\\s+([A-Za-z][A-Za-z0-9 .\\-&]{2,}?)(?:\\s+on\\b|\\s*\\.\\s|\\s+via\\b|\\s*,|$)",
+                Pattern.CASE_INSENSITIVE
+            ).matcher(cleanBody)
+            if (vendorMatcher.find()) {
+                val raw = (vendorMatcher.group(1) ?: "").trim()
+                    .split("\\s+".toRegex()).take(4).joinToString(" ") {
+                        it.replaceFirstChar { c -> c.titlecase() }
+                    }
+                if (raw.length > 2) return@run raw
+            }
+            // "from <Source>" for income
+            if (type == "INCOME") {
+                val fromMatcher = Pattern.compile(
+                    "(?:from)\\s+([A-Za-z][A-Za-z0-9 .\\-&]{2,}?)(?:\\s+on\\b|\\s*\\.\\s|$)",
+                    Pattern.CASE_INSENSITIVE
+                ).matcher(cleanBody)
+                if (fromMatcher.find()) {
+                    val raw = (fromMatcher.group(1) ?: "").trim()
+                    if (raw.length > 2) return@run raw.split("\\s+".toRegex()).take(4)
+                        .joinToString(" ") { it.replaceFirstChar { c -> c.titlecase() } }
+                }
+                return@run when {
+                    lower.contains("cashback") -> "${wallet.displayName} Cashback"
+                    lower.contains("refund")   -> "${wallet.displayName} Refund"
+                    lower.contains("reward")   -> "${wallet.displayName} Reward"
+                    else                       -> "${wallet.displayName} Credit"
+                }
+            }
+            "${wallet.displayName} Transfer"
+        }
+
+        val category = when {
+            lower.contains("cashback") || lower.contains("reward") -> ExpenseCategory.CASHBACK
+            lower.contains("refund")                               -> ExpenseCategory.REFUNDS
+            type == "INCOME"                                       -> ExpenseCategory.INCOME_OTHERS
+            else                                                   -> ExpenseCategory.SHOPPING
+        }
+
+        return SmsParsingResult(
+            title = title,
+            amount = amount,
+            category = category,
+            type = type,
+            accountRef = wallet.ref,
             parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp)
         )
     }

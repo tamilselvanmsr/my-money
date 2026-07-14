@@ -325,7 +325,8 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
         }
     }
     // Gesture drawing: disabled by default; double-tap title to toggle.
-    var gestureEnabled by remember { mutableStateOf(false) }
+    // Gesture drawing is disabled; title taps control Pro features
+    val gestureEnabled = false
     var titleTapCount by remember { mutableStateOf(0) }
     val titleTapScope = rememberCoroutineScope()
     var titleTapJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
@@ -426,13 +427,16 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                     titleTapCount++
                                     titleTapJob?.cancel()
                                     titleTapJob = titleTapScope.launch {
-                                        kotlinx.coroutines.delay(400)
-                                        if (titleTapCount >= 2) {
-                                            gestureEnabled = !gestureEnabled
-                                            val msg = if (gestureEnabled)
-                                                "Gesture actions ON: draw S=Scan ↻=Backup ↺=Restore"
-                                            else "Gesture actions OFF"
-                                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                        kotlinx.coroutines.delay(600)
+                                        when {
+                                            titleTapCount >= 5 -> {
+                                                viewModel.setPaidFeaturesEnabled(true)
+                                                Toast.makeText(context, "✦ Pro features unlocked!", Toast.LENGTH_SHORT).show()
+                                            }
+                                            titleTapCount == 2 -> {
+                                                viewModel.setPaidFeaturesEnabled(false)
+                                                Toast.makeText(context, "Pro features disabled", Toast.LENGTH_SHORT).show()
+                                            }
                                         }
                                         titleTapCount = 0
                                     }
@@ -986,6 +990,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
 fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
     val c = LocalAppColors.current
+    val isPaid by viewModel.isPaidFeaturesEnabled.collectAsStateWithLifecycle()
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
     val activeMode by viewModel.displayMode.collectAsStateWithLifecycle()
     val anchorTime by viewModel.anchorDate.collectAsStateWithLifecycle()
@@ -1257,21 +1262,35 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                         )
 
                         modes.forEach { (mode, label) ->
+                            val isProPeriod = mode == DisplayMode.THREE_MONTHS || mode == DisplayMode.SIX_MONTHS || mode == DisplayMode.ONE_YEAR
+                            val context = LocalContext.current
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .alpha(if (isProPeriod && !isPaid) 0.5f else 1f)
                                     .clickable {
-                                        viewModel.setDisplayMode(mode)
-                                        showFilterMenu = false
+                                        if (isProPeriod && !isPaid) {
+                                            Toast.makeText(context, "Pro feature — tap 'AutoLedger' 5× to unlock", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            viewModel.setDisplayMode(mode)
+                                            showFilterMenu = false
+                                        }
                                     }
                                     .padding(horizontal = 12.dp, vertical = 7.dp)
                                     .testTag("filter_mode_${mode.name.lowercase()}")
                             ) {
                                 Text(label, color = if (activeMode == mode) c.accent else c.text, fontSize = 13.sp,
                                     fontWeight = if (activeMode == mode) FontWeight.Bold else FontWeight.Normal)
-                                if (activeMode == mode) Icon(Icons.Default.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(15.dp))
+                                if (isProPeriod && !isPaid) {
+                                    Surface(color = Color(0xFFFFA000), shape = RoundedCornerShape(4.dp)) {
+                                        Text("PRO", fontSize = 7.sp, color = Color.White, fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                    }
+                                } else if (activeMode == mode) {
+                                    Icon(Icons.Default.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(15.dp))
+                                }
                             }
                         }
                         
@@ -1648,6 +1667,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                         }
                     }
                     // Category picker
+                    ProGate(isPaid = isPaid, modifier = Modifier.fillMaxWidth()) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Row(Modifier.fillMaxWidth().height(20.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                             Text("Category", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = c.textSecondary)
@@ -1719,7 +1739,9 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             }
                         }
                     }
+                    } // end ProGate (category)
                     // Account picker
+                    ProGate(isPaid = isPaid, modifier = Modifier.fillMaxWidth()) {
                     if (accountsInUse.isNotEmpty()) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Row(Modifier.fillMaxWidth().height(20.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
@@ -1801,6 +1823,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             }
                         }
                     }
+                    } // end ProGate (account)
                     // Filter summary
                     if (hasActiveFilters) {
                         val count = filterTypes.size + filterCategories.size + filterAccounts.size
@@ -2435,6 +2458,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
 @Composable
 fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememberLazyListState()) {
     val c = LocalAppColors.current
+    val isPaid by viewModel.isPaidFeaturesEnabled.collectAsStateWithLifecycle()
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
     val rawMonthYear by viewModel.selectedMonthYear.collectAsStateWithLifecycle()
     val anchorTime by viewModel.anchorDate.collectAsStateWithLifecycle()
@@ -2603,6 +2627,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp)
                             )
                             listOf("DAILY" to "Daily", "WEEKLY" to "Weekly", "MONTHLY" to "Monthly", "3M" to "3 Months", "6M" to "6 Months", "1Y" to "1 Year").forEach { (key, label) ->
+                                val isProPeriod = key == "3M" || key == "6M" || key == "1Y"
+                                val ctx = LocalContext.current
                                 DropdownMenuItem(
                                     text = {
                                         Row(
@@ -2610,11 +2636,16 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text(label, color = if (timeFilter == key) c.accent else c.text, fontSize = 13.sp)
-                                            if (timeFilter == key) Icon(Icons.Default.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
+                                            Text(label, color = if (timeFilter == key) c.accent else if (isProPeriod && !isPaid) c.textTertiary else c.text, fontSize = 13.sp)
+                                            if (isProPeriod && !isPaid) Surface(color = Color(0xFFFFA000), shape = RoundedCornerShape(4.dp)) {
+                                                Text("PRO", fontSize = 7.sp, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp))
+                                            } else if (timeFilter == key) Icon(Icons.Default.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
                                         }
                                     },
-                                    onClick = { timeFilter = key; showPeriodMenu = false },
+                                    onClick = {
+                                        if (isProPeriod && !isPaid) Toast.makeText(ctx, "Pro feature — tap 'AutoLedger' 5× to unlock", Toast.LENGTH_SHORT).show()
+                                        else { timeFilter = key; showPeriodMenu = false }
+                                    },
                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
                                 )
                             }
@@ -2624,9 +2655,10 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                     // Category filter icon (overview + flow modes)
                     if (selectedMode == AnalyticsMode.EXPENSE_OVERVIEW || selectedMode == AnalyticsMode.INCOME_OVERVIEW ||
                         selectedMode == AnalyticsMode.EXPENSE_FLOW || selectedMode == AnalyticsMode.INCOME_FLOW) {
+                        ProGate(isPaid = isPaid, modifier = Modifier.size(36.dp)) {
                         Box {
                             FilledTonalIconButton(
-                                onClick = { showAnalyticsCatFilterMenu = true },
+                                onClick = { if (isPaid) showAnalyticsCatFilterMenu = true },
                                 colors = IconButtonDefaults.filledTonalIconButtonColors(
                                     containerColor = if (analyticsCategoryFilter.isNotEmpty()) c.accent.copy(alpha = 0.18f) else c.divider,
                                     contentColor = if (analyticsCategoryFilter.isNotEmpty()) c.accent else c.text
@@ -2685,10 +2717,10 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                 }
                             }
                         }
+                        } // end Box
+                        } // end ProGate (analytics filter)
                     }
-                }
-
-                // Analysis mode — compact dropdown button
+                } — compact dropdown button
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
                         onClick = { showModeMenu = !showModeMenu },
@@ -4354,6 +4386,7 @@ val categoryColorsList = listOf(
 @Composable
 fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememberLazyListState()) {
     val c = LocalAppColors.current
+    val isPaid by viewModel.isPaidFeaturesEnabled.collectAsStateWithLifecycle()
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
     val rawMonthYear by viewModel.selectedMonthYear.collectAsStateWithLifecycle()
     val activeBudgets by viewModel.monthlyBudgets.collectAsStateWithLifecycle()
@@ -4393,6 +4426,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         val saved = viewModel.getCategoryOrder(activeCategoryTypeTab)
         val validSaved = saved.filter { key -> baseCategories.any { it.name == key } }
         val missing = baseCategories.map { it.name }.filter { it !in validSaved }
+            .sortedBy { name -> baseCategories.find { it.name == name }?.displayName ?: name }
         categoryOrderKeys = if (validSaved.isNotEmpty()) validSaved + missing
         else {
             val withBudget = baseCategories.filter { budgetCategoryNames.contains(it.name.lowercase()) }.sortedBy { it.displayName }
@@ -4469,6 +4503,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        ProGate(isPaid = isPaid, modifier = Modifier.size(36.dp)) {
                         FilledTonalIconButton(
                             onClick = { viewModel.setBudgetShowBudgetedOnly(!showBudgetedOnly) },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -4483,6 +4518,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 modifier = Modifier.size(18.dp)
                             )
                         }
+                        } // end ProGate (budgeted filter)
                         Button(
                             onClick = { showAddCategoryDialog = true },
                             colors = ButtonDefaults.buttonColors(
@@ -5121,6 +5157,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     Button(
                         onClick = {
                             val cleanName = editCatName.trim()
+                            val oldKey = cat.name
                             if (cat.isCustom) {
                                 viewModel.updateCustomCategory(
                                     id = cat.customId,
@@ -5138,6 +5175,11 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                     colorHex = selectedColorHex,
                                     type = cat.type
                                 )
+                            }
+                            // Keep renamed category at its current position in the order list
+                            if (cleanName != oldKey && categoryOrderKeys.contains(oldKey)) {
+                                categoryOrderKeys = categoryOrderKeys.map { if (it == oldKey) cleanName else it }
+                                viewModel.saveCategoryOrder(activeCategoryTypeTab, categoryOrderKeys)
                             }
                             showEditCategoryDialog = null
                         },
@@ -6201,6 +6243,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
 @Composable
 fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = rememberLazyListState()) {
     val c = LocalAppColors.current
+    val isPaid by viewModel.isPaidFeaturesEnabled.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var manualSmsSender by remember { mutableStateOf("") }
     var manualSmsBody by remember { mutableStateOf("") }
@@ -6700,6 +6743,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
 
         // ── Merchant → Category Mapping ───────────────────────────────────────
         item {
+            ProGate(isPaid = isPaid, modifier = Modifier.fillMaxWidth()) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = c.surface),
                 border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.4f)),
@@ -6863,9 +6907,10 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                     }
                 }
             }
+            } // end ProGate (merchant rules)
         }
 
-        // Parser exclusion rules reference card — shown only when unlocked
+        // Parser exclusion rules reference card
         if (parserExclusionVisible) item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = c.surface),
@@ -7864,10 +7909,17 @@ private fun WalletSelectionDialog(
             ) {
                 walletOptions.forEach { (walletName, walletType) ->
                     val active = selectedWallet == walletName
+                    val acctColor = when (walletType) {
+                        "CASH"        -> c.income
+                        "BANK"        -> c.accent
+                        "CREDIT_CARD" -> c.expense
+                        "WALLET"      -> Color(0xFFFF9800)
+                        else          -> c.accent
+                    }
                     Surface(
-                        color = if (active) c.accent.copy(alpha = 0.15f) else c.divider,
+                        color = if (active) acctColor.copy(alpha = 0.15f) else c.divider,
                         shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, if (active) c.accent else c.divider),
+                        border = BorderStroke(1.dp, if (active) acctColor else c.divider),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSelect(walletName) }
@@ -7879,11 +7931,11 @@ private fun WalletSelectionDialog(
                             Icon(
                                 imageVector = walletIconFor(walletName, walletType),
                                 contentDescription = walletName,
-                                tint = if (active) c.accent else c.text,
+                                tint = acctColor,
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text(walletName, color = c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(walletName, color = if (active) acctColor else c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                     }
                 }
@@ -8328,6 +8380,7 @@ fun BackupDialog(
 ) {
     val c = LocalAppColors.current
     val context = LocalContext.current
+    val isPaid by viewModel.isPaidFeaturesEnabled.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
     
     val freq by viewModel.backupFrequency.collectAsStateWithLifecycle()
@@ -8435,6 +8488,7 @@ fun BackupDialog(
                 HorizontalDivider(color = c.divider)
 
                 // 1. Auto Backup Frequency
+                ProGate(isPaid = isPaid, modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         "AUTOMATIC BACKUP FREQUENCY",
@@ -8477,6 +8531,7 @@ fun BackupDialog(
                         }
                     }
                 }
+                } // end ProGate (auto backup frequency)
 
                 // 2. Backup Storage Path
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -8604,6 +8659,7 @@ fun BackupDialog(
                 }
 
                 // 3. Backup Button and Stats
+                ProGate(isPaid = isPaid, modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (isBackingUp) {
                         Surface(
@@ -8681,6 +8737,7 @@ fun BackupDialog(
                         }
                     }
                 }
+                } // end ProGate (backup button)
                 
                 HorizontalDivider(color = c.divider)
 
@@ -9090,6 +9147,48 @@ fun RestoreBackupDialog(
         containerColor = c.surface,
         shape = RoundedCornerShape(20.dp)
     )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRO GATE — dims content and overlays a lock badge when paid features are off.
+// Tapping a locked feature shows a brief toast guiding the user to unlock.
+// ─────────────────────────────────────────────────────────────────────────────
+@Composable
+private fun ProGate(
+    isPaid: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val context = LocalContext.current
+    Box(modifier = modifier) {
+        Box(modifier = Modifier.alpha(if (isPaid) 1f else 0.45f)) { content() }
+        if (!isPaid) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        Toast.makeText(context, "Pro feature — tap 'AutoLedger' 5× to unlock", Toast.LENGTH_SHORT).show()
+                    }
+            )
+            Surface(
+                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
+                color = Color(0xFFFFA000),
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(9.dp))
+                    Spacer(Modifier.width(2.dp))
+                    Text("PRO", fontSize = 7.sp, color = Color.White, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                }
+            }
+        }
+    }
 }
 
 fun getPeriodRange(mode: DisplayMode, anchorTime: Long): Pair<Long, Long> {

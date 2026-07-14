@@ -226,6 +226,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun getLastUsedCategory(type: String): String = prefs.getString("last_used_category_$type", "") ?: ""
     fun saveLastUsedCategory(type: String, name: String) { prefs.edit().putString("last_used_category_$type", name).apply() }
 
+    // ── Paid features unlock (persisted) ──────────────────────────────────────
+    private val _isPaidFeaturesEnabled = MutableStateFlow(prefs.getBoolean("paid_features_enabled", false))
+    val isPaidFeaturesEnabled: StateFlow<Boolean> = _isPaidFeaturesEnabled.asStateFlow()
+    fun setPaidFeaturesEnabled(v: Boolean) {
+        _isPaidFeaturesEnabled.value = v
+        prefs.edit().putBoolean("paid_features_enabled", v).apply()
+    }
+
     // ── Parser section visibility (developer unlock via security icon taps) ────
     private val _parserKeyRulesVisible = MutableStateFlow(prefs.getBoolean("parser_key_rules_visible", false))
     val parserKeyRulesVisible: StateFlow<Boolean> = _parserKeyRulesVisible.asStateFlow()

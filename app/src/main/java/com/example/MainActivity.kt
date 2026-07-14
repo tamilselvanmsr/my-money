@@ -2720,7 +2720,9 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         } // end Box
                         } // end ProGate (analytics filter)
                     }
-                } — compact dropdown button
+                }
+
+                // Analysis mode — compact dropdown button
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
                         onClick = { showModeMenu = !showModeMenu },

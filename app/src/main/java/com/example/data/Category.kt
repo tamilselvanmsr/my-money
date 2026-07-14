@@ -428,7 +428,13 @@ object CategoryResolver {
 
         return DisplayCategory(
             name        = canonicalEnumName ?: custom.name,
-            displayName = standardMatch?.displayName ?: custom.name,
+            // Use stored custom.name as displayName unless the stored name is exactly
+            // the canonical enum key (unchanged icon/color override). This lets
+            // user-renamed categories (e.g. "DEBT" → "Debt") show their new name.
+            displayName = if (canonicalEnumName != null && custom.name == canonicalEnumName)
+                standardMatch?.displayName ?: custom.name
+            else
+                custom.name,
             icon        = icon,
             color       = color,
             isCustom    = true,

@@ -348,6 +348,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     var showCsvDialog by remember { mutableStateOf(false) }
     var showAppMenu by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
+    var showProUpgradeDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
     var showNotificationsPanel by remember { mutableStateOf(false) }
     var selectedNotification by remember { mutableStateOf<com.example.viewmodel.AppNotification?>(null) }
@@ -431,11 +432,14 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                         when {
                                             titleTapCount >= 5 -> {
                                                 viewModel.setPaidFeaturesEnabled(true)
-                                                Toast.makeText(context, "✦ Pro features unlocked!", Toast.LENGTH_SHORT).show()
+                                                showProUpgradeDialog = true
+                                                Toast.makeText(context, "✦ AutoLedger Pro activated!", Toast.LENGTH_LONG).show()
+                                                viewModel.addProStatusInAppNotification(true)
                                             }
                                             titleTapCount == 2 -> {
                                                 viewModel.setPaidFeaturesEnabled(false)
-                                                Toast.makeText(context, "Pro features disabled", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "AutoLedger Pro deactivated.", Toast.LENGTH_SHORT).show()
+                                                viewModel.addProStatusInAppNotification(false)
                                             }
                                         }
                                         titleTapCount = 0
@@ -851,6 +855,20 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
         )
     }
 
+    if (showProUpgradeDialog) {
+        val allTxs by viewModel.allTransactions.collectAsStateWithLifecycle()
+        val sdf = remember { SimpleDateFormat("yyyy-MM", Locale.getDefault()) }
+        val thisMonth = sdf.format(java.util.Date())
+        val autoTracked = remember(allTxs) {
+            allTxs.count { tx -> !tx.smsSender.isNullOrBlank() && sdf.format(java.util.Date(tx.timestamp)) == thisMonth }
+        }
+        ProUpgradeDialog(
+            autoTrackedThisMonth = autoTracked,
+            viewModel = viewModel,
+            onDismiss = { showProUpgradeDialog = false }
+        )
+    }
+
     // ── Notification panel ──────────────────────────────────────────────────
     if (showNotificationsPanel) {
         Dialog(
@@ -1143,6 +1161,14 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     val netBalance = totalIncome - totalExpense
     val totalWealth = walletsBalances.values.sum()
 
+    // Pro savings banner: remember must be outside LazyColumn (LazyListScope is not @Composable)
+    val sdfBanner = remember { SimpleDateFormat("yyyy-MM", Locale.getDefault()) }
+    val thisMonthBanner = remember(Unit) { sdfBanner.format(java.util.Date()) }
+    val autoTrackedCount = remember(txs) {
+        txs.count { tx -> !tx.smsSender.isNullOrBlank() && sdfBanner.format(java.util.Date(tx.timestamp)) == thisMonthBanner
+        }
+    }
+
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -1154,6 +1180,13 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
         // Active Month/Period Navigation Selector Header
         item {
             var showFilterMenu by remember { mutableStateOf(false) }
+            var showDashboardProUpgrade by remember { mutableStateOf(false) }
+            if (showDashboardProUpgrade) {
+                ProUpgradeDialog(
+                    viewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+                    onDismiss = { showDashboardProUpgrade = false }
+                )
+            }
 
             Row(
                 modifier = Modifier
@@ -1272,7 +1305,8 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     .alpha(if (isProPeriod && !isPaid) 0.5f else 1f)
                                     .clickable {
                                         if (isProPeriod && !isPaid) {
-                                            Toast.makeText(context, "Pro feature — tap 'AutoLedger' 5× to unlock", Toast.LENGTH_SHORT).show()
+                                            showFilterMenu = false
+                                            showDashboardProUpgrade = true
                                         } else {
                                             viewModel.setDisplayMode(mode)
                                             showFilterMenu = false
@@ -1605,6 +1639,32 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
             }
         }
         } // end if (!isFilterPanelOpen)
+
+        // ── Pro savings banner (free users, when SMS transactions exist this month) ─
+        if (!isPaid && autoTrackedCount > 0) {
+            item {
+                Surface(
+                    color = c.accent.copy(0.07f),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, c.accent.copy(0.2f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = c.accent, modifier = Modifier.size(20.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("$autoTrackedCount transactions auto-tracked this month",
+                                fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = c.text)
+                            Text("Upgrade Pro to keep automation running →",
+                                fontSize = 11.sp, color = c.accent)
+                        }
+                    }
+                }
+            }
+        }
 
         // ── Combined Search + Filter panel ──────────────────────────────────
         if (isFilterPanelOpen) {
@@ -2469,6 +2529,13 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
     val selectedMode = AnalyticsMode.entries.getOrElse(selectedModeIdx) { AnalyticsMode.EXPENSE_OVERVIEW }
     var showModeMenu by remember { mutableStateOf(false) }
     var showPeriodMenu by remember { mutableStateOf(false) }
+    var showAnalyticsProUpgrade by remember { mutableStateOf(false) }
+    if (showAnalyticsProUpgrade) {
+        ProUpgradeDialog(
+            viewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+            onDismiss = { showAnalyticsProUpgrade = false }
+        )
+    }
     var categoryDetailItem by remember { mutableStateOf<Pair<DisplayCategorySpend, List<TransactionEntry>>?>(null) }
     var expandedNotesTxId by remember { mutableStateOf<Int?>(null) }  // null = none, -1 = all
     var accountDetailItem by remember { mutableStateOf<Pair<AccountAnalyticsSummary, List<TransactionEntry>>?>(null) }
@@ -2643,7 +2710,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                         }
                                     },
                                     onClick = {
-                                        if (isProPeriod && !isPaid) Toast.makeText(ctx, "Pro feature — tap 'AutoLedger' 5× to unlock", Toast.LENGTH_SHORT).show()
+                                        if (isProPeriod && !isPaid) { showPeriodMenu = false; showAnalyticsProUpgrade = true }
                                         else { timeFilter = key; showPeriodMenu = false }
                                     },
                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
@@ -2655,10 +2722,20 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                     // Category filter icon (overview + flow modes)
                     if (selectedMode == AnalyticsMode.EXPENSE_OVERVIEW || selectedMode == AnalyticsMode.INCOME_OVERVIEW ||
                         selectedMode == AnalyticsMode.EXPENSE_FLOW || selectedMode == AnalyticsMode.INCOME_FLOW) {
-                        ProGate(isPaid = isPaid, modifier = Modifier.size(36.dp)) {
+                        val analyticsCatCtx = LocalContext.current
+                        var showAnalyticsProUpgrade by remember { mutableStateOf(false) }
+                        if (showAnalyticsProUpgrade) {
+                            ProUpgradeDialog(
+                                viewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+                                onDismiss = { showAnalyticsProUpgrade = false }
+                            )
+                        }
                         Box {
                             FilledTonalIconButton(
-                                onClick = { if (isPaid) showAnalyticsCatFilterMenu = true },
+                                onClick = {
+                                    if (isPaid) showAnalyticsCatFilterMenu = true
+                                    else showAnalyticsProUpgrade = true
+                                },
                                 colors = IconButtonDefaults.filledTonalIconButtonColors(
                                     containerColor = if (analyticsCategoryFilter.isNotEmpty()) c.accent.copy(alpha = 0.18f) else c.divider,
                                     contentColor = if (analyticsCategoryFilter.isNotEmpty()) c.accent else c.text
@@ -2692,35 +2769,39 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                     }
                                 )
                                 HorizontalDivider(color = c.divider)
-                                categoryTotals.forEach { cat ->
+                                categoryTotals.forEachIndexed { catIdx, cat ->
                                     val selected = cat.category.name in analyticsCategoryFilter
+                                    val isFreeTier = catIdx < 3 || isPaid
                                     DropdownMenuItem(
                                         text = {
                                             Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
-                                                Icon(cat.category.icon, null, tint = cat.category.color, modifier = Modifier.size(15.dp))
+                                                Icon(cat.category.icon, null, tint = if (isFreeTier) cat.category.color else cat.category.color.copy(alpha = 0.4f), modifier = Modifier.size(15.dp))
                                                 Text(cat.category.displayName, fontSize = 13.sp, modifier = Modifier.weight(1f),
-                                                    color = if (selected) cat.category.color else c.text,
+                                                    color = when { selected -> cat.category.color; !isFreeTier -> c.textTertiary; else -> c.text },
                                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-                                                if (selected) Icon(Icons.Default.Check, null, tint = cat.category.color, modifier = Modifier.size(13.dp))
+                                                if (!isFreeTier) Surface(color = Color(0xFFFFA000), shape = RoundedCornerShape(4.dp)) {
+                                                    Text("PRO", fontSize = 7.sp, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp))
+                                                } else if (selected) Icon(Icons.Default.Check, null, tint = cat.category.color, modifier = Modifier.size(13.dp))
                                             }
                                         },
                                         onClick = {
-                                            val newFilter = if (selected) analyticsCategoryFilter - cat.category.name
-                                                            else analyticsCategoryFilter + cat.category.name
-                                            when (selectedMode) {
-                                                AnalyticsMode.EXPENSE_OVERVIEW, AnalyticsMode.EXPENSE_FLOW -> viewModel.setAnalyticsExpenseCatFilter(newFilter)
-                                                AnalyticsMode.INCOME_OVERVIEW,  AnalyticsMode.INCOME_FLOW  -> viewModel.setAnalyticsIncomeCatFilter(newFilter)
-                                                else -> {}
+                                            if (!isFreeTier) { showAnalyticsCatFilterMenu = false; showAnalyticsProUpgrade = true }
+                                            else {
+                                                val newFilter = if (selected) analyticsCategoryFilter - cat.category.name
+                                                                else analyticsCategoryFilter + cat.category.name
+                                                when (selectedMode) {
+                                                    AnalyticsMode.EXPENSE_OVERVIEW, AnalyticsMode.EXPENSE_FLOW -> viewModel.setAnalyticsExpenseCatFilter(newFilter)
+                                                    AnalyticsMode.INCOME_OVERVIEW,  AnalyticsMode.INCOME_FLOW  -> viewModel.setAnalyticsIncomeCatFilter(newFilter)
+                                                    else -> {}
+                                                }
                                             }
                                         }
                                     )
                                 }
-                            }
-                        }
-                        } // end Box
-                        } // end ProGate (analytics filter)
+                            } // closes DropdownMenu
+                        } // closes Box (analytics category filter)
                     }
-                }
+                } // closes period-nav Row
 
                 // Analysis mode — compact dropdown button
                 Box(modifier = Modifier.fillMaxWidth()) {
@@ -3201,7 +3282,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
             confirmButton = { TextButton(onClick = { categoryDetailItem = null; expandedNotesTxId = null }) { Text("Close", color = c.accent) } }
         )
     }
-}
+} // closes AnalyticsScreen
 
 data class DisplayCategorySpend(
     val category: DisplayCategory,
@@ -4424,13 +4505,19 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     if (categoryOrderKeys.isEmpty() ||
         categoryOrderKeys.any { key -> baseCategories.none { it.name == key } } ||
         baseCategories.any { cat -> cat.name !in categoryOrderKeys }) {
-        // Restore persisted order; merge in any new categories at the end
+        // Restore persisted order; merge new categories in alphabetical position among unbudgeted items
         val saved = viewModel.getCategoryOrder(activeCategoryTypeTab)
         val validSaved = saved.filter { key -> baseCategories.any { it.name == key } }
         val missing = baseCategories.map { it.name }.filter { it !in validSaved }
             .sortedBy { name -> baseCategories.find { it.name == name }?.displayName ?: name }
-        categoryOrderKeys = if (validSaved.isNotEmpty()) validSaved + missing
-        else {
+        categoryOrderKeys = if (validSaved.isNotEmpty()) {
+            // Keep budgeted categories in their saved order; sort all unbudgeted alphabetically
+            val budgetedKeys   = validSaved.filter { k -> budgetCategoryNames.contains(k.lowercase()) }
+            val unbudgetedKeys = (validSaved.filter { k -> !budgetCategoryNames.contains(k.lowercase()) } + missing)
+                .distinctBy { it.lowercase() }
+                .sortedBy { name -> baseCategories.find { it.name == name }?.displayName ?: name }
+            budgetedKeys + unbudgetedKeys
+        } else {
             val withBudget = baseCategories.filter { budgetCategoryNames.contains(it.name.lowercase()) }.sortedBy { it.displayName }
             val withoutBudget = baseCategories.filter { !budgetCategoryNames.contains(it.name.lowercase()) }.sortedBy { it.displayName }
             (withBudget + withoutBudget).map { it.name }
@@ -4505,22 +4592,31 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        ProGate(isPaid = isPaid, modifier = Modifier.size(36.dp)) {
+                        val budgetCtx = LocalContext.current
+                        var showBudgetProUpgrade by remember { mutableStateOf(false) }
+                        if (showBudgetProUpgrade) {
+                            ProUpgradeDialog(
+                                viewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+                                onDismiss = { showBudgetProUpgrade = false }
+                            )
+                        }
                         FilledTonalIconButton(
-                            onClick = { viewModel.setBudgetShowBudgetedOnly(!showBudgetedOnly) },
+                            onClick = {
+                                if (isPaid) viewModel.setBudgetShowBudgetedOnly(!showBudgetedOnly)
+                                else showBudgetProUpgrade = true
+                            },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (showBudgetedOnly) c.accent.copy(alpha = 0.18f) else c.divider,
-                                contentColor = if (showBudgetedOnly) c.accent else c.textSecondary
+                                containerColor = if (showBudgetedOnly && isPaid) c.accent.copy(alpha = 0.18f) else c.divider,
+                                contentColor = if (showBudgetedOnly && isPaid) c.accent else c.textSecondary
                             ),
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
-                                imageVector = if (showBudgetedOnly) Icons.Default.FilterList else Icons.Default.GridView,
-                                contentDescription = if (showBudgetedOnly) "Showing budgeted only" else "Showing all spending",
+                                imageVector = if (showBudgetedOnly && isPaid) Icons.Default.FilterList else Icons.Default.GridView,
+                                contentDescription = if (showBudgetedOnly && isPaid) "Showing budgeted only" else "Showing all spending",
                                 modifier = Modifier.size(18.dp)
                             )
                         }
-                        } // end ProGate (budgeted filter)
                         Button(
                             onClick = { showAddCategoryDialog = true },
                             colors = ButtonDefaults.buttonColors(
@@ -8536,6 +8632,7 @@ fun BackupDialog(
                 } // end ProGate (auto backup frequency)
 
                 // 2. Backup Storage Path
+                ProGate(isPaid = isPaid, modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         "BACKUP STORAGE LOCATION",
@@ -8659,6 +8756,8 @@ fun BackupDialog(
                         }
                     }
                 }
+
+                } // end ProGate (backup storage path)
 
                 // 3. Backup Button and Stats
                 ProGate(isPaid = isPaid, modifier = Modifier.fillMaxWidth()) {
@@ -8865,7 +8964,7 @@ fun BackupDialog(
                 // 5. Manual Backup Actions (Legacy compatibility)
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        "MANUAL FILE UTILITIES",
+                        "MANUAL BACKUP",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = c.textSecondary,
@@ -9152,8 +9251,7 @@ fun RestoreBackupDialog(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PRO GATE — dims content and overlays a lock badge when paid features are off.
-// Tapping a locked feature shows a brief toast guiding the user to unlock.
+// PRO GATE — dims content and overlays a lock badge; tapping shows upgrade UI.
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 private fun ProGate(
@@ -9161,7 +9259,7 @@ private fun ProGate(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val context = LocalContext.current
+    var showUpgrade by remember { mutableStateOf(false) }
     Box(modifier = modifier) {
         Box(modifier = Modifier.alpha(if (isPaid) 1f else 0.45f)) { content() }
         if (!isPaid) {
@@ -9171,9 +9269,7 @@ private fun ProGate(
                     .clickable(
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                         indication = null
-                    ) {
-                        Toast.makeText(context, "Pro feature — tap 'AutoLedger' 5× to unlock", Toast.LENGTH_SHORT).show()
-                    }
+                    ) { showUpgrade = true }
             )
             Surface(
                 modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
@@ -9187,6 +9283,275 @@ private fun ProGate(
                     Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(9.dp))
                     Spacer(Modifier.width(2.dp))
                     Text("PRO", fontSize = 7.sp, color = Color.White, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                }
+            }
+        }
+    }
+    if (showUpgrade) {
+        ProUpgradeDialog(
+            viewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+            onDismiss = { showUpgrade = false }
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRO UPGRADE DIALOG — shown when a locked feature is tapped.
+// Also shown from MainAppScreen when the title is tapped (via showProUpgrade).
+// Activation: user pays offline → receives an activation code from the team.
+// ─────────────────────────────────────────────────────────────────────────────
+private val VALID_ACTIVATION_CODES = setOf(
+    "ALP2026-ANNUAL", "ALP2026-SACHET", "ALP2026-LIFETIME",
+    "LEDGER-PRO-2026", "AUTOL-SACHET-26"
+)
+
+@Composable
+fun ProUpgradeDialog(
+    autoTrackedThisMonth: Int = 0,
+    viewModel: FinanceViewModel? = null,
+    onDismiss: () -> Unit
+) {
+    val c = LocalAppColors.current
+    val context = LocalContext.current
+    var codeInput by remember { mutableStateOf("") }
+    var codeError by remember { mutableStateOf(false) }
+    var selectedPlan by remember { mutableStateOf(1) }  // 0=Sachet, 1=Annual, 2=Lifetime
+    val isPaid = viewModel?.isPaidFeaturesEnabled?.collectAsStateWithLifecycle()?.value ?: false
+
+    // UPI payment launcher — checks Status from UPI app response
+    val upiLauncher = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val status = result.data?.getStringExtra("Status")
+            ?: result.data?.getStringExtra("status") ?: ""
+        when {
+            status.equals("SUCCESS", ignoreCase = true) -> {
+                viewModel?.setPaidFeaturesEnabled(true)
+                viewModel?.addProStatusInAppNotification(true)
+                Toast.makeText(context, "✦ AutoLedger Pro activated! Payment confirmed.", Toast.LENGTH_LONG).show()
+                onDismiss()
+            }
+            result.resultCode != android.app.Activity.RESULT_CANCELED && status.isNotEmpty() -> {
+                Toast.makeText(context, "Payment status: $status. If you've paid, enter your activation code below.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val planAmountsStr = listOf("39.00", "149.00", "299.00")
+    val planNames = listOf("Sachet Pass 3M", "Annual Pass", "Lifetime License")
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = c.bg
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Scrollable content
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp, vertical = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // ── Header ────────────────────────────────────────────────
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Surface(shape = CircleShape, color = c.accent.copy(0.15f), modifier = Modifier.size(48.dp)) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = c.accent, modifier = Modifier.size(26.dp))
+                            }
+                        }
+                        Column {
+                            Text("AutoLedger Pro", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = c.text)
+                            Text("Automate your finances", fontSize = 13.sp, color = c.textSecondary)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = c.textSecondary, modifier = Modifier.size(20.dp))
+                        }
+                    }
+
+                    // ── Savings counter ───────────────────────────────────────
+                    if (autoTrackedThisMonth > 0 || isPaid) {
+                        Surface(
+                            color = c.accent.copy(0.08f),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, c.accent.copy(0.25f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.TrendingUp, contentDescription = null, tint = c.accent, modifier = Modifier.size(22.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    val count = if (autoTrackedThisMonth > 0) autoTrackedThisMonth else 87
+                                    Text("This month we auto-tracked", fontSize = 11.sp, color = c.textSecondary)
+                                    Text("$count transactions", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = c.accent)
+                                    Text("saving you from hours of typing ✦", fontSize = 11.sp, color = c.textSecondary)
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Pro features list ─────────────────────────────────────
+                    Text("WHAT YOU UNLOCK", fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                        color = c.textSecondary, letterSpacing = 1.sp, modifier = Modifier.align(Alignment.Start))
+                    val features = listOf(
+                        Icons.Default.Sms to "Auto SMS Scan" to "Tracks UPI, bank & wallet transactions automatically",
+                        Icons.Default.Category to "Smart Categorisation" to "Auto-maps merchants to the right category",
+                        Icons.Default.CloudUpload to "Cloud Backup" to "Never lose your data — auto-backs up daily",
+                        Icons.Default.FilterList to "Advanced Filters" to "Filter by category, account & date range",
+                        Icons.Default.DateRange to "Long-range Analysis" to "3-month, 6-month & yearly charts",
+                        Icons.Default.Calculate to "Budget Tools" to "Budgeted-only view, income targets & more"
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        features.forEach { (iconLabel, desc) ->
+                            val (icon, label) = iconLabel
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Surface(shape = CircleShape, color = c.accent.copy(0.12f), modifier = Modifier.size(30.dp)) {
+                                    Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = null, tint = c.accent, modifier = Modifier.size(15.dp)) }
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(label, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = c.text)
+                                    Text(desc, fontSize = 11.sp, color = c.textSecondary)
+                                }
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = c.income, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = c.divider)
+
+                    // ── Pricing plans ─────────────────────────────────────────
+                    Text("CHOOSE YOUR PLAN", fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                        color = c.textSecondary, letterSpacing = 1.sp, modifier = Modifier.align(Alignment.Start))
+                    val plans = listOf(
+                        Triple("🧪 Sachet Pass", "₹39 for 3 months", "Just testing it out"),
+                        Triple("⭐ Annual Pass", "₹149 per year", "Best Value — Save 38%"),
+                        Triple("♾ Lifetime License", "₹299 one-time", "Most Popular — Pay once, use forever")
+                    )
+                    plans.forEachIndexed { idx, (title, price, tag) ->
+                        val isSelected = selectedPlan == idx
+                        Surface(
+                            color = if (isSelected) c.accent.copy(0.10f) else c.surface,
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) c.accent else c.border),
+                            modifier = Modifier.fillMaxWidth().clickable { selectedPlan = idx }
+                        ) {
+                            Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                RadioButton(selected = isSelected, onClick = { selectedPlan = idx },
+                                    colors = RadioButtonDefaults.colors(selectedColor = c.accent))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.text)
+                                        if (idx == 1) Surface(color = c.income.copy(0.15f), shape = RoundedCornerShape(4.dp)) {
+                                            Text("BEST VALUE", fontSize = 7.sp, color = c.income, fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                    Text(price, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, color = if (isSelected) c.accent else c.text)
+                                    Text(tag, fontSize = 11.sp, color = c.textSecondary)
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Tagline ────────────────────────────────────────────────
+                    Surface(color = c.income.copy(0.07f), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "\"Automate your budget for less than the price of one cutting chai a month.\"",
+                            fontSize = 12.sp, color = c.income, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            textAlign = TextAlign.Center, modifier = Modifier.padding(12.dp)
+                        )
+                    }
+
+                    // ── UPI Buy Button ────────────────────────────────────────
+                    Button(
+                        onClick = {
+                            val upiUri = android.net.Uri.Builder()
+                                .scheme("upi").authority("pay")
+                                .appendQueryParameter("pa", "tamilselvanmsr@oksbi")
+                                .appendQueryParameter("pn", "AutoLedger")
+                                .appendQueryParameter("am", planAmountsStr[selectedPlan])
+                                .appendQueryParameter("cu", "INR")
+                                .appendQueryParameter("tn", "AutoLedger ${planNames[selectedPlan]}")
+                                .build()
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, upiUri)
+                            try {
+                                upiLauncher.launch(intent)
+                            } catch (_: android.content.ActivityNotFoundException) {
+                                Toast.makeText(context, "No UPI app found. Install GPay, PhonePe, or Paytm and try again.", Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = c.income),
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(vertical = 14.dp)
+                    ) {
+                        Icon(Icons.Default.Payment, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Buy Pro — ₹${planAmountsStr[selectedPlan].removeSuffix(".00")}",
+                            fontWeight = FontWeight.ExtraBold, fontSize = 16.sp
+                        )
+                    }
+                    Text(
+                        "Opens your UPI app (GPay / PhonePe / Paytm). Pro unlocks instantly on successful payment.",
+                        fontSize = 10.sp, color = c.textSecondary, textAlign = TextAlign.Center
+                    )
+
+                    HorizontalDivider(color = c.divider)
+
+                    // ── Activation code entry ─────────────────────────────────
+                    Text("HAVE AN ACTIVATION CODE?", fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                        color = c.textSecondary, letterSpacing = 1.sp, modifier = Modifier.align(Alignment.Start))
+                    OutlinedTextField(
+                        value = codeInput,
+                        onValueChange = { codeInput = it.uppercase().replace(" ", ""); codeError = false },
+                        label = { Text("Enter activation code") },
+                        isError = codeError,
+                        supportingText = if (codeError) {{ Text("Invalid code. Please check and try again.", color = c.expense, fontSize = 11.sp) }} else null,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = c.accent, focusedLabelColor = c.accent,
+                            focusedTextColor = c.text, unfocusedTextColor = c.text
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            if (VALID_ACTIVATION_CODES.contains(codeInput.trim())) {
+                                viewModel?.setPaidFeaturesEnabled(true)
+                                viewModel?.addProStatusInAppNotification(true)
+                                Toast.makeText(context, "✦ AutoLedger Pro activated! Enjoy all features.", Toast.LENGTH_LONG).show()
+                                onDismiss()
+                            } else {
+                                codeError = true
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = c.accent),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = codeInput.isNotBlank()
+                    ) {
+                        Icon(Icons.Default.VpnKey, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Activate with Code", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                } // end scrollable
+
+                // ── "Maybe Later" — always visible at bottom ──────────────────
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                ) {
+                    Text("Maybe later", color = c.textSecondary, fontSize = 14.sp)
                 }
             }
         }

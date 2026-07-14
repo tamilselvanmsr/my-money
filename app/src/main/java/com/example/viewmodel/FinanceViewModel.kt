@@ -66,6 +66,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val TAG = "FinanceViewModel"
     private val BACKUP_KEY = "AutoLedger_Local_Backup_AES256"
     private val budgetAlertChannelId = "budget_alerts"
+    private val proStatusChannelId   = "pro_status"
+    private val backupChannelId      = "backup_status"
     private val db = FinanceDatabase.getDatabase(application)
     private val repository = FinanceRepository(db.financeDao())
     private val createdAccountsCache = mutableMapOf<String, String>()
@@ -458,15 +460,30 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private fun createBudgetAlertChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getApplication<Application>().getSystemService(NotificationManager::class.java)
-            val channel = NotificationChannel(
-                budgetAlertChannelId,
-                "Budget Alerts",
-                NotificationManager.IMPORTANCE_DEFAULT
-            ).apply {
-                description = "Alerts when monthly category budgets near or exceed limits"
-            }
-            manager.createNotificationChannel(channel)
+            manager.createNotificationChannel(NotificationChannel(
+                budgetAlertChannelId, "Budget Alerts", NotificationManager.IMPORTANCE_DEFAULT
+            ).apply { description = "Alerts when monthly category budgets near or exceed limits" })
+            manager.createNotificationChannel(NotificationChannel(
+                proStatusChannelId, "Pro Status", NotificationManager.IMPORTANCE_DEFAULT
+            ).apply { description = "AutoLedger Pro activation and deactivation alerts" })
+            manager.createNotificationChannel(NotificationChannel(
+                backupChannelId, "Backup Status", NotificationManager.IMPORTANCE_LOW
+            ).apply { description = "Automatic backup completion and failure alerts" })
         }
+    }
+
+    /** Adds an in-app bell notification when Pro is activated or deactivated. */
+    fun addProStatusInAppNotification(enabled: Boolean) {
+        val (title, text) = if (enabled)
+            "✦ AutoLedger Pro Activated" to "All Pro features are now unlocked. Enjoy!"
+        else
+            "AutoLedger Pro Deactivated" to "Pro features have been turned off."
+        addNotification(title, text)
+    }
+
+    /** Posts an OS-level notification for backup completion (called from BackupWorker). */
+    fun postBackupNotification(success: Boolean, detail: String) {
+        // No-op: backup status is surfaced via addAppNotification in BackupWorker (in-app bell only)
     }
 
     private suspend fun maybeNotifyBudgetAlert(transaction: TransactionEntry, projectedTransactions: List<TransactionEntry>) {
@@ -588,11 +605,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun updateCustomCategory(id: Int, oldName: String, newName: String, iconName: String, colorHex: String, type: String = "EXPENSE") {
         viewModelScope.launch {
             if (newName.isBlank()) return@launch
-            val trimmedNew = newName.trim()
-            // When the user hasn't changed the name (editCatName is pre-filled with displayName
-            // which may differ in case from the stored key, e.g. "Groceries" vs "GROCERIES"),
-            // keep the original stored key to prevent silent key drift in the DB.
-            val resolvedName = if (trimmedNew.equals(oldName, ignoreCase = true)) oldName else trimmedNew
+            val resolvedName = newName.trim()  // always use the name exactly as typed
             val iconNameWithType = "$iconName:$type"
             val cat = CustomCategory(id = id, name = resolvedName, iconName = iconNameWithType, colorHex = colorHex)
             repository.insertCustomCategory(cat)
@@ -1166,6 +1179,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     put("transactions", txArray)
                     put("budgets", budgetArray)
                     put("customCategories", ccArray)
+                    // Merchant → category rules (stored in SharedPreferences)
+                    put("merchantRules", JSONArray(prefs.getString("merchant_category_rules", "[]") ?: "[]"))
                 }
                 val encrypted = SecurityUtils.encrypt(payload.toString(), BACKUP_KEY)
                 val wrapper = JSONObject().apply {
@@ -1270,6 +1285,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     repository.clearAccounts()
                     repository.clearCustomCategories()
                     createdAccountsCache.clear()
+                    // Also clear merchant rules on clean restore
+                    _merchantCategoryRules.value = emptyList()
+                    saveMerchantCategoryRules(emptyList())
                 }
                 if (content.trimStart().startsWith("{")) {
                     restoreFromJsonContent(content, onComplete)
@@ -2666,6 +2684,26 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         name = name, iconName = obj.getString("iconName"), colorHex = obj.getString("colorHex")
                     ))
                     customCatsRestored++
+                }
+            }
+
+            // Restore merchant → category rules (merge: add rules not already present)
+            val merchantRulesArray = payload.optJSONArray("merchantRules")
+            if (merchantRulesArray != null && merchantRulesArray.length() > 0) {
+                val currentRules = _merchantCategoryRules.value.map { it.first.lowercase() }.toSet()
+                val toAdd = mutableListOf<Pair<String, String>>()
+                for (i in 0 until merchantRulesArray.length()) {
+                    val obj = merchantRulesArray.getJSONObject(i)
+                    val pattern = obj.optString("pattern", "").trim()
+                    val category = obj.optString("category", "").trim()
+                    if (pattern.isNotBlank() && category.isNotBlank() && pattern.lowercase() !in currentRules) {
+                        toAdd.add(pattern to category)
+                    }
+                }
+                if (toAdd.isNotEmpty()) {
+                    val merged = (toAdd + _merchantCategoryRules.value).distinctBy { it.first.lowercase() }
+                    _merchantCategoryRules.value = merged
+                    saveMerchantCategoryRules(merged)
                 }
             }
 

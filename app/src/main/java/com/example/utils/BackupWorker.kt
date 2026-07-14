@@ -82,6 +82,8 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
             val payload = JSONObject().apply {
                 put("accounts", accArray); put("transactions", txArray)
                 put("budgets", budgetArray); put("customCategories", ccArray)
+                // Merchant → category rules
+                put("merchantRules", JSONArray(prefs.getString("merchant_category_rules", "[]") ?: "[]"))
             }
             val encrypted = SecurityUtils.encrypt(payload.toString(), BACKUP_KEY)
             val wrapper   = JSONObject().apply {

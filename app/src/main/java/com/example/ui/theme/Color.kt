@@ -45,8 +45,15 @@ data class AppColors(
     val accentDim: Color,
     val income: Color,
     val expense: Color,
-    val isDark: Boolean
-)
+    val isDark: Boolean,
+    val isBorderless: Boolean = false
+) {
+    // Flat-aware card helpers — use these for list items / content cards
+    val cardBg: Color get() = if (isBorderless) Color.Transparent else surface
+    val cardBorderWidth get() = if (isBorderless) 0.dp else 1.dp
+    val cardBorderColor: Color get() = if (isBorderless) Color.Transparent else border
+    val cardRadius get() = if (isBorderless) 4 else 16
+}
 
 fun darkAppColors() = AppColors(
     bg            = Color(0xFF0B0F19),

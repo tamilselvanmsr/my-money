@@ -313,19 +313,26 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun setAnalyticsCategoryFilter(filter: Set<String>) { _analyticsCategoryFilter.value = filter }
 
     // ── Light / Dark theme preference ─────────────────────────────────────────
-    // themeMode: "system" (follow device) | "light" | "dark"
+    // themeMode: "system" (follow device) | "light" | "dark" | "forest" | "sunset" | "ocean" | "lavender" | "rose" | "carbon"
     private val _themeMode = MutableStateFlow(prefs.getString("theme_mode", "system") ?: "system")
     val themeMode: StateFlow<String> = _themeMode.asStateFlow()
     fun setThemeMode(mode: String) {
         _themeMode.value = mode
         prefs.edit().putString("theme_mode", mode).apply()
     }
-    // Legacy isDarkTheme kept for backward compat (used when themeMode == "dark")
+    // Legacy isDarkTheme kept for backward compat
     private val _isDarkTheme = MutableStateFlow(prefs.getBoolean("is_dark_theme", false))
     val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
     fun setDarkTheme(dark: Boolean) {
         _isDarkTheme.value = dark
         prefs.edit().putBoolean("is_dark_theme", dark).apply()
+    }
+    // Flat/borderless style toggle
+    private val _isFlatStyle = MutableStateFlow(prefs.getBoolean("flat_style", false))
+    val isFlatStyle: StateFlow<Boolean> = _isFlatStyle.asStateFlow()
+    fun setFlatStyle(v: Boolean) {
+        _isFlatStyle.value = v
+        prefs.edit().putBoolean("flat_style", v).apply()
     }
 
     // ── Hidden wallets (display only) ─────────────────────────────────────────

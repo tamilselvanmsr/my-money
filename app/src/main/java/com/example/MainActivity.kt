@@ -304,6 +304,7 @@ class MainActivity : ComponentActivity() {
                 "light", "forest", "sunset", "ocean", "lavender", "rose" -> false
                 else    -> systemDark // "system" — follow device setting
             }
+            val isFlatStyle by vm.isFlatStyle.collectAsStateWithLifecycle()
             val appColors = when (themeMode) {
                 "dark"     -> darkAppColors()
                 "forest"   -> forestAppColors()
@@ -314,7 +315,7 @@ class MainActivity : ComponentActivity() {
                 "carbon"   -> carbonAppColors()
                 "light"    -> lightAppColors()
                 else       -> if (systemDark) darkAppColors() else lightAppColors()
-            }
+            }.let { if (isFlatStyle) it.copy(isBorderless = true) else it }
             MyApplicationTheme(darkTheme = isDark) {
                 androidx.compose.runtime.CompositionLocalProvider(LocalAppColors provides appColors) {
                     MainAppScreen(vm)
@@ -333,6 +334,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val smsScanMonthsBack by viewModel.smsScanMonthsBack.collectAsStateWithLifecycle()
     val isPaidMain by viewModel.isPaidFeaturesEnabled.collectAsStateWithLifecycle()
+    val isFlatStyleMain by viewModel.isFlatStyle.collectAsStateWithLifecycle()
     val proExpiresAt by viewModel.proExpiresAt.collectAsStateWithLifecycle()
     var currentTab by remember { mutableStateOf(AppTab.DASHBOARD) }
     // Show SMS Scan only on the very first install, not on every launch
@@ -633,6 +635,32 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                     }
                                 },
                                 onClick = {}
+                            )
+                            // Flat style toggle
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Icon(Icons.Default.ViewStream, contentDescription = null, tint = if (isFlatStyleMain) c.accent else c.textSecondary, modifier = Modifier.size(16.dp))
+                                            Column {
+                                                Text("Flat Style", color = c.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                                Text("Remove card borders & backgrounds", color = c.textSecondary, fontSize = 10.sp)
+                                            }
+                                        }
+                                        Switch(
+                                            checked = isFlatStyleMain,
+                                            onCheckedChange = { viewModel.setFlatStyle(it) },
+                                            colors = SwitchDefaults.colors(checkedThumbColor = c.accent, checkedTrackColor = c.accent.copy(0.4f)),
+                                            modifier = Modifier.scale(0.8f)
+                                        )
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                onClick = { viewModel.setFlatStyle(!isFlatStyleMain) }
                             )
                             HorizontalDivider(color = c.divider)
                             DropdownMenuItem(
@@ -1483,9 +1511,9 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
         // Net Balance Glow Card
         item {
             Surface(
-                color = c.surface,
-                shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.2.dp, c.accent.copy(alpha = 0.5f)),
+                color = if (c.isBorderless) Color.Transparent else c.surface,
+                shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
+                border = if (c.isBorderless) null else BorderStroke(1.2.dp, c.accent.copy(alpha = 0.5f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("net_wealth_glowing_card")
@@ -2127,9 +2155,9 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             val txFingerprint = "${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}"
                             val isNewlyImported = recentlyImportedFingerprints.contains(txFingerprint)
                             Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = c.surface,
-                                border = if (isNewlyImported) BorderStroke(2.dp, c.income) else BorderStroke(1.dp, c.divider),
+                                shape = if (c.isBorderless) RoundedCornerShape(4.dp) else RoundedCornerShape(14.dp),
+                                color = if (c.isBorderless) Color.Transparent else c.surface,
+                                border = if (c.isBorderless) null else if (isNewlyImported) BorderStroke(2.dp, c.income) else BorderStroke(1.dp, c.divider),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 2.dp)
@@ -3407,9 +3435,9 @@ private fun AnalyticsOverviewSection(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Surface(
-            color = c.surface,
-            shape = RoundedCornerShape(24.dp),
-            border = BorderStroke(1.dp, c.border),
+            color = if (c.isBorderless) Color.Transparent else c.surface,
+            shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
+            border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -3638,9 +3666,9 @@ private fun AnalyticsOverviewSection(
             categoryTotals.forEachIndexed { idx, stats ->
                 val active = activeSectorIndex == idx
                 Surface(
-                    color = if (active) stats.category.color.copy(alpha = 0.08f) else c.surface,
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, if (active) stats.category.color else c.border),
+                    color = if (c.isBorderless) Color.Transparent else if (active) stats.category.color.copy(alpha = 0.08f) else c.surface,
+                    shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp),
+                    border = if (c.isBorderless) null else BorderStroke(1.dp, if (active) stats.category.color else c.border),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
@@ -5011,9 +5039,9 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     val progressColor = budgetProgressColor(percent, c)
                     val remaining = limit - catSpend
                     Surface(
-                        color = if (isDragging) Color(0xFF1E3048) else c.surface,
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, if (isDragging) cat.color else cat.color.copy(alpha = 0.45f)),
+                        color = if (c.isBorderless) Color.Transparent else if (isDragging) Color(0xFF1E3048) else c.surface,
+                        shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp),
+                        border = if (c.isBorderless) null else BorderStroke(1.dp, if (isDragging) cat.color else cat.color.copy(alpha = 0.45f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .offset(y = if (isDragging) dragOffsetDp else 0.dp)
@@ -5116,9 +5144,9 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     }.sumOf { it.amount }
                     val catExpense = monthExpenses.filter { it.category.equals(cat.name, ignoreCase = true) }.sumOf { it.amount }
                     Surface(
-                        color = c.surface,
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, c.border),
+                        color = if (c.isBorderless) Color.Transparent else c.surface,
+                        shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp),
+                        border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { showEditCategoryDialog = cat }
@@ -6490,9 +6518,9 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
         // Device Scan Action panel
         item {
             Surface(
-                color = c.surface,
-                shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.dp, c.border),
+                color = if (c.isBorderless) Color.Transparent else c.surface,
+                shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
+                border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -6694,8 +6722,8 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
         // Parser Key Rules — always visible (no unlock needed)
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = c.surface),
-                border = BorderStroke(1.dp, c.border),
+                colors = CardDefaults.cardColors(containerColor = if (c.isBorderless) Color.Transparent else c.surface),
+                border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {

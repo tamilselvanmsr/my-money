@@ -83,6 +83,10 @@ import com.example.ui.theme.darkAppColors
 import com.example.ui.theme.lightAppColors
 import com.example.ui.theme.forestAppColors
 import com.example.ui.theme.sunsetAppColors
+import com.example.ui.theme.oceanAppColors
+import com.example.ui.theme.lavenderAppColors
+import com.example.ui.theme.roseAppColors
+import com.example.ui.theme.carbonAppColors
 import com.example.viewmodel.FinanceViewModel
 import com.example.viewmodel.DisplayMode
 import kotlinx.coroutines.flow.collectLatest
@@ -296,16 +300,20 @@ class MainActivity : ComponentActivity() {
             val isDarkPref by vm.isDarkTheme.collectAsStateWithLifecycle()
             val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
             val isDark = when (themeMode) {
-                "dark"  -> true
-                "light", "forest", "sunset" -> false
+                "dark", "carbon" -> true
+                "light", "forest", "sunset", "ocean", "lavender", "rose" -> false
                 else    -> systemDark // "system" — follow device setting
             }
             val appColors = when (themeMode) {
-                "dark"   -> darkAppColors()
-                "forest" -> forestAppColors()
-                "sunset" -> sunsetAppColors()
-                "light"  -> lightAppColors()
-                else     -> if (systemDark) darkAppColors() else lightAppColors()
+                "dark"     -> darkAppColors()
+                "forest"   -> forestAppColors()
+                "sunset"   -> sunsetAppColors()
+                "ocean"    -> oceanAppColors()
+                "lavender" -> lavenderAppColors()
+                "rose"     -> roseAppColors()
+                "carbon"   -> carbonAppColors()
+                "light"    -> lightAppColors()
+                else       -> if (systemDark) darkAppColors() else lightAppColors()
             }
             MyApplicationTheme(darkTheme = isDark) {
                 androidx.compose.runtime.CompositionLocalProvider(LocalAppColors provides appColors) {
@@ -445,7 +453,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                         )
                     }
                 },
-                expandedHeight = 48.dp,
+                expandedHeight = 56.dp,
                 actions = {
                     // ── Notification bell ─────────────────────────────────────
                     val unreadCount = notifications.count { !it.isRead }
@@ -533,14 +541,15 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                             color = c.textSecondary,
                                             modifier = Modifier.padding(bottom = 6.dp)
                                         )
-                                        // Row 1: Device / Dark
+                                        // Row 1: Device / Dark / Carbon
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
                                             listOf(
                                                 Triple("Device", Icons.Default.SettingsBrightness, "system"),
-                                                Triple("Dark",   Icons.Default.DarkMode,            "dark")
+                                                Triple("Dark",   Icons.Default.DarkMode,            "dark"),
+                                                Triple("Carbon", Icons.Default.NightShelter,         "carbon")
                                             ).forEach { (label, icon, mode) ->
                                                 val selected = themeMode == mode
                                                 Surface(
@@ -551,7 +560,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                                         .weight(1f)
                                                         .clickable {
                                                             viewModel.setThemeMode(mode)
-                                                            viewModel.setDarkTheme(mode == "dark")
+                                                            viewModel.setDarkTheme(mode == "dark" || mode == "carbon")
                                                         }
                                                 ) {
                                                     Column(
@@ -567,12 +576,12 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                             }
                                         }
                                         Spacer(Modifier.height(6.dp))
-                                        // Row 2: Light theme variants (tap to cycle)
-                                        Text("Light themes — tap to cycle", fontSize = 9.sp, color = c.textSecondary, modifier = Modifier.padding(bottom = 4.dp))
+                                        // Row 2: Light theme variants
+                                        Text("Light themes", fontSize = 9.sp, color = c.textSecondary, modifier = Modifier.padding(bottom = 4.dp))
                                         val lightModes = listOf(
-                                            Triple("Light",   Icons.Default.LightMode,    "light"),
-                                            Triple("Forest",  Icons.Default.Forest,        "forest"),
-                                            Triple("Sunset",  Icons.Default.WbSunny,       "sunset")
+                                            Triple("Light",    Icons.Default.LightMode, "light"),
+                                            Triple("Forest",   Icons.Default.Forest,    "forest"),
+                                            Triple("Sunset",   Icons.Default.WbSunny,   "sunset")
                                         )
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
@@ -584,18 +593,36 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                                     shape = RoundedCornerShape(8.dp),
                                                     color = if (selected) c.accent else c.surface,
                                                     border = BorderStroke(1.dp, if (selected) c.accent else c.divider),
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .clickable {
-                                                            viewModel.setThemeMode(mode)
-                                                            viewModel.setDarkTheme(false)
-                                                        }
+                                                    modifier = Modifier.weight(1f).clickable { viewModel.setThemeMode(mode); viewModel.setDarkTheme(false) }
                                                 ) {
-                                                    Column(
-                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                        verticalArrangement = Arrangement.Center,
-                                                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
-                                                    ) {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                                                        Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(15.dp))
+                                                        Spacer(Modifier.height(3.dp))
+                                                        Text(label, fontSize = 9.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                        // Row 3: More light variants
+                                        val moreLightModes = listOf(
+                                            Triple("Ocean",    Icons.Default.Waves,     "ocean"),
+                                            Triple("Lavender", Icons.Default.Spa,        "lavender"),
+                                            Triple("Rose",     Icons.Default.LocalFlorist, "rose")
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            moreLightModes.forEach { (label, icon, mode) ->
+                                                val selected = themeMode == mode
+                                                Surface(
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    color = if (selected) c.accent else c.surface,
+                                                    border = BorderStroke(1.dp, if (selected) c.accent else c.divider),
+                                                    modifier = Modifier.weight(1f).clickable { viewModel.setThemeMode(mode); viewModel.setDarkTheme(false) }
+                                                ) {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                                                         Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(15.dp))
                                                         Spacer(Modifier.height(3.dp))
                                                         Text(label, fontSize = 9.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)

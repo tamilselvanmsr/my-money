@@ -83,10 +83,10 @@ import com.example.ui.theme.darkAppColors
 import com.example.ui.theme.lightAppColors
 import com.example.ui.theme.forestAppColors
 import com.example.ui.theme.sunsetAppColors
-import com.example.ui.theme.oceanAppColors
-import com.example.ui.theme.lavenderAppColors
-import com.example.ui.theme.roseAppColors
-import com.example.ui.theme.carbonAppColors
+import com.example.ui.theme.sepiaAppColors
+import com.example.ui.theme.goldAppColors
+import com.example.ui.theme.jadeAppColors
+import com.example.ui.theme.sandAppColors
 import com.example.viewmodel.FinanceViewModel
 import com.example.viewmodel.DisplayMode
 import kotlinx.coroutines.flow.collectLatest
@@ -300,21 +300,21 @@ class MainActivity : ComponentActivity() {
             val isDarkPref by vm.isDarkTheme.collectAsStateWithLifecycle()
             val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
             val isDark = when (themeMode) {
-                "dark", "carbon" -> true
-                "light", "forest", "sunset", "ocean", "lavender", "rose" -> false
-                else    -> systemDark // "system" — follow device setting
+                "dark" -> true
+                "light", "forest", "sunset", "sepia", "gold", "jade", "sand" -> false
+                else    -> systemDark
             }
             val isFlatStyle by vm.isFlatStyle.collectAsStateWithLifecycle()
             val appColors = when (themeMode) {
-                "dark"     -> darkAppColors()
-                "forest"   -> forestAppColors()
-                "sunset"   -> sunsetAppColors()
-                "ocean"    -> oceanAppColors()
-                "lavender" -> lavenderAppColors()
-                "rose"     -> roseAppColors()
-                "carbon"   -> carbonAppColors()
-                "light"    -> lightAppColors()
-                else       -> if (systemDark) darkAppColors() else lightAppColors()
+                "dark"   -> darkAppColors()
+                "forest" -> forestAppColors()
+                "sunset" -> sunsetAppColors()
+                "sepia"  -> sepiaAppColors()
+                "gold"   -> goldAppColors()
+                "jade"   -> jadeAppColors()
+                "sand"   -> sandAppColors()
+                "light"  -> lightAppColors()
+                else     -> if (systemDark) darkAppColors() else lightAppColors()
             }.let { if (isFlatStyle) it.copy(isBorderless = true) else it }
             MyApplicationTheme(darkTheme = isDark) {
                 androidx.compose.runtime.CompositionLocalProvider(LocalAppColors provides appColors) {
@@ -543,33 +543,23 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                             color = c.textSecondary,
                                             modifier = Modifier.padding(bottom = 6.dp)
                                         )
-                                        // Row 1: Device / Dark / Carbon
+                                        // Row 1: Device / Dark
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
                                             listOf(
                                                 Triple("Device", Icons.Default.SettingsBrightness, "system"),
-                                                Triple("Dark",   Icons.Default.DarkMode,            "dark"),
-                                                Triple("Carbon", Icons.Default.NightShelter,         "carbon")
+                                                Triple("Dark",   Icons.Default.DarkMode,            "dark")
                                             ).forEach { (label, icon, mode) ->
                                                 val selected = themeMode == mode
                                                 Surface(
                                                     shape = RoundedCornerShape(8.dp),
                                                     color = if (selected) c.accent else c.surface,
                                                     border = BorderStroke(1.dp, if (selected) c.accent else c.divider),
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .clickable {
-                                                            viewModel.setThemeMode(mode)
-                                                            viewModel.setDarkTheme(mode == "dark" || mode == "carbon")
-                                                        }
+                                                    modifier = Modifier.weight(1f).clickable { viewModel.setThemeMode(mode); viewModel.setDarkTheme(mode == "dark") }
                                                 ) {
-                                                    Column(
-                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                        verticalArrangement = Arrangement.Center,
-                                                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
-                                                    ) {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                                                         Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(15.dp))
                                                         Spacer(Modifier.height(3.dp))
                                                         Text(label, fontSize = 9.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
@@ -578,57 +568,23 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                             }
                                         }
                                         Spacer(Modifier.height(6.dp))
-                                        // Row 2: Light theme variants
                                         Text("Light themes", fontSize = 9.sp, color = c.textSecondary, modifier = Modifier.padding(bottom = 4.dp))
-                                        val lightModes = listOf(
-                                            Triple("Light",    Icons.Default.LightMode, "light"),
-                                            Triple("Forest",   Icons.Default.Forest,    "forest"),
-                                            Triple("Sunset",   Icons.Default.WbSunny,   "sunset")
-                                        )
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            lightModes.forEach { (label, icon, mode) ->
+                                        // Row 2: Light / Forest / Sunset
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            listOf(Triple("Light", Icons.Default.LightMode, "light"), Triple("Forest", Icons.Default.Forest, "forest"), Triple("Sunset", Icons.Default.WbSunny, "sunset")).forEach { (label, icon, mode) ->
                                                 val selected = themeMode == mode
-                                                Surface(
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    color = if (selected) c.accent else c.surface,
-                                                    border = BorderStroke(1.dp, if (selected) c.accent else c.divider),
-                                                    modifier = Modifier.weight(1f).clickable { viewModel.setThemeMode(mode); viewModel.setDarkTheme(false) }
-                                                ) {
-                                                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                                                        Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(15.dp))
-                                                        Spacer(Modifier.height(3.dp))
-                                                        Text(label, fontSize = 9.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                                                    }
+                                                Surface(shape = RoundedCornerShape(8.dp), color = if (selected) c.accent else c.surface, border = BorderStroke(1.dp, if (selected) c.accent else c.divider), modifier = Modifier.weight(1f).clickable { viewModel.setThemeMode(mode); viewModel.setDarkTheme(false) }) {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) { Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(13.dp)); Spacer(Modifier.height(2.dp)); Text(label, fontSize = 8.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
                                                 }
                                             }
                                         }
                                         Spacer(Modifier.height(4.dp))
-                                        // Row 3: More light variants
-                                        val moreLightModes = listOf(
-                                            Triple("Ocean",    Icons.Default.Waves,     "ocean"),
-                                            Triple("Lavender", Icons.Default.Spa,        "lavender"),
-                                            Triple("Rose",     Icons.Default.LocalFlorist, "rose")
-                                        )
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            moreLightModes.forEach { (label, icon, mode) ->
+                                        // Row 3: Sepia / Gold / Jade / Sand (warm themes)
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            listOf(Triple("Sepia", Icons.Default.Nightlight, "sepia"), Triple("Gold", Icons.Default.Star, "gold"), Triple("Jade", Icons.Default.Spa, "jade"), Triple("Sand", Icons.Default.WbCloudy, "sand")).forEach { (label, icon, mode) ->
                                                 val selected = themeMode == mode
-                                                Surface(
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    color = if (selected) c.accent else c.surface,
-                                                    border = BorderStroke(1.dp, if (selected) c.accent else c.divider),
-                                                    modifier = Modifier.weight(1f).clickable { viewModel.setThemeMode(mode); viewModel.setDarkTheme(false) }
-                                                ) {
-                                                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                                                        Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(15.dp))
-                                                        Spacer(Modifier.height(3.dp))
-                                                        Text(label, fontSize = 9.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                                                    }
+                                                Surface(shape = RoundedCornerShape(8.dp), color = if (selected) c.accent else c.surface, border = BorderStroke(1.dp, if (selected) c.accent else c.divider), modifier = Modifier.weight(1f).clickable { viewModel.setThemeMode(mode); viewModel.setDarkTheme(false) }) {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)) { Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(12.dp)); Spacer(Modifier.height(2.dp)); Text(label, fontSize = 7.5.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
                                                 }
                                             }
                                         }
@@ -7340,265 +7296,150 @@ fun AddTransactionDialog(
         Surface(modifier = Modifier.fillMaxSize(), color = c.bg) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // ── Top bar ────────────────────────────────────────────────────
-                Surface(shadowElevation = 6.dp, color = c.surface) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text)
+                // ── Top bar ───────────────────────────────────────────────────
+                Surface(shadowElevation = 4.dp, color = c.surface) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(20.dp))
                         }
-                        Text(
-                            "Log Cashflow",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 17.sp,
-                            color = c.text,
-                            modifier = Modifier.weight(1f),
-                            textAlign = TextAlign.Center
-                        )
-                        TextButton(
-                            onClick = {
-                                if (resolvedAmount > 0.0) {
-                                    val cleanTitle = if (title.isBlank()) "Merchant Log" else title
-                                    viewModel.saveLastUsedAccount(accountSelection)
-                                    viewModel.saveLastUsedCategory(transactionType, categorySelection)
-                                    onConfirm(
-                                        cleanTitle, resolvedAmount, categorySelection,
-                                        transactionType,
-                                        makeNoteWithAccount(notesStr, accountSelection),
-                                        selectedTimestamp
-                                    )
-                                }
+                        Text("Log Cashflow", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+                        TextButton(onClick = {
+                            if (resolvedAmount > 0.0) {
+                                val cleanTitle = if (title.isBlank()) "Merchant Log" else title
+                                viewModel.saveLastUsedAccount(accountSelection)
+                                viewModel.saveLastUsedCategory(transactionType, categorySelection)
+                                onConfirm(cleanTitle, resolvedAmount, categorySelection, transactionType, makeNoteWithAccount(notesStr, accountSelection), selectedTimestamp)
                             }
-                        ) {
-                            Text("Save", fontWeight = FontWeight.Bold, color = c.accent, fontSize = 15.sp)
-                        }
+                        }) { Text("Save", fontWeight = FontWeight.Bold, color = c.accent, fontSize = 15.sp) }
                     }
                 }
 
-                // ── Scrollable fields ──────────────────────────────────────────
+                // ── All fields (no scroll — everything fits) ──────────────────
                 Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Type selector: EXPENSE / INCOME
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(c.text.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
-                            .padding(4.dp)
-                    ) {
+                    // Type: EXPENSE / INCOME
+                    Row(modifier = Modifier.fillMaxWidth().background(c.text.copy(0.05f), RoundedCornerShape(6.dp)).padding(3.dp)) {
                         listOf("EXPENSE" to "Expense", "INCOME" to "Income").forEach { (type, label) ->
                             val sel = transactionType == type
-                            val selColor = if (type == "EXPENSE") c.expense else c.income
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (sel) selColor else Color.Transparent)
-                                    .clickable {
-                                        transactionType = type
-                                        categorySelection = if (type == "EXPENSE") "FOOD" else "SALARY"
-                                    }
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    label,
-                                    color = if (sel) c.text else c.textSecondary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
+                            Box(modifier = Modifier.weight(1f).clip(RoundedCornerShape(5.dp)).background(if (sel) (if (type == "EXPENSE") c.expense else c.income) else Color.Transparent).clickable { transactionType = type; categorySelection = if (type == "EXPENSE") "FOOD" else "SALARY" }.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+                                Text(label, color = if (sel) Color.White else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                         }
                     }
 
-                    // Payee / Merchant
+                    // Payee
                     OutlinedTextField(
-                        value = title,
-                        onValueChange = { title = it },
-                        label = { Text("Payee / Merchant") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
-                        ),
+                        value = title, onValueChange = { title = it },
+                        label = { Text("Payee / Merchant", fontSize = 12.sp) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent, unfocusedTextColor = c.text, unfocusedBorderColor = c.border),
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // Date & Time
-                    TransactionDateTimePicker(
-                        selectedTimestamp = selectedTimestamp,
-                        onTimestampChange = { selectedTimestamp = it }
-                    )
+                    // Date + Time in one row
+                    val dateLabel = remember(selectedTimestamp) { java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(selectedTimestamp)) }
+                    val timeLabel = remember(selectedTimestamp) { java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(selectedTimestamp)) }
+                    val dialogCtx = LocalContext.current
+                    val isDarkForPicker = isSystemInDarkTheme()
+                    val pickerCtx = remember(isDarkForPicker, dialogCtx) { android.view.ContextThemeWrapper(dialogCtx, if (isDarkForPicker) android.R.style.Theme_Material_Dialog else android.R.style.Theme_Material_Light_Dialog) }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(onClick = {
+                            val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
+                            android.app.DatePickerDialog(pickerCtx, { _, y, m, d -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(y, m, d) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH)).show()
+                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.border), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(dateLabel, fontSize = 12.sp) }
+                        OutlinedButton(onClick = {
+                            val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
+                            android.app.TimePickerDialog(pickerCtx, { _, h, min -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(java.util.Calendar.HOUR_OF_DAY, h); set(java.util.Calendar.MINUTE, min) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), false).show()
+                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.border), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(timeLabel, fontSize = 12.sp) }
+                    }
 
-                    // Wallet
-                    PickerButton(
-                        label = "Wallet",
-                        title = accountSelection.ifBlank { "Select Wallet" },
-                        icon = walletIconFor(accountSelection, accounts.find { it.name == accountSelection }?.type),
-                        tint = c.accent,
-                        onClick = { showWalletPicker = true }
-                    )
-
-                    // Category
-                    PickerButton(
-                        label = "Category",
-                        title = selectedCategory?.displayName ?: "Choose category",
-                        icon = selectedCategory?.icon ?: Icons.Default.Category,
-                        tint = selectedCategory?.color ?: c.accent,
-                        onClick = { showCategoryPicker = true }
-                    )
-
-                    // Notes
-                    OutlinedTextField(
-                        value = notesStr,
-                        onValueChange = { notesStr = it },
-                        label = { Text("Notes (Optional)") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 1,
-                        maxLines = 3
-                    )
-                }
-
-                // ── Amount display (calculator screen) ─────────────────────────
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(c.surface)
-                        .padding(horizontal = 20.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.End
-                    ) {
-                        if (hasOp) {
-                            Text(
-                                text = calcExpr,
-                                fontSize = 15.sp,
-                                color = c.textSecondary,
-                                textAlign = TextAlign.End,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                    // Account | Category — same row
+                    val acctType = accounts.find { it.name == accountSelection }?.type
+                    val acctIcon = walletIconFor(accountSelection, acctType)
+                    val acctColor = when (acctType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
+                    val catIcon = selectedCategory?.icon ?: Icons.Default.Category
+                    val catColor = selectedCategory?.color ?: c.accent
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(
+                            onClick = { showWalletPicker = true },
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, c.border),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                        ) {
+                            Icon(acctIcon, null, tint = acctColor, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(accountSelection.ifBlank { "Account" }, fontSize = 11.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         }
-                        Text(
-                            text = when {
-                                calcResult != null -> "₹ ${formatCalcNum(calcResult)}"
-                                calcExpr.isEmpty() -> "₹ 0"
-                                else               -> "₹ $calcExpr"
-                            },
-                            fontSize = 34.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = amountColor,
-                            textAlign = TextAlign.End,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        OutlinedButton(
+                            onClick = { showCategoryPicker = true },
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, c.border),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                        ) {
+                            Icon(catIcon, null, tint = catColor, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(selectedCategory?.displayName ?: "Category", fontSize = 11.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        }
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    // ⌫ backspace button anchored to display row
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(c.accent.copy(alpha = 0.12f))
-                            .clickable { onCalcKey("⌫") },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("⌫", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = c.accent)
-                    }
+
+                    // Notes — 3 lines
+                    OutlinedTextField(
+                        value = notesStr, onValueChange = { notesStr = it },
+                        label = { Text("Notes (Optional)", fontSize = 12.sp) },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent, unfocusedTextColor = c.text, unfocusedBorderColor = c.border),
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3, maxLines = 4
+                    )
                 }
 
-                HorizontalDivider(thickness = 1.dp, color = c.text.copy(alpha = 0.10f))
+                // ── Amount display ─────────────────────────────────────────────
+                HorizontalDivider(color = c.divider)
+                Row(modifier = Modifier.fillMaxWidth().background(c.bg).padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                        if (hasOp) Text(calcExpr, fontSize = 13.sp, color = c.textSecondary, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(text = when { calcResult != null -> "₹ ${formatCalcNum(calcResult)}"; calcExpr.isEmpty() -> "₹ 0"; else -> "₹ $calcExpr" }, fontSize = 30.sp, fontWeight = FontWeight.Bold, color = amountColor, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Box(modifier = Modifier.size(42.dp).clip(RoundedCornerShape(8.dp)).background(c.accent.copy(0.12f)).clickable { onCalcKey("⌫") }, contentAlignment = Alignment.Center) {
+                        Text("⌫", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = c.accent)
+                    }
+                }
+                HorizontalDivider(color = c.divider)
 
-                // ── Calculator keypad ──────────────────────────────────────────
-                // Left column: operators (5 rows) | Right: 3 digit columns (4 rows) + = row
-                // All cells use the same border to give a uniform grid appearance.
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(c.surface)
-                ) {
-                    // Left column: +  -  ×  ÷  C  (5 rows, same height as right)
-                    Column(modifier = Modifier.weight(1.15f)) {
+                // ── Calculator ─────────────────────────────────────────────────
+                val keyBorder = BorderStroke(0.5.dp, c.text.copy(0.12f))
+                val keyShape = RoundedCornerShape(6.dp)
+                val keyH = 50.dp
+                Row(modifier = Modifier.fillMaxWidth().background(c.bg)) {
+                    // Left: operators
+                    Column(modifier = Modifier.weight(1.1f)) {
                         listOf("+", "-", "×", "÷", "C").forEach { op ->
                             val isC = op == "C"
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(57.dp)
-                                    .clickable { onCalcKey(op) }
-                                    .background(
-                                        if (isC) MaterialTheme.colorScheme.error.copy(alpha = 0.13f)
-                                        else c.accent.copy(alpha = 0.11f)
-                                    )
-                                    .border(0.5.dp, c.text.copy(alpha = 0.08f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = op,
-                                    fontSize = 22.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isC) MaterialTheme.colorScheme.error else c.accent
-                                )
+                            Box(modifier = Modifier.fillMaxWidth().height(keyH).border(keyBorder).clickable { onCalcKey(op) }, contentAlignment = Alignment.Center) {
+                                Text(op, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = if (isC) c.expense else c.accent)
                             }
                         }
                     }
-
-                    // Right grid: 3 digit columns × 4 rows, then full-width =
-                    val numRows = listOf(
-                        listOf("7", "8", "9"),
-                        listOf("4", "5", "6"),
-                        listOf("1", "2", "3"),
-                        listOf("00", "0", "."),
-                    )
+                    // Right: digits + =
+                    val numRows = listOf(listOf("7","8","9"), listOf("4","5","6"), listOf("1","2","3"), listOf("00","0","."))
                     Column(modifier = Modifier.weight(3f)) {
                         numRows.forEach { row ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(57.dp)
-                            ) {
+                            Row(modifier = Modifier.fillMaxWidth().height(keyH)) {
                                 row.forEach { key ->
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxHeight()
-                                            .clickable { onCalcKey(key) }
-                                            .background(Color.Transparent)
-                                            .border(0.5.dp, c.text.copy(alpha = 0.08f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = key,
-                                            fontSize = 20.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = c.text
-                                        )
+                                    Box(modifier = Modifier.weight(1f).fillMaxHeight().border(keyBorder).clickable { onCalcKey(key) }, contentAlignment = Alignment.Center) {
+                                        Text(key, fontSize = 18.sp, fontWeight = FontWeight.Medium, color = c.text)
                                     }
                                 }
                             }
                         }
-                        // = button — full width, accent fill
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(57.dp)
-                                .clickable { onCalcKey("=") }
-                                .background(c.accent)
-                                .border(0.5.dp, c.text.copy(alpha = 0.08f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("=", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = c.bg)
+                        Box(modifier = Modifier.fillMaxWidth().height(keyH).background(c.accent, keyShape).border(keyBorder).clickable { onCalcKey("=") }, contentAlignment = Alignment.Center) {
+                            Text("=", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = c.bg)
                         }
                     }
                 }
@@ -7715,6 +7556,7 @@ fun EditTransactionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
         title = { Text("Update Transaction", fontWeight = FontWeight.Bold, color = c.text) },
         text = {
             Column(

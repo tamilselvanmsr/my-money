@@ -48,11 +48,9 @@ data class AppColors(
     val isDark: Boolean,
     val isBorderless: Boolean = false
 ) {
-    // Flat-aware card helpers — use these for list items / content cards
+    // Flat-aware card helpers
     val cardBg: Color get() = if (isBorderless) Color.Transparent else surface
-    val cardBorderWidth get() = if (isBorderless) 0.dp else 1.dp
     val cardBorderColor: Color get() = if (isBorderless) Color.Transparent else border
-    val cardRadius get() = if (isBorderless) 4 else 16
 }
 
 fun darkAppColors() = AppColors(
@@ -127,76 +125,76 @@ fun sunsetAppColors() = AppColors(
     isDark        = false
 )
 
-// ── Theme 5: Ocean — sky-blue surfaces, cyan accents ─────────────────────────
-fun oceanAppColors() = AppColors(
-    bg            = Color(0xFFEBF5F9),
-    surface       = Color(0xFFCDE8F4),  // teal-blue surface
-    surfaceVariant = Color(0xFFBBDEED),
-    border        = Color(0xFF84C3DB),
-    borderStrong  = Color(0xFF4EA8CC),
-    text          = Color(0xFF0D3A4F),
-    textSecondary = Color(0xFF1A6B90),
-    textTertiary  = Color(0xFF4A9BB8),
-    divider       = Color(0xFFAAD8EA),
-    accent        = Color(0xFF0288D1),
-    accentDim     = Color(0x200288D1),
-    income        = Color(0xFF00897B),
-    expense       = Color(0xFFD84315),
-    isDark        = false
-)
-
-// ── Theme 6: Lavender — purple-tinted surfaces, deep violet accent ────────────
-fun lavenderAppColors() = AppColors(
-    bg            = Color(0xFFF2EDFF),
-    surface       = Color(0xFFE2D4FF),  // clearly purple surface
-    surfaceVariant = Color(0xFFD5C4FF),
-    border        = Color(0xFFAA8EE0),
-    borderStrong  = Color(0xFF8B6CC8),
-    text          = Color(0xFF2C1B5C),
-    textSecondary = Color(0xFF5E3A9C),
-    textTertiary  = Color(0xFF9070C8),
-    divider       = Color(0xFFC8B2F0),
-    accent        = Color(0xFF6A1B9A),
-    accentDim     = Color(0x206A1B9A),
+// ── Theme 5: Sepia — eye-protection warm amber, night-friendly ───────────────
+fun sepiaAppColors() = AppColors(
+    bg            = Color(0xFFFFF8F0),  // warm cream
+    surface       = Color(0xFFFFF0D8),  // light amber card (warm but not orange)
+    surfaceVariant = Color(0xFFFFE8C4),
+    border        = Color(0xFFD4A864),
+    borderStrong  = Color(0xFFB8884A),
+    text          = Color(0xFF2C1A00),  // dark warm brown
+    textSecondary = Color(0xFF6B4020),
+    textTertiary  = Color(0xFFA07040),
+    divider       = Color(0xFFE8CC98),
+    accent        = Color(0xFFB45309),  // warm amber-brown
+    accentDim     = Color(0x20B45309),
     income        = Color(0xFF2E7D32),
     expense       = Color(0xFFB71C1C),
     isDark        = false
 )
 
-// ── Theme 7: Rose — pink-flushed surfaces, magenta accent ────────────────────
-fun roseAppColors() = AppColors(
-    bg            = Color(0xFFFFF0F3),
-    surface       = Color(0xFFFFCEDB),  // clearly pink surface
-    surfaceVariant = Color(0xFFFFBDD0),
-    border        = Color(0xFFF08CA8),
-    borderStrong  = Color(0xFFD46080),
-    text          = Color(0xFF560A1E),
-    textSecondary = Color(0xFFA0284C),
-    textTertiary  = Color(0xFFCC6688),
-    divider       = Color(0xFFF4B4C8),
-    accent        = Color(0xFFE91E63),
-    accentDim     = Color(0x20E91E63),
-    income        = Color(0xFF2E7D32),
-    expense       = Color(0xFFC62828),
+// ── Theme 6: Gold — warm golden surfaces, rich amber accent ──────────────────
+fun goldAppColors() = AppColors(
+    bg            = Color(0xFFFEFCE8),  // very light champagne
+    surface       = Color(0xFFFEF9C3),  // pale gold card
+    surfaceVariant = Color(0xFFFEF08A),
+    border        = Color(0xFFCA8A04),
+    borderStrong  = Color(0xFFA86004),
+    text          = Color(0xFF1C1000),  // very dark golden-brown
+    textSecondary = Color(0xFF78580A),
+    textTertiary  = Color(0xFFB08030),
+    divider       = Color(0xFFE8C840),
+    accent        = Color(0xFFCA8A04),  // gold
+    accentDim     = Color(0x20CA8A04),
+    income        = Color(0xFF166534),
+    expense       = Color(0xFF991B1B),
     isDark        = false
 )
 
-// ── Theme 8: Carbon — MyMoney-inspired deep dark, purple accent ───────────────
-fun carbonAppColors() = AppColors(
-    bg            = Color(0xFF121212),
-    surface       = Color(0xFF1E1E2E),  // deep blue-grey surface
-    surfaceVariant = Color(0xFF252540),
-    border        = Color(0xFF32325A),
-    borderStrong  = Color(0xFF4A4A80),
-    text          = Color(0xFFE2E2FF),
-    textSecondary = Color(0xFF9898CC),
-    textTertiary  = Color(0xFF6666A0),
-    divider       = Color(0x1AFFFFFF),
-    accent        = Color(0xFFBB86FC),
-    accentDim     = Color(0x26BB86FC),
-    income        = Color(0xFF03DAC6),
-    expense       = Color(0xFFCF6679),
-    isDark        = true
+// ── Theme 7: Jade — calming green jade, soft and fresh ───────────────────────
+fun jadeAppColors() = AppColors(
+    bg            = Color(0xFFF0FDF8),  // very light jade
+    surface       = Color(0xFFD9F5EC),  // pale jade card
+    surfaceVariant = Color(0xFFC4EDE0),
+    border        = Color(0xFF6EC4A6),
+    borderStrong  = Color(0xFF3DA888),
+    text          = Color(0xFF0A2920),  // dark jade green
+    textSecondary = Color(0xFF1E6550),
+    textTertiary  = Color(0xFF4A9C80),
+    divider       = Color(0xFFAADDCA),
+    accent        = Color(0xFF0D7A5C),  // deep jade
+    accentDim     = Color(0x200D7A5C),
+    income        = Color(0xFF15803D),
+    expense       = Color(0xFFB91C1C),
+    isDark        = false
+)
+
+// ── Theme 8: Sand — warm ivory/sand surfaces, earthy neutral ─────────────────
+fun sandAppColors() = AppColors(
+    bg            = Color(0xFFFDF8F2),  // warm white
+    surface       = Color(0xFFF5EAD8),  // sand card
+    surfaceVariant = Color(0xFFEEDEC5),
+    border        = Color(0xFFCCAA80),
+    borderStrong  = Color(0xFFAA8860),
+    text          = Color(0xFF2A1A08),  // dark earthy brown
+    textSecondary = Color(0xFF6E4C2A),
+    textTertiary  = Color(0xFFA07850),
+    divider       = Color(0xFFDDC4A0),
+    accent        = Color(0xFF92400E),  // warm brown-orange
+    accentDim     = Color(0x2092400E),
+    income        = Color(0xFF3D7A3D),
+    expense       = Color(0xFFA83232),
+    isDark        = false
 )
 
 

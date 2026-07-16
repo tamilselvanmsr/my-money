@@ -15,4 +15,4 @@
 .cxx
 local.properties
 .env
-debug.keystore
+# debug.keystore is intentionally committed — it is a non-production debug key only

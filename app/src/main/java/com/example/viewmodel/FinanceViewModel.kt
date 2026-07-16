@@ -231,9 +231,53 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     // ── Paid features unlock (persisted) ──────────────────────────────────────
     private val _isPaidFeaturesEnabled = MutableStateFlow(prefs.getBoolean("paid_features_enabled", false))
     val isPaidFeaturesEnabled: StateFlow<Boolean> = _isPaidFeaturesEnabled.asStateFlow()
+
+    private val _proExpiresAt = MutableStateFlow(prefs.getLong("pro_expires_at", 0L))
+    val proExpiresAt: StateFlow<Long> = _proExpiresAt.asStateFlow()
+
     fun setPaidFeaturesEnabled(v: Boolean) {
         _isPaidFeaturesEnabled.value = v
         prefs.edit().putBoolean("paid_features_enabled", v).apply()
+        if (!v) {  // clear any trial expiry when deactivating
+            prefs.edit().putLong("pro_expires_at", 0L).apply()
+            _proExpiresAt.value = 0L
+        }
+    }
+
+    /** Activates Pro for [durationDays] days. Auto-revokes when the trial expires. */
+    fun activateProWithExpiry(durationDays: Int) {
+        val expiresAt = System.currentTimeMillis() + durationDays * 24L * 60L * 60L * 1000L
+        _isPaidFeaturesEnabled.value = true
+        _proExpiresAt.value = expiresAt
+        prefs.edit()
+            .putBoolean("paid_features_enabled", true)
+            .putLong("pro_expires_at", expiresAt)
+            .apply()
+    }
+
+    /** Returns true if this activation code has already been used on this device. */
+    fun isCodeAlreadyUsed(code: String): Boolean {
+        val used = prefs.getStringSet("used_activation_codes", emptySet()) ?: emptySet()
+        return code.uppercase() in used
+    }
+
+    /** Persists a code as used so it cannot be reactivated. */
+    fun markCodeUsed(code: String) {
+        val used = (prefs.getStringSet("used_activation_codes", emptySet()) ?: emptySet()).toMutableSet()
+        used.add(code.uppercase())
+        prefs.edit().putStringSet("used_activation_codes", used).apply()
+    }
+
+    /** Called on init and periodically: revokes Pro if the trial period has elapsed. */
+    fun checkAndRevokeExpiredPro() {
+        val expiresAt = prefs.getLong("pro_expires_at", 0L)
+        if (expiresAt > 0L && System.currentTimeMillis() > expiresAt) {
+            setPaidFeaturesEnabled(false)
+            addNotification(
+                "Pro Trial Expired",
+                "Your AutoLedger Pro trial has expired. Open the upgrade screen to reactivate."
+            )
+        }
     }
 
     // ── Parser section visibility (developer unlock via security icon taps) ────
@@ -440,6 +484,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val current = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
         _selectedMonthYear.value = current
         createBudgetAlertChannel()
+        checkAndRevokeExpiredPro()   // revoke on startup if trial elapsed
         checkAndLogRecurringTransactions()
         seedDefaultAccountsIfNeeded()
     }
@@ -1899,7 +1944,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 }
                 if (matchedCount > 0) {
                     _toastMessage.emit("Successfully imported $matchedCount transactions from your Inbox!")
-                    addNotification("SMS Import", "Imported $matchedCount new transaction(s) from your Inbox (expenses, incomes, transfers & balance updates).")
+                    addNotification("SMS Import", "Imported $matchedCount new transaction(s) from your Inbox.")
                 } else {
                     _toastMessage.emit("Scan complete. No new transaction messages found.")
                 }

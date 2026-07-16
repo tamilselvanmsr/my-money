@@ -81,6 +81,8 @@ import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.LocalAppColors
 import com.example.ui.theme.darkAppColors
 import com.example.ui.theme.lightAppColors
+import com.example.ui.theme.forestAppColors
+import com.example.ui.theme.sunsetAppColors
 import com.example.viewmodel.FinanceViewModel
 import com.example.viewmodel.DisplayMode
 import kotlinx.coroutines.flow.collectLatest
@@ -295,10 +297,16 @@ class MainActivity : ComponentActivity() {
             val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
             val isDark = when (themeMode) {
                 "dark"  -> true
-                "light" -> false
+                "light", "forest", "sunset" -> false
                 else    -> systemDark // "system" — follow device setting
             }
-            val appColors = if (isDark) darkAppColors() else lightAppColors()
+            val appColors = when (themeMode) {
+                "dark"   -> darkAppColors()
+                "forest" -> forestAppColors()
+                "sunset" -> sunsetAppColors()
+                "light"  -> lightAppColors()
+                else     -> if (systemDark) darkAppColors() else lightAppColors()
+            }
             MyApplicationTheme(darkTheme = isDark) {
                 androidx.compose.runtime.CompositionLocalProvider(LocalAppColors provides appColors) {
                     MainAppScreen(vm)
@@ -316,6 +324,8 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     val isDarkTheme by viewModel.isDarkTheme.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val smsScanMonthsBack by viewModel.smsScanMonthsBack.collectAsStateWithLifecycle()
+    val isPaidMain by viewModel.isPaidFeaturesEnabled.collectAsStateWithLifecycle()
+    val proExpiresAt by viewModel.proExpiresAt.collectAsStateWithLifecycle()
     var currentTab by remember { mutableStateOf(AppTab.DASHBOARD) }
     // Show SMS Scan only on the very first install, not on every launch
     LaunchedEffect(Unit) {
@@ -375,6 +385,14 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
         }
     }
 
+    // Periodically revoke Pro if a trial key has elapsed
+    LaunchedEffect(Unit) {
+        while (true) {
+            viewModel.checkAndRevokeExpiredPro()
+            kotlinx.coroutines.delay(60_000L)
+        }
+    }
+
     // Merge fingerprints written by SmsReceiver while app was in background
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -423,29 +441,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             fontSize = 20.sp,
                             letterSpacing = 0.5.sp,
                             color = c.text,
-                            modifier = Modifier.pointerInput(Unit) {
-                                detectTapGestures {
-                                    titleTapCount++
-                                    titleTapJob?.cancel()
-                                    titleTapJob = titleTapScope.launch {
-                                        kotlinx.coroutines.delay(600)
-                                        when {
-                                            titleTapCount >= 5 -> {
-                                                viewModel.setPaidFeaturesEnabled(true)
-                                                showProUpgradeDialog = true
-                                                Toast.makeText(context, "✦ AutoLedger Pro activated!", Toast.LENGTH_LONG).show()
-                                                viewModel.addProStatusInAppNotification(true)
-                                            }
-                                            titleTapCount == 2 -> {
-                                                viewModel.setPaidFeaturesEnabled(false)
-                                                Toast.makeText(context, "AutoLedger Pro deactivated.", Toast.LENGTH_SHORT).show()
-                                                viewModel.addProStatusInAppNotification(false)
-                                            }
-                                        }
-                                        titleTapCount = 0
-                                    }
-                                }
-                            }
+                            modifier = Modifier  // no tap gesture on title
                         )
                     }
                 },
@@ -498,6 +494,34 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             shadowElevation = 10.dp,
                             modifier = Modifier.widthIn(min = 180.dp, max = 220.dp)
                         ) {
+                            // ── Pro Status entry ──────────────────────────
+                            val proLabel = when {
+                                isPaidMain && proExpiresAt > 0L -> {
+                                    val days = ((proExpiresAt - System.currentTimeMillis()) / 86_400_000L).coerceAtLeast(0L)
+                                    "✦ Pro Trial — ${days}d left"
+                                }
+                                isPaidMain -> "✦ AutoLedger Pro"
+                                else -> "Upgrade to Pro"
+                            }
+                            val proColor = if (isPaidMain) Color(0xFFFFA000) else c.accent
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            if (isPaidMain) Icons.Default.AutoAwesome else Icons.Default.Lock,
+                                            contentDescription = null,
+                                            tint = proColor,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(proLabel, color = proColor, fontWeight = FontWeight.Bold)
+                                    }
+                                },
+                                onClick = { showAppMenu = false; showProUpgradeDialog = true }
+                            )
+                            HorizontalDivider(color = c.divider)
                             // ── Theme toggle ─────────────────────────────
                             DropdownMenuItem(
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
@@ -509,13 +533,13 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                             color = c.textSecondary,
                                             modifier = Modifier.padding(bottom = 6.dp)
                                         )
+                                        // Row 1: Device / Dark
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
                                             listOf(
                                                 Triple("Device", Icons.Default.SettingsBrightness, "system"),
-                                                Triple("Light",  Icons.Default.LightMode,          "light"),
                                                 Triple("Dark",   Icons.Default.DarkMode,            "dark")
                                             ).forEach { (label, icon, mode) ->
                                                 val selected = themeMode == mode
@@ -527,29 +551,54 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                                         .weight(1f)
                                                         .clickable {
                                                             viewModel.setThemeMode(mode)
-                                                            if (mode == "dark") viewModel.setDarkTheme(true)
-                                                            else if (mode == "light") viewModel.setDarkTheme(false)
+                                                            viewModel.setDarkTheme(mode == "dark")
                                                         }
                                                 ) {
                                                     Column(
                                                         horizontalAlignment = Alignment.CenterHorizontally,
                                                         verticalArrangement = Arrangement.Center,
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .padding(vertical = 6.dp)
+                                                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
                                                     ) {
-                                                        Icon(
-                                                            icon, null,
-                                                            tint = if (selected) c.bg else c.textSecondary,
-                                                            modifier = Modifier.size(15.dp)
-                                                        )
+                                                        Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(15.dp))
                                                         Spacer(Modifier.height(3.dp))
-                                                        Text(
-                                                            label,
-                                                            fontSize = 9.sp,
-                                                            color = if (selected) c.bg else c.textSecondary,
-                                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                                        )
+                                                        Text(label, fontSize = 9.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Spacer(Modifier.height(6.dp))
+                                        // Row 2: Light theme variants (tap to cycle)
+                                        Text("Light themes — tap to cycle", fontSize = 9.sp, color = c.textSecondary, modifier = Modifier.padding(bottom = 4.dp))
+                                        val lightModes = listOf(
+                                            Triple("Light",   Icons.Default.LightMode,    "light"),
+                                            Triple("Forest",  Icons.Default.Forest,        "forest"),
+                                            Triple("Sunset",  Icons.Default.WbSunny,       "sunset")
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            lightModes.forEach { (label, icon, mode) ->
+                                                val selected = themeMode == mode
+                                                Surface(
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    color = if (selected) c.accent else c.surface,
+                                                    border = BorderStroke(1.dp, if (selected) c.accent else c.divider),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clickable {
+                                                            viewModel.setThemeMode(mode)
+                                                            viewModel.setDarkTheme(false)
+                                                        }
+                                                ) {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.Center,
+                                                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+                                                    ) {
+                                                        Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(15.dp))
+                                                        Spacer(Modifier.height(3.dp))
+                                                        Text(label, fontSize = 9.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                                     }
                                                 }
                                             }
@@ -1306,7 +1355,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     .clickable {
                                         if (isProPeriod && !isPaid) {
                                             showFilterMenu = false
-                                            showDashboardProUpgrade = true
+                                            Toast.makeText(context, "Pro feature — unlock in AutoLedger Pro", Toast.LENGTH_SHORT).show()
                                         } else {
                                             viewModel.setDisplayMode(mode)
                                             showFilterMenu = false
@@ -2710,7 +2759,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                         }
                                     },
                                     onClick = {
-                                        if (isProPeriod && !isPaid) { showPeriodMenu = false; showAnalyticsProUpgrade = true }
+                                        if (isProPeriod && !isPaid) { showPeriodMenu = false; Toast.makeText(ctx, "Pro feature — unlock in AutoLedger Pro", Toast.LENGTH_SHORT).show() }
                                         else { timeFilter = key; showPeriodMenu = false }
                                     },
                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
@@ -2733,8 +2782,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         Box {
                             FilledTonalIconButton(
                                 onClick = {
-                                    if (isPaid) showAnalyticsCatFilterMenu = true
-                                    else showAnalyticsProUpgrade = true
+                                    showAnalyticsCatFilterMenu = true  // always open; free users get first 3
                                 },
                                 colors = IconButtonDefaults.filledTonalIconButtonColors(
                                     containerColor = if (analyticsCategoryFilter.isNotEmpty()) c.accent.copy(alpha = 0.18f) else c.divider,
@@ -3356,7 +3404,7 @@ private fun AnalyticsOverviewSection(
                         // Chart uses ~55% of the available row width — big enough without crowding the legend
                         val chartSize = if (isCompact) (maxWidth * 0.55f).coerceIn(140.dp, 180.dp)
                                         else (maxWidth * 0.57f).coerceIn(155.dp, 220.dp)
-                        val legendFontSize = if (isCompact) 9.sp else 10.sp
+                        val legendFontSize = if (isCompact) 11.sp else 12.sp
                         val chartContent: @Composable () -> Unit = {
                             Box(
                                 modifier = Modifier
@@ -3415,7 +3463,7 @@ private fun AnalyticsOverviewSection(
                                             sweepAngle = sweep,
                                             useCenter = false,
                                             style = Stroke(
-                                                width = if (isHighlighted) strokeWidthValue * 1.35f else strokeWidthValue,
+                                                width = if (isHighlighted) strokeWidthValue * 1.12f else strokeWidthValue,
                                                 cap = StrokeCap.Round
                                             ),
                                             size = arcSize,
@@ -3678,15 +3726,14 @@ private fun AnalyticsFlowSection(
     val averageAllDay = if (points.isNotEmpty()) total / points.size else 0.0
     val displayAverage = if (showAverageActiveDay) average else averageAllDay
 
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text(title.uppercase(Locale.getDefault()), fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp, color = c.textSecondary)
                         Text(decFormat.format(total), fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, color = accent)
                     }
                     Column(
@@ -4593,17 +4640,13 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         val budgetCtx = LocalContext.current
-                        var showBudgetProUpgrade by remember { mutableStateOf(false) }
-                        if (showBudgetProUpgrade) {
-                            ProUpgradeDialog(
-                                viewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
-                                onDismiss = { showBudgetProUpgrade = false }
-                            )
-                        }
+                        var showBudgetCatMenu by remember { mutableStateOf(false) }
+                        val budgetCtx2 = LocalContext.current
+                        Box {
                         FilledTonalIconButton(
                             onClick = {
                                 if (isPaid) viewModel.setBudgetShowBudgetedOnly(!showBudgetedOnly)
-                                else showBudgetProUpgrade = true
+                                else Toast.makeText(budgetCtx2, "Budgeted categories only — Pro feature", Toast.LENGTH_SHORT).show()
                             },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
                                 containerColor = if (showBudgetedOnly && isPaid) c.accent.copy(alpha = 0.18f) else c.divider,
@@ -4617,6 +4660,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 modifier = Modifier.size(18.dp)
                             )
                         }
+                        } // end Box
                         Button(
                             onClick = { showAddCategoryDialog = true },
                             colors = ButtonDefaults.buttonColors(
@@ -5623,8 +5667,8 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         modifier = Modifier
             .fillMaxSize()
             .testTag("accounts_scroll_column"),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // Upper balance HUD
         item {
@@ -5782,7 +5826,8 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                 )
                 TextButton(
                     onClick = { showAddAccountDialog = true },
-                    colors = ButtonDefaults.textButtonColors(contentColor = c.accent)
+                    colors = ButtonDefaults.textButtonColors(contentColor = c.accent),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Add Icon", modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
@@ -7621,14 +7666,25 @@ fun EditTransactionDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.verticalScroll(rememberScrollState())
             ) {
+                val amountColor = if (editType == "EXPENSE") c.expense else if (editType == "INCOME") c.income else c.accent
                 OutlinedTextField(
                     value = amountStr,
                     onValueChange = { amountStr = it },
-                    label = { Text("Amount (₹)") },
+                    label = { Text("Amount (₹)", fontWeight = FontWeight.Bold) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = amountColor
                     ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = amountColor, unfocusedTextColor = amountColor,
+                        focusedBorderColor = amountColor, unfocusedBorderColor = amountColor.copy(0.5f),
+                        focusedLabelColor = amountColor, unfocusedLabelColor = amountColor.copy(0.7f),
+                        focusedContainerColor = amountColor.copy(0.08f),
+                        unfocusedContainerColor = amountColor.copy(0.05f)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -9301,8 +9357,14 @@ private fun ProGate(
 // Activation: user pays offline → receives an activation code from the team.
 // ─────────────────────────────────────────────────────────────────────────────
 private val VALID_ACTIVATION_CODES = setOf(
-    "ALP2026-ANNUAL", "ALP2026-SACHET", "ALP2026-LIFETIME",
-    "LEDGER-PRO-2026", "AUTOL-SACHET-26"
+    "ALP2026-SACHET","ALP2026-ANNUAL", "ALP2026-LIFETIME",
+    "LEDGER-PRO-2026"
+)
+
+/** Trial codes → number of days active before auto-expiry. */
+private val TRIAL_ACTIVATION_CODES: Map<String, Int> = mapOf(
+    "ALP-TRIAL7-26"  to 7,
+    "ALP-TRIAL45-26" to 45
 )
 
 @Composable
@@ -9348,7 +9410,11 @@ fun ProUpgradeDialog(
             modifier = Modifier.fillMaxSize(),
             color = c.bg
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(Modifier.windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.ime))
+            ) {
                 // Scrollable content
                 Column(
                     modifier = Modifier
@@ -9399,7 +9465,7 @@ fun ProUpgradeDialog(
                     Text("WHAT YOU UNLOCK", fontSize = 10.sp, fontWeight = FontWeight.Bold,
                         color = c.textSecondary, letterSpacing = 1.sp, modifier = Modifier.align(Alignment.Start))
                     val features = listOf(
-                        Icons.Default.Sms to "Auto SMS Scan" to "Tracks UPI, bank & wallet transactions automatically",
+                        Icons.Default.Sms to "Auto SMS Scan" to "Auto-Tracks UPI, bank & wallet transactions",
                         Icons.Default.Category to "Smart Categorisation" to "Auto-maps merchants to the right category",
                         Icons.Default.CloudUpload to "Cloud Backup" to "Never lose your data — auto-backs up daily",
                         Icons.Default.FilterList to "Advanced Filters" to "Filter by category, account & date range",
@@ -9522,13 +9588,37 @@ fun ProUpgradeDialog(
                     )
                     Button(
                         onClick = {
-                            if (VALID_ACTIVATION_CODES.contains(codeInput.trim())) {
-                                viewModel?.setPaidFeaturesEnabled(true)
-                                viewModel?.addProStatusInAppNotification(true)
-                                Toast.makeText(context, "✦ AutoLedger Pro activated! Enjoy all features.", Toast.LENGTH_LONG).show()
-                                onDismiss()
-                            } else {
-                                codeError = true
+                            val trimmed = codeInput.trim()
+                            val trialDays = TRIAL_ACTIVATION_CODES[trimmed]
+                            val alreadyUsed = viewModel?.isCodeAlreadyUsed(trimmed) == true
+                            when {
+                                trimmed.equals("DEACTIVATE", ignoreCase = true) -> {
+                                    viewModel?.setPaidFeaturesEnabled(false)
+                                    viewModel?.addProStatusInAppNotification(false)
+                                    Toast.makeText(context, "AutoLedger Pro deactivated.", Toast.LENGTH_SHORT).show()
+                                    onDismiss()
+                                }
+                                alreadyUsed -> {
+                                    codeError = true
+                                    Toast.makeText(context, "This code has already been used on this device.", Toast.LENGTH_SHORT).show()
+                                }
+                                trialDays != null -> {
+                                    viewModel?.activateProWithExpiry(trialDays)
+                                    viewModel?.addProStatusInAppNotification(true)
+                                    viewModel?.markCodeUsed(trimmed)
+                                    val expiry = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault())
+                                        .format(java.util.Date(System.currentTimeMillis() + trialDays * 86_400_000L))
+                                    Toast.makeText(context, "✦ AutoLedger Pro trial ($trialDays days) activated! Expires $expiry.", Toast.LENGTH_LONG).show()
+                                    onDismiss()
+                                }
+                                VALID_ACTIVATION_CODES.contains(trimmed) -> {
+                                    viewModel?.setPaidFeaturesEnabled(true)
+                                    viewModel?.addProStatusInAppNotification(true)
+                                    viewModel?.markCodeUsed(trimmed)
+                                    Toast.makeText(context, "✦ AutoLedger Pro activated! Enjoy all features.", Toast.LENGTH_LONG).show()
+                                    onDismiss()
+                                }
+                                else -> codeError = true
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),

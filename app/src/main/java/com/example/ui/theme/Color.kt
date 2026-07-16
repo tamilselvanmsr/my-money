@@ -84,3 +84,39 @@ fun lightAppColors() = AppColors(
 
 val LocalAppColors = staticCompositionLocalOf { darkAppColors() }
 
+// ── Theme 3: Forest — deep forest greens, warm amber accents ─────────────────
+fun forestAppColors() = AppColors(
+    bg            = Color(0xFFF0F7EF),  // very light sage
+    surface       = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFFE2EEE0),
+    border        = Color(0xFFB6D2B2),
+    borderStrong  = Color(0xFF8AB585),
+    text          = Color(0xFF1A3320),  // dark forest green
+    textSecondary = Color(0xFF3D6648),
+    textTertiary  = Color(0xFF6B9B72),
+    divider       = Color(0xFFCEE6CB),
+    accent        = Color(0xFF1B7040),  // deep forest green
+    accentDim     = Color(0x201B7040),
+    income        = Color(0xFF16A34A),  // emerald green
+    expense       = Color(0xFFC2410C),  // burnt orange-red (distinct from standard red)
+    isDark        = false
+)
+
+// ── Theme 4: Sunset — warm cream, vivid tangerine accent, earthy tones ────────
+fun sunsetAppColors() = AppColors(
+    bg            = Color(0xFFFFF8EF),  // warm cream
+    surface       = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFFFFF0DC),
+    border        = Color(0xFFE8CC98),
+    borderStrong  = Color(0xFFD4A855),
+    text          = Color(0xFF2D1B00),  // very dark brown
+    textSecondary = Color(0xFF7A4511),  // saddle brown
+    textTertiary  = Color(0xFFBF7B45),  // warm tan
+    divider       = Color(0xFFF0D8B0),
+    accent        = Color(0xFFD35400),  // sunset tangerine
+    accentDim     = Color(0x20D35400),
+    income        = Color(0xFF27AE60),  // bright green
+    expense       = Color(0xFFC0392B),  // deep crimson
+    isDark        = false
+)
+

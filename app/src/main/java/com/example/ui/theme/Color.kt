@@ -125,72 +125,54 @@ fun sunsetAppColors() = AppColors(
     isDark        = false
 )
 
-// ── Theme 5: Sepia — eye-protection warm amber, night-friendly ───────────────
-fun sepiaAppColors() = AppColors(
-    bg            = Color(0xFFFFF8F0),  // warm cream
-    surface       = Color(0xFFFFF0D8),  // light amber card (warm but not orange)
-    surfaceVariant = Color(0xFFFFE8C4),
-    border        = Color(0xFFD4A864),
-    borderStrong  = Color(0xFFB8884A),
-    text          = Color(0xFF2C1A00),  // dark warm brown
-    textSecondary = Color(0xFF6B4020),
-    textTertiary  = Color(0xFFA07040),
-    divider       = Color(0xFFE8CC98),
-    accent        = Color(0xFFB45309),  // warm amber-brown
-    accentDim     = Color(0x20B45309),
-    income        = Color(0xFF2E7D32),
-    expense       = Color(0xFFB71C1C),
-    isDark        = false
-)
-
-// ── Theme 6: Gold — warm golden surfaces, rich amber accent ──────────────────
+// ── Theme 5: Gold — warm golden surfaces, rich amber accent ──────────────────
 fun goldAppColors() = AppColors(
-    bg            = Color(0xFFFEFCE8),  // very light champagne
-    surface       = Color(0xFFFEF9C3),  // pale gold card
+    bg            = Color(0xFFFEFCE8),
+    surface       = Color(0xFFFEF9C3),  // pale gold card (light, pleasant)
     surfaceVariant = Color(0xFFFEF08A),
     border        = Color(0xFFCA8A04),
     borderStrong  = Color(0xFFA86004),
-    text          = Color(0xFF1C1000),  // very dark golden-brown
+    text          = Color(0xFF1C1000),
     textSecondary = Color(0xFF78580A),
     textTertiary  = Color(0xFFB08030),
     divider       = Color(0xFFE8C840),
-    accent        = Color(0xFFCA8A04),  // gold
+    accent        = Color(0xFFCA8A04),
     accentDim     = Color(0x20CA8A04),
     income        = Color(0xFF166534),
     expense       = Color(0xFF991B1B),
     isDark        = false
 )
 
-// ── Theme 7: Jade — calming green jade, soft and fresh ───────────────────────
+// ── Theme 6: Jade — for navigation bg; boxes use lighter jade ────────────────
 fun jadeAppColors() = AppColors(
-    bg            = Color(0xFFF0FDF8),  // very light jade
-    surface       = Color(0xFFD9F5EC),  // pale jade card
-    surfaceVariant = Color(0xFFC4EDE0),
+    bg            = Color(0xFFF0FDF8),  // very light jade bg
+    surface       = Color(0xFFEBFAF4),  // barely-tinted card — light, not saturated
+    surfaceVariant = Color(0xFFD4F0E8),
     border        = Color(0xFF6EC4A6),
     borderStrong  = Color(0xFF3DA888),
-    text          = Color(0xFF0A2920),  // dark jade green
+    text          = Color(0xFF0A2920),
     textSecondary = Color(0xFF1E6550),
     textTertiary  = Color(0xFF4A9C80),
-    divider       = Color(0xFFAADDCA),
-    accent        = Color(0xFF0D7A5C),  // deep jade
+    divider       = Color(0xFFB8DECE),
+    accent        = Color(0xFF0D7A5C),
     accentDim     = Color(0x200D7A5C),
     income        = Color(0xFF15803D),
     expense       = Color(0xFFB91C1C),
     isDark        = false
 )
 
-// ── Theme 8: Sand — warm ivory/sand surfaces, earthy neutral ─────────────────
+// ── Theme 7: Sand — warm ivory/sand surfaces, earthy neutral ─────────────────
 fun sandAppColors() = AppColors(
-    bg            = Color(0xFFFDF8F2),  // warm white
-    surface       = Color(0xFFF5EAD8),  // sand card
+    bg            = Color(0xFFFDF8F2),
+    surface       = Color(0xFFF5EAD8),  // sand card (warm, light)
     surfaceVariant = Color(0xFFEEDEC5),
     border        = Color(0xFFCCAA80),
     borderStrong  = Color(0xFFAA8860),
-    text          = Color(0xFF2A1A08),  // dark earthy brown
+    text          = Color(0xFF2A1A08),
     textSecondary = Color(0xFF6E4C2A),
     textTertiary  = Color(0xFFA07850),
     divider       = Color(0xFFDDC4A0),
-    accent        = Color(0xFF92400E),  // warm brown-orange
+    accent        = Color(0xFF92400E),
     accentDim     = Color(0x2092400E),
     income        = Color(0xFF3D7A3D),
     expense       = Color(0xFFA83232),

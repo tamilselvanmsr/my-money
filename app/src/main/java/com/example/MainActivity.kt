@@ -578,19 +578,9 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                         }
                                         Spacer(Modifier.height(6.dp))
                                         Text("Light themes", fontSize = 9.sp, color = c.textSecondary, modifier = Modifier.padding(bottom = 4.dp))
-                                        // Row 2: Light / Forest / Sunset
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            listOf(Triple("Light", Icons.Default.LightMode, "light"), Triple("Forest", Icons.Default.Forest, "forest"), Triple("Sunset", Icons.Default.WbSunny, "sunset")).forEach { (label, icon, mode) ->
-                                                val selected = themeMode == mode
-                                                Surface(shape = RoundedCornerShape(8.dp), color = if (selected) c.accent else c.surface, border = BorderStroke(1.dp, if (selected) c.accent else c.divider), modifier = Modifier.weight(1f).clickable { viewModel.setThemeMode(mode); viewModel.setDarkTheme(false) }) {
-                                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) { Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(13.dp)); Spacer(Modifier.height(2.dp)); Text(label, fontSize = 8.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
-                                                }
-                                            }
-                                        }
-                                        Spacer(Modifier.height(4.dp))
-                                        // Row 3: Sepia / Gold / Jade / Sand (warm themes)
+                                        // Row 2: Light / Gold / Jade / Sand
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            listOf(Triple("Sepia", Icons.Default.Nightlight, "sepia"), Triple("Gold", Icons.Default.Star, "gold"), Triple("Jade", Icons.Default.Spa, "jade"), Triple("Sand", Icons.Default.WbCloudy, "sand")).forEach { (label, icon, mode) ->
+                                            listOf(Triple("Light", Icons.Default.LightMode, "light"), Triple("Gold", Icons.Default.Star, "gold"), Triple("Jade", Icons.Default.Spa, "jade"), Triple("Sand", Icons.Default.WbCloudy, "sand")).forEach { (label, icon, mode) ->
                                                 val selected = themeMode == mode
                                                 Surface(shape = RoundedCornerShape(8.dp), color = if (selected) c.accent else c.surface, border = BorderStroke(1.dp, if (selected) c.accent else c.divider), modifier = Modifier.weight(1f).clickable { viewModel.setThemeMode(mode); viewModel.setDarkTheme(false) }) {
                                                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)) { Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(12.dp)); Spacer(Modifier.height(2.dp)); Text(label, fontSize = 7.5.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
@@ -5728,9 +5718,9 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         // Net Wealth Overview Card
         item {
             Surface(
-                color = if (c.isBorderless) Color.Transparent else c.surface,
+                color = c.surface,
                 shape = RoundedCornerShape(24.dp),
-                border = if (c.isBorderless) null else BorderStroke(1.2.dp, c.accent.copy(alpha = 0.4f)),
+                border = BorderStroke(1.2.dp, c.accent.copy(alpha = 0.4f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -5817,10 +5807,10 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             Button(
                 onClick = { showTransferDialog = true },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (c.isBorderless) Color.Transparent else c.accent.copy(alpha = 0.15f),
+                    containerColor = c.accent.copy(alpha = 0.15f),
                     contentColor = c.accent
                 ),
-                border = if (c.isBorderless) null else BorderStroke(1.2.dp, c.accent),
+                border = BorderStroke(1.2.dp, c.accent),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -7390,7 +7380,21 @@ fun AddTransactionDialog(
                             ) {
                                 Icon(acctIcon, null, tint = acctColor, modifier = Modifier.size(17.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text(accountSelection.ifBlank { "Account" }, fontSize = 13.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                var acctFontSize by remember(accountSelection) { mutableStateOf(13.sp) }
+                                Text(
+                                    text = accountSelection.ifBlank { "Account" },
+                                    fontSize = acctFontSize,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip,
+                                    softWrap = false,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = c.text,
+                                    modifier = Modifier.weight(1f),
+                                    onTextLayout = { result ->
+                                        if (result.hasVisualOverflow && acctFontSize.value > 8f)
+                                            acctFontSize = (acctFontSize.value * 0.85f).sp
+                                    }
+                                )
                             }
                         }
                         Column(modifier = Modifier.weight(1f)) {
@@ -7404,7 +7408,21 @@ fun AddTransactionDialog(
                             ) {
                                 Icon(catIcon, null, tint = catColor, modifier = Modifier.size(17.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text(selectedCategory?.displayName ?: "Category", fontSize = 13.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                var catFontSize by remember(categorySelection) { mutableStateOf(13.sp) }
+                                Text(
+                                    text = selectedCategory?.displayName ?: "Category",
+                                    fontSize = catFontSize,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip,
+                                    softWrap = false,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = c.text,
+                                    modifier = Modifier.weight(1f),
+                                    onTextLayout = { result ->
+                                        if (result.hasVisualOverflow && catFontSize.value > 8f)
+                                            catFontSize = (catFontSize.value * 0.85f).sp
+                                    }
+                                )
                             }
                         }
                     }
@@ -7422,44 +7440,39 @@ fun AddTransactionDialog(
                 }
 
                 // ── Amount display ─────────────────────────────────────────────
-                HorizontalDivider(color = c.divider)
-                Row(modifier = Modifier.fillMaxWidth().background(c.bg).padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, c.border),
+                    color = Color.Transparent,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                         if (hasOp) Text(calcExpr, fontSize = 13.sp, color = c.textSecondary, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(text = when { calcResult != null -> "₹ ${formatCalcNum(calcResult)}"; calcExpr.isEmpty() -> "₹ 0"; else -> "₹ $calcExpr" }, fontSize = 30.sp, fontWeight = FontWeight.Bold, color = amountColor, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    Spacer(Modifier.width(10.dp))
+                        }
+                        Spacer(Modifier.width(10.dp))
                     Box(modifier = Modifier.size(42.dp).clip(RoundedCornerShape(8.dp)).background(c.accent.copy(0.12f)).clickable { onCalcKey("⌫") }, contentAlignment = Alignment.Center) {
                         Text("⌫", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = c.accent)
+                        }
                     }
                 }
-                HorizontalDivider(color = c.divider)
 
                 // ── Calculator ─────────────────────────────────────────────────
-                // 5-row compact: [C ⌫ ÷ ×] [7 8 9 -] [4 5 6 +] [1 2 3 =] [00 0 . =]
+                // ── Calculator ─────────────────────────────────────────────────
+                // 4-row: [op][7][8][9] / [op][4][5][6] / [op][1][2][3] / [op][00][0][.]
                 val calcRows = listOf(
-                    listOf("C" to "clear", "⌫" to "op", "÷" to "op", "×" to "op"),
-                    listOf("7" to "num", "8" to "num", "9" to "num", "-" to "op"),
-                    listOf("4" to "num", "5" to "num", "6" to "num", "+" to "op"),
-                    listOf("1" to "num", "2" to "num", "3" to "num", "=" to "eq"),
-                    listOf("00" to "num", "0" to "num", "." to "num", "=" to "eq")
+                    listOf("+" to "op", "7" to "num", "8" to "num", "9" to "num"),
+                    listOf("-" to "op", "4" to "num", "5" to "num", "6" to "num"),
+                    listOf("×" to "op", "1" to "num", "2" to "num", "3" to "num"),
+                    listOf("÷" to "op", "00" to "num", "0" to "num", "." to "num")
                 )
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).background(c.bg)) {
                     calcRows.forEach { row ->
                         Row(modifier = Modifier.fillMaxWidth()) {
                             row.forEach { (key, role) ->
-                                val keyBg = when (role) {
-                                    "clear" -> c.expense.copy(0.12f)
-                                    "eq"    -> c.accent.copy(0.18f)
-                                    "op"    -> c.accent.copy(0.09f)
-                                    else    -> Color.Transparent
-                                }
-                                val keyColor = when (role) {
-                                    "clear" -> c.expense
-                                    "eq"    -> c.accent
-                                    "op"    -> c.accent
-                                    else    -> c.text
-                                }
+                                val keyBg = if (role == "op") c.accent.copy(0.09f) else Color.Transparent
+                                val keyColor = if (role == "op") c.accent else c.text
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)

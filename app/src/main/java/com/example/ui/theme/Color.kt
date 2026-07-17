@@ -53,6 +53,10 @@ data class AppColors(
     val cardBg: Color get() = if (isBorderless) flatCardBg else surface
     val cardBorderColor: Color get() = if (isBorderless) Color.Transparent else border
     val effectiveBg: Color get() = if (isBorderless && flatBg != Color.Unspecified) flatBg else bg
+    /** Thin flat-mode divider — auto-adapts: faint on dark, visible on light. */
+    val flatDivider: Color get() = text.copy(alpha = if (isDark) 0.15f else 0.55f)
+    /** Bold flat-mode section-title underline — stronger than flatDivider. */
+    val flatDividerBold: Color get() = text.copy(alpha = if (isDark) 0.30f else 0.85f)
 }
 
 fun darkAppColors() = AppColors(
@@ -89,7 +93,7 @@ fun lightAppColors() = AppColors(
     expense       = Color(0xFFDC2626),
     isDark        = false,
     flatBg        = Color(0xFFFFFFFF),   // white screen bg in flat mode (= wallet card color)
-    flatCardBg    = Color(0xFFE8EDF5)    // blue-grey card bg in flat mode (reversed from before)
+    flatCardBg    = Color(0xFFFFFFFF)    // white cards too — dividers provide separation
 )
 
 val LocalAppColors = staticCompositionLocalOf { darkAppColors() }
@@ -135,7 +139,7 @@ fun goldAppColors() = AppColors(
     bg            = Color(0xFFFEFCE8), surface = Color(0xFFFFFDE8), surfaceVariant = Color(0xFFFEF9C3),
     border        = Color(0xFFCA8A04), borderStrong = Color(0xFFA86004),
     text          = Color(0xFF1C1000), textSecondary = Color(0xFF78580A), textTertiary = Color(0xFFB08030),
-    divider       = Color(0xFFE8C840), accent = Color(0xFFCA8A04), accentDim = Color(0x20CA8A04),
+    divider       = Color(0xFFF5EDBC), accent = Color(0xFFCA8A04), accentDim = Color(0x20CA8A04),
     income        = Color(0xFF166534), expense = Color(0xFF991B1B), isDark = false,
     flatBg        = Color(0xFFFEF4A8)
 )

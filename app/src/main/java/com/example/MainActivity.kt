@@ -1627,7 +1627,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                         }
 
                         val cardBorderColor = if (isSelected) c.accent else c.border
-                        val cardBg = if (isSelected) c.accentDim else c.surface
+                        val cardBg = if (isSelected) c.accentDim else if (c.isBorderless) c.surfaceVariant else c.surface
                         val walletAccType = if (name == "All") "ALL" else accounts.find { it.name == name }?.type ?: ""
                         val walletTypeColor = when (walletAccType) {
                             "CASH"        -> c.income
@@ -2073,7 +2073,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             color = if (dateNet >= 0) c.income else c.expense
                         )
                     }
-                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
+                    if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.5.dp else 2.dp)
                     } // end Column
                 }
 
@@ -2330,7 +2330,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             }
                             } // end Surface card
                             if (c.isBorderless && txIdx < txList.size - 1) {
-                                HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
+                                HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
                             }
                         }
                     }
@@ -3618,12 +3618,12 @@ private fun AnalyticsOverviewSection(
                 letterSpacing = 1.sp,
                 color = c.textSecondary
             )
-            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.5.dp else 2.dp)
             } // end title+underline Column
 
             categoryTotals.forEachIndexed { idx, stats ->
                 val active = activeSectorIndex == idx
-                if (c.isBorderless && idx > 0) HorizontalDivider(color = c.text.copy(alpha = 0.18f))
+                if (c.isBorderless && idx > 0) HorizontalDivider(color = c.flatDivider)
                 Surface(
                     color = if (c.isBorderless) Color.Transparent else if (active) stats.category.color.copy(alpha = 0.08f) else c.surface,
                     shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp),
@@ -4971,7 +4971,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp,
                             color = c.accent, modifier = Modifier.padding(vertical = 4.dp)
                         )
-                        if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
+                        if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.5.dp else 2.dp)
                     }
                 }
                 budgetedCats.forEach { cat ->
@@ -5090,7 +5090,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         }
                     } // end Surface
                     } // end key(cat.name)
-                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
+                    if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
                 } // end budgetedCats.forEach
                 if (unbudgetedCats.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(4.dp))
@@ -5100,7 +5100,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp,
                             color = c.textSecondary, modifier = Modifier.padding(vertical = 4.dp)
                         )
-                        if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
+                        if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.5.dp else 2.dp)
                     }
                 }
                 unbudgetedCats.forEach { cat ->
@@ -5154,7 +5154,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             }
                         }
                     }
-                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
+                    if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
                 }
 
                 // "Copy from last month" — shown below unbudgeted list, only for EXPENSE tab
@@ -5779,7 +5779,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     )
 
                     Spacer(modifier = Modifier.height(18.dp))
-                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
+                    if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Surface(shape = CircleShape, color = c.income.copy(alpha = 0.15f), modifier = Modifier.size(34.dp)) {
@@ -5812,7 +5812,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
 
         // Actions: inter-wallet transfer setup
         item {
-            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 2.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.dp else 1.5.dp)
             Button(
                 onClick = { showTransferDialog = true },
                 colors = ButtonDefaults.buttonColors(
@@ -5903,7 +5903,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             item {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = if (c.isBorderless) Arrangement.spacedBy(0.dp) else Arrangement.spacedBy(8.dp)
                 ) {
                     orderedAccounts.forEachIndexed { accIdx, acc ->
                         val bal = walletsBalances[acc.name] ?: 0.0
@@ -5999,7 +5999,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 }
                             }
                         }
-                        if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
+                        if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
                     }
                 }
             }
@@ -6490,7 +6490,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
 
         // Device Scan Action panel
         item {
-            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 2.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.5.dp else 2.dp)
             Surface(
                 color = c.cardBg,
                 shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
@@ -6695,7 +6695,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
         // Manual pasted SMS analyzer — shown only when Parser Key Rules are unlocked
         // Parser Key Rules — always visible (no unlock needed)
         item {
-            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 2.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.5.dp else 2.dp)
             Card(
                 colors = CardDefaults.cardColors(containerColor = c.cardBg),
                 border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
@@ -6916,7 +6916,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
 
         // ── Merchant → Category Mapping ───────────────────────────────────────
         item {
-            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 2.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.5.dp else 2.dp)
             ProGate(isPaid = isPaid, modifier = Modifier.fillMaxWidth()) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = c.cardBg),
@@ -7086,7 +7086,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
 
         // Parser exclusion rules reference card
         if (parserExclusionVisible) item {
-            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 2.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.5.dp else 2.dp)
             Card(
                 colors = CardDefaults.cardColors(containerColor = c.cardBg),
                 border = if (c.isBorderless) null else BorderStroke(1.dp, c.expense.copy(alpha = 0.25f)),
@@ -7357,7 +7357,7 @@ fun AddTransactionDialog(
                         label = { Text("Payee / Merchant", fontSize = 14.sp) },
                         singleLine = true,
                         shape = RoundedCornerShape(8.dp),
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent, unfocusedTextColor = c.text, unfocusedBorderColor = c.border),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent, unfocusedTextColor = c.text, unfocusedBorderColor = c.accent.copy(0.4f)),
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -7371,11 +7371,11 @@ fun AddTransactionDialog(
                         OutlinedButton(onClick = {
                             val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
                             android.app.DatePickerDialog(pickerCtx, { _, y, m, d -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(y, m, d) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH)).show()
-                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.border), colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(dateLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
+                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.accent.copy(0.5f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(dateLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
                         OutlinedButton(onClick = {
                             val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
                             android.app.TimePickerDialog(pickerCtx, { _, h, min -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(java.util.Calendar.HOUR_OF_DAY, h); set(java.util.Calendar.MINUTE, min) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), false).show()
-                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.border), colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(timeLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
+                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.accent.copy(0.5f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(timeLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
                     }
 
                     // Account | Category — title label above + icon and name inline
@@ -7449,7 +7449,7 @@ fun AddTransactionDialog(
                         label = { Text("Notes (Optional)", fontSize = 14.sp) },
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
                         shape = RoundedCornerShape(8.dp),
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent, unfocusedTextColor = c.text, unfocusedBorderColor = c.border),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent, unfocusedTextColor = c.text, unfocusedBorderColor = c.accent.copy(0.4f)),
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3, maxLines = 4
                     )
@@ -7458,7 +7458,7 @@ fun AddTransactionDialog(
                 // ── Amount display ─────────────────────────────────────────────
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, c.border),
+                    border = BorderStroke(1.5.dp, amountColor.copy(0.5f)),
                     color = Color.Transparent,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
@@ -7489,6 +7489,7 @@ fun AddTransactionDialog(
                             row.forEach { (key, role) ->
                                 val keyBg = if (role == "op") c.accent.copy(0.09f) else Color.Transparent
                                 val keyColor = if (role == "op") c.accent else c.text
+                                val keyBorder = if (role == "op") BorderStroke(0.5.dp, c.accent.copy(0.5f)) else BorderStroke(0.5.dp, c.text.copy(0.22f))
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
@@ -7496,7 +7497,7 @@ fun AddTransactionDialog(
                                         .padding(1.5.dp)
                                         .clip(RoundedCornerShape(4.dp))
                                         .background(keyBg)
-                                        .border(BorderStroke(0.5.dp, c.divider), RoundedCornerShape(4.dp))
+                                        .border(keyBorder, RoundedCornerShape(4.dp))
                                         .clickable { onCalcKey(key) },
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -7697,34 +7698,48 @@ fun EditTransactionDialog(
 
                 val editAccType = accounts.find { it.name == accountSelection }?.type
                 val editAccColor = when (editAccType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
-                PickerButton(
-                    label = if (editType == "TRANSFER") "From Account" else "Account",
-                    title = accountSelection,
-                    icon = walletIconFor(accountSelection, editAccType),
-                    tint = editAccColor,
-                    onClick = { showWalletPicker = true }
-                )
-
-                if (editType == "TRANSFER") {
-                    val toAccType = accounts.find { it.name == toAccountSelection }?.type
-                    val toAccColor = when (toAccType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
-                    PickerButton(
-                        label = "To Account",
-                        title = toAccountSelection.ifBlank { "Select destination" },
-                        icon = walletIconFor(toAccountSelection, toAccType),
-                        tint = toAccColor,
-                        onClick = { showToWalletPicker = true }
-                    )
-                }
-
-                if (!isNoCategoryType) {
-                    PickerButton(
-                        label = "Category",
-                        title = selectedCategory?.displayName ?: "Choose category",
-                        icon = selectedCategory?.icon ?: Icons.Default.Category,
-                        tint = selectedCategory?.color ?: c.accent,
-                        onClick = { showCategoryPicker = true }
-                    )
+                when {
+                    editType == "TRANSFER" -> {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("From Account", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
+                                OutlinedButton(onClick = { showWalletPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, editAccColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                                    Icon(walletIconFor(accountSelection, editAccType), null, tint = editAccColor, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp))
+                                    Text(accountSelection.ifBlank { "Account" }, fontSize = 13.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("To Account", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
+                                val toAccType = accounts.find { it.name == toAccountSelection }?.type
+                                val toAccColor = when (toAccType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
+                                OutlinedButton(onClick = { showToWalletPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, toAccColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                                    Icon(walletIconFor(toAccountSelection, toAccType), null, tint = toAccColor, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp))
+                                    Text(toAccountSelection.ifBlank { "Select" }, fontSize = 13.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                    !isNoCategoryType -> {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Account", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
+                                OutlinedButton(onClick = { showWalletPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, editAccColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                                    Icon(walletIconFor(accountSelection, editAccType), null, tint = editAccColor, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp))
+                                    Text(accountSelection.ifBlank { "Account" }, fontSize = 13.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Category", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
+                                val catColor = selectedCategory?.color ?: c.accent
+                                val catIcon = selectedCategory?.icon ?: Icons.Default.Category
+                                OutlinedButton(onClick = { showCategoryPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, catColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                                    Icon(catIcon, null, tint = catColor, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp))
+                                    Text(selectedCategory?.displayName ?: "Category", fontSize = 13.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                    else -> PickerButton("Account", accountSelection, walletIconFor(accountSelection, editAccType), editAccColor) { showWalletPicker = true }
                 }
 
                 OutlinedTextField(

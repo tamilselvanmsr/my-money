@@ -87,7 +87,7 @@ fun lightAppColors() = AppColors(
     income        = Color(0xFF059669),
     expense       = Color(0xFFDC2626),
     isDark        = false,
-    flatBg        = Color(0xFFDEE6F2)   // noticeably deeper blue-grey for flat light
+    flatBg        = Color(0xFFE8EDF5)   // more noticeable tint for flat light
 )
 
 val LocalAppColors = staticCompositionLocalOf { darkAppColors() }

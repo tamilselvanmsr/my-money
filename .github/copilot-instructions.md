@@ -2,8 +2,10 @@
 
 ## 1. Version management on every commit
 
-- Before committing, always bump `versionCode` and `versionName` in `app/build.gradle.kts` to reflect the version being committed.
-- Use the in-flight version as the commit subject prefix: `v1.79 — <short description>`.
+- Before committing, **always ask the user what version to use** in the commit message. Never decide the version unilaterally.
+- Version numbering follows `v2.X` (e.g. v2.9, v2.10, v2.11 …). Never jump to a new major (v3.x) — stay on v2.x indefinitely.
+- Bump `versionCode` (integer) and `versionName` (string) in `app/build.gradle.kts` to match the agreed version before committing.
+- Use the in-flight version as the commit subject prefix: `v2.X — <short description>`.
 - **No duplicate version commits.** If the changes are small/incremental on the same version already pushed, amend the last commit and force-push (`git commit --amend --no-verify` + `git push --force origin master`) instead of creating a new commit.
 - Never use `feat:` / `fix:` / `chore:` prefixes — plain `vX.Y — description` only.
 
@@ -12,6 +14,7 @@
 - One commit per version. Squash related changes before pushing.
 - Commit message format: `v<X>.<Y> — <what changed in plain English>` (no imperative verbs, no emoji).
 - Always pass `--no-verify` to skip pre-commit hooks that may block the commit.
+- **For small/incremental changes**: amend the existing commit with `git commit --amend --no-verify --no-edit` (or update the message) and `git push --force origin master`. Do NOT create a new commit.
 
 ## 3. Code change safety — think, plan, confirm before altering existing code
 

@@ -601,10 +601,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             Icon(Icons.Default.ViewStream, contentDescription = null, tint = if (isFlatStyleMain) c.accent else c.textSecondary, modifier = Modifier.size(16.dp))
-                                            Column {
-                                                Text("Flat Style", color = c.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                                Text("No card borders & bg's", color = c.textSecondary, fontSize = 10.sp)
-                                            }
+                                            Text("Flat Style", color = c.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                         }
                                         Switch(
                                             checked = isFlatStyleMain,
@@ -2076,7 +2073,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             color = if (dateNet >= 0) c.income else c.expense
                         )
                     }
-                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(0.12f), thickness = 1.dp)
+                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
                     } // end Column
                 }
 
@@ -2333,7 +2330,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             }
                             } // end Surface card
                             if (c.isBorderless) {
-                                HorizontalDivider(color = c.divider.copy(0.5f), thickness = 0.5.dp)
+                                HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
                             }
                         }
                     }
@@ -3613,6 +3610,7 @@ private fun AnalyticsOverviewSection(
 
         if (categoryTotals.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
             Text(
                 text = breakdownLabel,
                 fontWeight = FontWeight.Bold,
@@ -3623,7 +3621,7 @@ private fun AnalyticsOverviewSection(
 
             categoryTotals.forEachIndexed { idx, stats ->
                 val active = activeSectorIndex == idx
-                if (c.isBorderless) HorizontalDivider(color = c.divider)
+                if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.18f))
                 Surface(
                     color = if (c.isBorderless) Color.Transparent else if (active) stats.category.color.copy(alpha = 0.08f) else c.surface,
                     shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp),
@@ -3697,7 +3695,7 @@ private fun AnalyticsOverviewSection(
                     }
                 }
             }
-            if (c.isBorderless && categoryTotals.isNotEmpty()) HorizontalDivider(color = c.divider)
+            if (c.isBorderless && categoryTotals.isNotEmpty()) HorizontalDivider(color = c.text.copy(alpha = 0.18f))
             } // end breakdown Column
         }
     }
@@ -4966,6 +4964,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (budgetedCats.isNotEmpty()) {
+                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
                     Text(
                         text = if (activeCategoryTypeTab == "EXPENSE") "BUDGETED" else "EXPECTED INCOME",
                         fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp,
@@ -5088,9 +5087,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         }
                     } // end Surface
                     } // end key(cat.name)
-                    if (c.isBorderless) HorizontalDivider(color = c.divider.copy(0.5f), thickness = 0.5.dp)
+                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
                 } // end budgetedCats.forEach
                 if (unbudgetedCats.isNotEmpty()) {
+                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "NOT BUDGETED",
@@ -5149,7 +5149,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             }
                         }
                     }
-                    if (c.isBorderless) HorizontalDivider(color = c.divider.copy(0.5f), thickness = 0.5.dp)
+                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
                 }
 
                 // "Copy from last month" — shown below unbudgeted list, only for EXPENSE tab
@@ -5774,8 +5774,8 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     )
 
                     Spacer(modifier = Modifier.height(18.dp))
+                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
                     Row(modifier = Modifier.fillMaxWidth()) {
-                        // Income so far
                         Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Surface(shape = CircleShape, color = c.income.copy(alpha = 0.15f), modifier = Modifier.size(34.dp)) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -5807,13 +5807,14 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
 
         // Actions: inter-wallet transfer setup
         item {
+            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
             Button(
                 onClick = { showTransferDialog = true },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = c.accent.copy(alpha = 0.15f),
                     contentColor = c.accent
                 ),
-                border = BorderStroke(1.2.dp, c.accent),
+                border = BorderStroke(0.5.dp, c.accent.copy(0.45f)),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -5832,6 +5833,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
 
         // List of configured mock cards
         item {
+            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -5898,7 +5900,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    orderedAccounts.forEach { acc ->
+                    orderedAccounts.forEachIndexed { accIdx, acc ->
                         val bal = walletsBalances[acc.name] ?: 0.0
                         val smsTrackingBlocked = blockedSmsAccountIds.contains(acc.id)
                         val color = when(acc.type) {
@@ -5992,6 +5994,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 }
                             }
                         }
+                        if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
                     }
                 }
             }
@@ -6482,6 +6485,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
 
         // Device Scan Action panel
         item {
+            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
             Surface(
                 color = if (c.isBorderless) Color.Transparent else c.surface,
                 shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
@@ -6686,6 +6690,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
         // Manual pasted SMS analyzer — shown only when Parser Key Rules are unlocked
         // Parser Key Rules — always visible (no unlock needed)
         item {
+            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
             Card(
                 colors = CardDefaults.cardColors(containerColor = if (c.isBorderless) Color.Transparent else c.surface),
                 border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
@@ -6906,6 +6911,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
 
         // ── Merchant → Category Mapping ───────────────────────────────────────
         item {
+            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
             ProGate(isPaid = isPaid, modifier = Modifier.fillMaxWidth()) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = if (c.isBorderless) Color.Transparent else c.surface),
@@ -7358,11 +7364,11 @@ fun AddTransactionDialog(
                         OutlinedButton(onClick = {
                             val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
                             android.app.DatePickerDialog(pickerCtx, { _, y, m, d -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(y, m, d) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH)).show()
-                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.border), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(dateLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
+                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.border), colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(dateLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
                         OutlinedButton(onClick = {
                             val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
                             android.app.TimePickerDialog(pickerCtx, { _, h, min -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(java.util.Calendar.HOUR_OF_DAY, h); set(java.util.Calendar.MINUTE, min) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), false).show()
-                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.border), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(timeLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
+                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.border), colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(timeLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
                     }
 
                     // Account | Category — title label above + icon and name inline
@@ -7592,6 +7598,8 @@ fun EditTransactionDialog(
     var showSmsBody by remember { mutableStateOf(false) }
     var selectedTimestamp by remember { mutableStateOf(tx.timestamp) }
     var showWalletPicker by remember { mutableStateOf(false) }
+    var showToWalletPicker by remember { mutableStateOf(false) }
+    var toAccountSelection by remember { mutableStateOf(tx.getTransferDestName() ?: "") }
     var showCategoryPicker by remember { mutableStateOf(false) }
     var showQuickAddAccount by remember { mutableStateOf(false) }
     var showQuickAddCategory by remember { mutableStateOf(false) }
@@ -7677,12 +7685,24 @@ fun EditTransactionDialog(
                 val editAccType = accounts.find { it.name == accountSelection }?.type
                 val editAccColor = when (editAccType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
                 PickerButton(
-                    label = "Account",
+                    label = if (editType == "TRANSFER") "From Account" else "Account",
                     title = accountSelection,
                     icon = walletIconFor(accountSelection, editAccType),
                     tint = editAccColor,
                     onClick = { showWalletPicker = true }
                 )
+
+                if (editType == "TRANSFER") {
+                    val toAccType = accounts.find { it.name == toAccountSelection }?.type
+                    val toAccColor = when (toAccType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
+                    PickerButton(
+                        label = "To Account",
+                        title = toAccountSelection.ifBlank { "Select destination" },
+                        icon = walletIconFor(toAccountSelection, toAccType),
+                        tint = toAccColor,
+                        onClick = { showToWalletPicker = true }
+                    )
+                }
 
                 if (!isNoCategoryType) {
                     PickerButton(
@@ -7791,7 +7811,12 @@ fun EditTransactionDialog(
                                     type = editType,
                                     timestamp = selectedTimestamp,
                                     // Preserve [To:][T:A][IncRef:] tags while applying user note + account tag
-                                    note = rebuildNote(notesStr.ifBlank { null }, accountSelection, tx.note)
+                                    note = if (editType == "TRANSFER") {
+                                        val userNote = userNoteFrom(notesStr.ifBlank { null })
+                                        "[Acc: $accountSelection] [To: $toAccountSelection]${if (userNote.isNotBlank()) " $userNote" else ""}"
+                                    } else {
+                                        rebuildNote(notesStr.ifBlank { null }, accountSelection, tx.note)
+                                    }
                                 ),
                                 applyToAllPayees
                             )
@@ -7823,6 +7848,18 @@ fun EditTransactionDialog(
                 showWalletPicker = false
                 showQuickAddAccount = true
             }
+        )
+    }
+
+    if (showToWalletPicker) {
+        WalletSelectionDialog(
+            walletOptions = selectablesWallets.map { walletName -> walletName to (accounts.find { it.name == walletName }?.type) },
+            selectedWallet = toAccountSelection,
+            onSelect = {
+                toAccountSelection = it
+                showToWalletPicker = false
+            },
+            onDismiss = { showToWalletPicker = false }
         )
     }
 
@@ -7920,6 +7957,7 @@ fun TransactionDateTimePicker(
                         calendar.get(Calendar.DAY_OF_MONTH)
                     ).show()
                 },
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
                 modifier = Modifier.weight(1f)
             ) {
                 Text(dateLabel)
@@ -7943,6 +7981,7 @@ fun TransactionDateTimePicker(
                         false  // AM/PM (12-hour) mode
                     ).show()
                 },
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
                 modifier = Modifier.weight(1f)
             ) {
                 Text(timeLabel)

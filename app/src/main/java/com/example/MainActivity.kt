@@ -424,17 +424,17 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             .testTag("main_scaffold"),
         topBar = {
             Surface(
-                shadowElevation = 2.dp,
+                shadowElevation = 0.dp,
                 color = darkBg
             ) {
                 Column {
                     // Status bar inset — pushes content below the system status bar
                     Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
-                    // Actual bar content: 10dp top padding (title visually lower) + 4dp bottom
+                    // Actual bar content: 10dp top padding (title visually lower) + 2dp bottom
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 10.dp, bottom = 4.dp, start = 4.dp, end = 4.dp),
+                            .padding(top = 10.dp, bottom = 2.dp, start = 4.dp, end = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // ── Logo + Title ──────────────────────────────────────
@@ -1241,7 +1241,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
         modifier = Modifier
             .fillMaxSize()
             .testTag("dashboard_scroll_column"),
-        contentPadding = if (c.isBorderless) PaddingValues(vertical = 8.dp) else PaddingValues(16.dp),
+        contentPadding = if (c.isBorderless) PaddingValues(horizontal = 10.dp, vertical = 8.dp) else PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // Active Month/Period Navigation Selector Header
@@ -1263,9 +1263,9 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    color = c.surface,
+                    color = if (c.isBorderless) Color.Transparent else c.surface,
                     shape = RoundedCornerShape(24.dp),
-                    border = BorderStroke(1.dp, c.border),
+                    border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
                     modifier = Modifier.weight(1f)
                 ) {
                     Row(
@@ -1303,7 +1303,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 else isSearchExpanded = true
                             },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (isFilterPanelOpen || hasActiveFilters) c.accent.copy(alpha = 0.18f) else c.divider,
+                                containerColor = if (isFilterPanelOpen || hasActiveFilters) c.accent.copy(alpha = 0.18f) else if (c.isBorderless) Color.Transparent else c.divider,
                                 contentColor   = if (isFilterPanelOpen || hasActiveFilters) c.accent else c.text
                             ),
                             modifier = Modifier.size(36.dp)
@@ -1331,7 +1331,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                         FilledTonalIconButton(
                             onClick = { showFilterMenu = !showFilterMenu },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent.copy(alpha = 0.18f) else c.divider,
+                                containerColor = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent.copy(alpha = 0.18f) else if (c.isBorderless) Color.Transparent else c.divider,
                                 contentColor = if (isSearchExpanded || searchQuery.isNotBlank()) c.accent else c.text
                             ),
                             modifier = Modifier.size(40.dp).testTag("three_bar_filter_button")
@@ -1826,7 +1826,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             OutlinedButton(
                                 onClick = { showCategoryPicker = !showCategoryPicker; showAccountPicker = false },
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                border = BorderStroke(1.dp, if (showCategoryPicker) c.accent else c.divider),
+                                border = if (c.isBorderless) null else BorderStroke(1.dp, if (showCategoryPicker) c.accent else c.divider),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(Icons.Default.Category, contentDescription = null, modifier = Modifier.size(15.dp), tint = c.textSecondary)
@@ -1900,7 +1900,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 OutlinedButton(
                                     onClick = { showAccountPicker = !showAccountPicker; showCategoryPicker = false },
                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                    border = BorderStroke(1.dp, if (showAccountPicker) c.accent else c.divider),
+                                    border = if (c.isBorderless) null else BorderStroke(1.dp, if (showAccountPicker) c.accent else c.divider),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(15.dp), tint = c.textSecondary)
@@ -2049,10 +2049,10 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
 
             grouped.forEach { (dateStr, txList) ->
                 stickyHeader {
+                    Column(modifier = Modifier.fillMaxWidth().background(c.bg)) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(c.bg)
                             .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
@@ -2086,6 +2086,8 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             color = if (dateNet >= 0) c.income else c.expense
                         )
                     }
+                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(0.12f), thickness = 1.dp)
+                    } // end Column
                 }
 
                 item {
@@ -2340,6 +2342,9 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 }
                             }
                             } // end Surface card
+                            if (c.isBorderless && txIdx < txList.size - 1) {
+                                HorizontalDivider(color = c.divider.copy(0.5f), thickness = 0.5.dp)
+                            }
                         }
                     }
                 }
@@ -2687,7 +2692,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
         modifier = Modifier
             .fillMaxSize()
             .testTag("analytics_scroll_column"),
-        contentPadding = if (c.isBorderless) PaddingValues(vertical = 8.dp) else PaddingValues(16.dp),
+        contentPadding = if (c.isBorderless) PaddingValues(horizontal = 10.dp, vertical = 8.dp) else PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
@@ -2699,9 +2704,9 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
-                        color = c.surface,
+                        color = if (c.isBorderless) Color.Transparent else c.surface,
                         shape = RoundedCornerShape(24.dp),
-                        border = BorderStroke(1.dp, c.border),
+                        border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
                         modifier = Modifier.weight(1f)
                     ) {
                         Row(
@@ -2739,7 +2744,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         FilledTonalIconButton(
                             onClick = { showPeriodMenu = true },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = c.divider,
+                                containerColor = if (c.isBorderless) Color.Transparent else c.divider,
                                 contentColor = c.text
                             ),
                             modifier = Modifier.size(36.dp)
@@ -2803,7 +2808,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                     showAnalyticsCatFilterMenu = true  // always open; free users get first 3
                                 },
                                 colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = if (analyticsCategoryFilter.isNotEmpty()) c.accent.copy(alpha = 0.18f) else c.divider,
+                                    containerColor = if (analyticsCategoryFilter.isNotEmpty()) c.accent.copy(alpha = 0.18f) else if (c.isBorderless) Color.Transparent else c.divider,
                                     contentColor = if (analyticsCategoryFilter.isNotEmpty()) c.accent else c.text
                                 ),
                                 modifier = Modifier.size(36.dp)
@@ -4603,7 +4608,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         modifier = Modifier
             .fillMaxSize()
             .testTag("budgets_scroll_column"),
-        contentPadding = if (c.isBorderless) PaddingValues(vertical = 8.dp) else PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+        contentPadding = if (c.isBorderless) PaddingValues(horizontal = 10.dp, vertical = 8.dp) else PaddingValues(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // Upper Title HUD
@@ -4621,7 +4626,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         FilledTonalIconButton(
                             onClick = { viewModel.setMonthYear(shiftMonthYear(rawMonthYear, -1)) },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = c.divider,
+                                containerColor = if (c.isBorderless) Color.Transparent else c.divider,
                                 contentColor = c.text
                             ),
                             modifier = Modifier.size(32.dp)
@@ -4630,7 +4635,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         }
 
                         Surface(
-                            color = c.surface,
+                            color = if (c.isBorderless) Color.Transparent else if (c.isBorderless) Color.Transparent else c.surface,
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
@@ -4645,7 +4650,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         FilledTonalIconButton(
                             onClick = { viewModel.setMonthYear(shiftMonthYear(rawMonthYear, 1)) },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = c.divider,
+                                containerColor = if (c.isBorderless) Color.Transparent else c.divider,
                                 contentColor = c.text
                             ),
                             modifier = Modifier.size(32.dp)
@@ -4668,7 +4673,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 else Toast.makeText(budgetCtx2, "Budgeted categories only — Pro feature", Toast.LENGTH_SHORT).show()
                             },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (showBudgetedOnly && isPaid) c.accent.copy(alpha = 0.18f) else c.divider,
+                                containerColor = if (showBudgetedOnly && isPaid) c.accent.copy(alpha = 0.18f) else if (c.isBorderless) Color.Transparent else c.divider,
                                 contentColor = if (showBudgetedOnly && isPaid) c.accent else c.textSecondary
                             ),
                             modifier = Modifier.size(36.dp)
@@ -5723,7 +5728,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         // Net Wealth Overview Card
         item {
             Surface(
-                color = c.surface,
+                color = if (c.isBorderless) Color.Transparent else c.surface,
                 shape = RoundedCornerShape(24.dp),
                 border = if (c.isBorderless) null else BorderStroke(1.2.dp, c.accent.copy(alpha = 0.4f)),
                 modifier = Modifier.fillMaxWidth()
@@ -5811,7 +5816,10 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         item {
             Button(
                 onClick = { showTransferDialog = true },
-                colors = ButtonDefaults.buttonColors(containerColor = c.accent.copy(alpha = 0.15f), contentColor = c.accent),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (c.isBorderless) Color.Transparent else c.accent.copy(alpha = 0.15f),
+                    contentColor = c.accent
+                ),
                 border = if (c.isBorderless) null else BorderStroke(1.2.dp, c.accent),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
@@ -6467,7 +6475,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
         modifier = Modifier
             .fillMaxSize()
             .testTag("auto_scan_hub_screen"),
-        contentPadding = if (c.isBorderless) PaddingValues(vertical = 8.dp) else PaddingValues(16.dp),
+        contentPadding = if (c.isBorderless) PaddingValues(horizontal = 10.dp, vertical = 8.dp) else PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
@@ -7357,44 +7365,46 @@ fun AddTransactionDialog(
                         OutlinedButton(onClick = {
                             val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
                             android.app.DatePickerDialog(pickerCtx, { _, y, m, d -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(y, m, d) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH)).show()
-                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.border), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(dateLabel, fontSize = 12.sp) }
+                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.border), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(dateLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
                         OutlinedButton(onClick = {
                             val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
                             android.app.TimePickerDialog(pickerCtx, { _, h, min -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(java.util.Calendar.HOUR_OF_DAY, h); set(java.util.Calendar.MINUTE, min) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), false).show()
-                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.border), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(timeLabel, fontSize = 12.sp) }
+                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.border), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(timeLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
                     }
 
-                    // Account | Category — centered column in each button (no external label)
+                    // Account | Category — title label above + icon and name inline
                     val acctType = accounts.find { it.name == accountSelection }?.type
                     val acctIcon = walletIconFor(accountSelection, acctType)
                     val acctColor = when (acctType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
                     val catIcon = selectedCategory?.icon ?: Icons.Default.Category
                     val catColor = selectedCategory?.color ?: c.accent
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        OutlinedButton(
-                            onClick = { showWalletPicker = true },
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, c.border),
-                            modifier = Modifier.weight(1f).height(68.dp),
-                            contentPadding = PaddingValues(6.dp)
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                                Icon(acctIcon, null, tint = acctColor, modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.height(2.dp))
-                                Text(accountSelection.ifBlank { "Account" }, fontSize = 13.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Account", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
+                            OutlinedButton(
+                                onClick = { showWalletPicker = true },
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, acctColor.copy(0.4f)),
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(acctIcon, null, tint = acctColor, modifier = Modifier.size(17.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(accountSelection.ifBlank { "Account" }, fontSize = 13.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                             }
                         }
-                        OutlinedButton(
-                            onClick = { showCategoryPicker = true },
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, c.border),
-                            modifier = Modifier.weight(1f).height(68.dp),
-                            contentPadding = PaddingValues(6.dp)
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                                Icon(catIcon, null, tint = catColor, modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.height(2.dp))
-                                Text(selectedCategory?.displayName ?: "Category", fontSize = 13.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Category", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
+                            OutlinedButton(
+                                onClick = { showCategoryPicker = true },
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, catColor.copy(0.4f)),
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(catIcon, null, tint = catColor, modifier = Modifier.size(17.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(selectedCategory?.displayName ?: "Category", fontSize = 13.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                             }
                         }
                     }
@@ -7403,6 +7413,7 @@ fun AddTransactionDialog(
                     OutlinedTextField(
                         value = notesStr, onValueChange = { notesStr = it },
                         label = { Text("Notes (Optional)", fontSize = 12.sp) },
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
                         shape = RoundedCornerShape(8.dp),
                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent, unfocusedTextColor = c.text, unfocusedBorderColor = c.border),
                         modifier = Modifier.fillMaxWidth(),
@@ -7425,29 +7436,47 @@ fun AddTransactionDialog(
                 HorizontalDivider(color = c.divider)
 
                 // ── Calculator ─────────────────────────────────────────────────
-                // 4×4 square-key grid: each row is [op][n][n][n], aspect-ratio 1:1
-                val opBg2 = c.accent.copy(0.10f)
+                // 5-row compact: [C ⌫ ÷ ×] [7 8 9 -] [4 5 6 +] [1 2 3 =] [00 0 . =]
                 val calcRows = listOf(
-                    listOf("+" to true, "7" to false, "8" to false, "9" to false),
-                    listOf("-" to true, "4" to false, "5" to false, "6" to false),
-                    listOf("×" to true, "1" to false, "2" to false, "3" to false),
-                    listOf("÷" to true, "00" to false, "0" to false, "." to false)
+                    listOf("C" to "clear", "⌫" to "op", "÷" to "op", "×" to "op"),
+                    listOf("7" to "num", "8" to "num", "9" to "num", "-" to "op"),
+                    listOf("4" to "num", "5" to "num", "6" to "num", "+" to "op"),
+                    listOf("1" to "num", "2" to "num", "3" to "num", "=" to "eq"),
+                    listOf("00" to "num", "0" to "num", "." to "num", "=" to "eq")
                 )
-                Column(modifier = Modifier.fillMaxWidth().background(c.bg)) {
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).background(c.bg)) {
                     calcRows.forEach { row ->
                         Row(modifier = Modifier.fillMaxWidth()) {
-                            row.forEach { (key, isOp) ->
+                            row.forEach { (key, role) ->
+                                val keyBg = when (role) {
+                                    "clear" -> c.expense.copy(0.12f)
+                                    "eq"    -> c.accent.copy(0.18f)
+                                    "op"    -> c.accent.copy(0.09f)
+                                    else    -> Color.Transparent
+                                }
+                                val keyColor = when (role) {
+                                    "clear" -> c.expense
+                                    "eq"    -> c.accent
+                                    "op"    -> c.accent
+                                    else    -> c.text
+                                }
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .aspectRatio(1f)
-                                        .background(if (isOp) opBg2 else Color.Transparent)
-                                        .border(BorderStroke(0.5.dp, c.text.copy(0.13f))),
+                                        .height(50.dp)
+                                        .padding(1.5.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(keyBg)
+                                        .border(BorderStroke(0.5.dp, c.divider), RoundedCornerShape(4.dp))
+                                        .clickable { onCalcKey(key) },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Box(modifier = Modifier.fillMaxSize().clickable { onCalcKey(key) }, contentAlignment = Alignment.Center) {
-                                        Text(key, fontSize = if (isOp) 26.sp else 22.sp, fontWeight = if (isOp) FontWeight.Bold else FontWeight.Medium, color = if (isOp) c.accent else c.text)
-                                    }
+                                    Text(
+                                        text = key,
+                                        fontSize = if (role == "num") 18.sp else 20.sp,
+                                        fontWeight = if (role == "num") FontWeight.Medium else FontWeight.Bold,
+                                        color = keyColor
+                                    )
                                 }
                             }
                         }
@@ -7714,8 +7743,7 @@ fun EditTransactionDialog(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Apply category to all '$title' transactions", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = c.text)
-                            Text("Re-categorizes every transaction with this merchant name", fontSize = 10.sp, color = c.textSecondary)
+                            Text("Apply to all '$title' entries", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = c.text)
                         }
                         Switch(
                             checked = applyToAllPayees,

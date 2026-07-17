@@ -54,9 +54,9 @@ data class AppColors(
     val cardBorderColor: Color get() = if (isBorderless) Color.Transparent else border
     val effectiveBg: Color get() = if (isBorderless && flatBg != Color.Unspecified) flatBg else bg
     /** Thin flat-mode divider — auto-adapts: faint on dark, visible on light. */
-    val flatDivider: Color get() = text.copy(alpha = if (isDark) 0.15f else 0.35f)
+    val flatDivider: Color get() = text.copy(alpha = if (isDark) 0.15f else 0.26f)
     /** Bold flat-mode section-title underline — stronger than flatDivider. */
-    val flatDividerBold: Color get() = text.copy(alpha = if (isDark) 0.30f else 0.65f)
+    val flatDividerBold: Color get() = text.copy(alpha = if (isDark) 0.30f else 0.50f)
 }
 
 fun darkAppColors() = AppColors(

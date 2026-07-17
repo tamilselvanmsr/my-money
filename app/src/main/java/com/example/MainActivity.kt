@@ -85,6 +85,8 @@ import com.example.ui.theme.forestAppColors
 import com.example.ui.theme.goldAppColors
 import com.example.ui.theme.jadeAppColors
 import com.example.ui.theme.sandAppColors
+import com.example.ui.theme.midnightAppColors
+import com.example.ui.theme.oceanAppColors
 import com.example.viewmodel.FinanceViewModel
 import com.example.viewmodel.DisplayMode
 import kotlinx.coroutines.flow.collectLatest
@@ -298,18 +300,20 @@ class MainActivity : ComponentActivity() {
             val isDarkPref by vm.isDarkTheme.collectAsStateWithLifecycle()
             val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
             val isDark = when (themeMode) {
-                "dark" -> true
+                "dark", "midnight" -> true
                 else   -> systemDark.takeIf { themeMode == "system" } ?: false
             }
             val isFlatStyle by vm.isFlatStyle.collectAsStateWithLifecycle()
             val appColors = when (themeMode) {
-                "dark"   -> darkAppColors()
-                "forest" -> forestAppColors()
-                "gold"   -> goldAppColors()
-                "jade"   -> jadeAppColors()
-                "sand"   -> sandAppColors()
-                "light"  -> lightAppColors()
-                else     -> if (systemDark) darkAppColors() else lightAppColors()
+                "dark"     -> darkAppColors()
+                "forest"   -> forestAppColors()
+                "gold"     -> goldAppColors()
+                "jade"     -> jadeAppColors()
+                "sand"     -> sandAppColors()
+                "midnight" -> midnightAppColors()
+                "ocean"    -> oceanAppColors()
+                "light"    -> lightAppColors()
+                else       -> if (systemDark) darkAppColors() else lightAppColors()
             }.let { if (isFlatStyle) it.copy(isBorderless = true) else it }
             MyApplicationTheme(darkTheme = isDark) {
                 androidx.compose.runtime.CompositionLocalProvider(LocalAppColors provides appColors) {
@@ -5713,7 +5717,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             Surface(
                 color = c.surface,
                 shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.2.dp, c.accent.copy(alpha = 0.4f)),
+                border = if (c.isBorderless) null else BorderStroke(1.2.dp, c.accent.copy(alpha = 0.4f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -5800,7 +5804,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             Button(
                 onClick = { showTransferDialog = true },
                 colors = ButtonDefaults.buttonColors(containerColor = c.accent.copy(alpha = 0.15f), contentColor = c.accent),
-                border = BorderStroke(1.2.dp, c.accent),
+                border = if (c.isBorderless) null else BorderStroke(1.2.dp, c.accent),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -6455,7 +6459,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
         modifier = Modifier
             .fillMaxSize()
             .testTag("auto_scan_hub_screen"),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = if (c.isBorderless) PaddingValues(vertical = 8.dp) else PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
@@ -7298,7 +7302,7 @@ fun AddTransactionDialog(
                         IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
                             Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(20.dp))
                         }
-                        Text("Log Cashflow", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+                        Text("Log Cashflow", fontWeight = FontWeight.Bold, fontSize = 19.sp, color = c.text, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
                         TextButton(onClick = {
                             if (resolvedAmount > 0.0) {
                                 val cleanTitle = if (title.isBlank()) "Merchant Log" else title
@@ -7319,8 +7323,8 @@ fun AddTransactionDialog(
                     Row(modifier = Modifier.fillMaxWidth().background(c.text.copy(0.05f), RoundedCornerShape(6.dp)).padding(3.dp)) {
                         listOf("EXPENSE" to "Expense", "INCOME" to "Income").forEach { (type, label) ->
                             val sel = transactionType == type
-                            Box(modifier = Modifier.weight(1f).clip(RoundedCornerShape(5.dp)).background(if (sel) (if (type == "EXPENSE") c.expense else c.income) else Color.Transparent).clickable { transactionType = type; categorySelection = if (type == "EXPENSE") "FOOD" else "SALARY" }.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
-                                Text(label, color = if (sel) Color.White else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Box(modifier = Modifier.weight(1f).clip(RoundedCornerShape(5.dp)).background(if (sel) (if (type == "EXPENSE") c.expense else c.income) else Color.Transparent).clickable { transactionType = type; categorySelection = if (type == "EXPENSE") "FOOD" else "SALARY" }.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                Text(label, color = if (sel) Color.White else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                             }
                         }
                     }
@@ -7352,41 +7356,37 @@ fun AddTransactionDialog(
                         }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.border), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(timeLabel, fontSize = 12.sp) }
                     }
 
-                    // Account | Category — same row with labels above
+                    // Account | Category — centered column in each button (no external label)
                     val acctType = accounts.find { it.name == accountSelection }?.type
                     val acctIcon = walletIconFor(accountSelection, acctType)
                     val acctColor = when (acctType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
                     val catIcon = selectedCategory?.icon ?: Icons.Default.Category
                     val catColor = selectedCategory?.color ?: c.accent
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Account", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
-                            Spacer(Modifier.height(2.dp))
-                            OutlinedButton(
-                                onClick = { showWalletPicker = true },
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, c.border),
-                                modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
-                            ) {
-                                Icon(acctIcon, null, tint = acctColor, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(accountSelection.ifBlank { "Select" }, fontSize = 12.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+                        OutlinedButton(
+                            onClick = { showWalletPicker = true },
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, c.border),
+                            modifier = Modifier.weight(1f).height(68.dp),
+                            contentPadding = PaddingValues(6.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                Icon(acctIcon, null, tint = acctColor, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.height(2.dp))
+                                Text(accountSelection.ifBlank { "Account" }, fontSize = 13.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
                             }
                         }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Category", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
-                            Spacer(Modifier.height(2.dp))
-                            OutlinedButton(
-                                onClick = { showCategoryPicker = true },
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, c.border),
-                                modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
-                            ) {
-                                Icon(catIcon, null, tint = catColor, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(selectedCategory?.displayName ?: "Select", fontSize = 12.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+                        OutlinedButton(
+                            onClick = { showCategoryPicker = true },
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, c.border),
+                            modifier = Modifier.weight(1f).height(68.dp),
+                            contentPadding = PaddingValues(6.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                Icon(catIcon, null, tint = catColor, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.height(2.dp))
+                                Text(selectedCategory?.displayName ?: "Category", fontSize = 13.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -7417,27 +7417,28 @@ fun AddTransactionDialog(
                 HorizontalDivider(color = c.divider)
 
                 // ── Calculator ─────────────────────────────────────────────────
-                val keyBorder = BorderStroke(0.5.dp, c.text.copy(0.12f))
-                val keyShape = RoundedCornerShape(6.dp)
-                val keyH = 50.dp
-                val opBg = c.accent.copy(0.10f)  // subtle tint for operator keys
-                Row(modifier = Modifier.fillMaxWidth().background(c.bg)) {
-                    // Left: operators (+, -, ×, ÷)
-                    Column(modifier = Modifier.weight(1.1f)) {
-                        listOf("+", "-", "×", "÷").forEach { op ->
-                            Box(modifier = Modifier.fillMaxWidth().height(keyH).background(opBg).border(keyBorder).clickable { onCalcKey(op) }, contentAlignment = Alignment.Center) {
-                                Text(op, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = c.accent)
-                            }
-                        }
-                    }
-                    // Right: digits 3×4 grid
-                    val numRows = listOf(listOf("7","8","9"), listOf("4","5","6"), listOf("1","2","3"), listOf("00","0","."))
-                    Column(modifier = Modifier.weight(3f)) {
-                        numRows.forEach { row ->
-                            Row(modifier = Modifier.fillMaxWidth().height(keyH)) {
-                                row.forEach { key ->
-                                    Box(modifier = Modifier.weight(1f).fillMaxHeight().border(keyBorder).clickable { onCalcKey(key) }, contentAlignment = Alignment.Center) {
-                                        Text(key, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = c.text)
+                // 4×4 square-key grid: each row is [op][n][n][n], aspect-ratio 1:1
+                val opBg2 = c.accent.copy(0.10f)
+                val calcRows = listOf(
+                    listOf("+" to true, "7" to false, "8" to false, "9" to false),
+                    listOf("-" to true, "4" to false, "5" to false, "6" to false),
+                    listOf("×" to true, "1" to false, "2" to false, "3" to false),
+                    listOf("÷" to true, "00" to false, "0" to false, "." to false)
+                )
+                Column(modifier = Modifier.fillMaxWidth().background(c.bg)) {
+                    calcRows.forEach { row ->
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            row.forEach { (key, isOp) ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .aspectRatio(1f)
+                                        .background(if (isOp) opBg2 else Color.Transparent)
+                                        .border(BorderStroke(0.5.dp, c.text.copy(0.13f))),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(modifier = Modifier.fillMaxSize().clickable { onCalcKey(key) }, contentAlignment = Alignment.Center) {
+                                        Text(key, fontSize = if (isOp) 26.sp else 22.sp, fontWeight = if (isOp) FontWeight.Bold else FontWeight.Medium, color = if (isOp) c.accent else c.text)
                                     }
                                 }
                             }

@@ -46,10 +46,11 @@ data class AppColors(
     val income: Color,
     val expense: Color,
     val isDark: Boolean,
-    val flatBg: Color = Color.Unspecified,  // more vibrant bg for flat/borderless mode
+    val flatBg: Color = Color.Unspecified,      // screen bg in flat/borderless mode
+    val flatCardBg: Color = Color.Transparent,  // card bg in flat mode (default = transparent)
     val isBorderless: Boolean = false
 ) {
-    val cardBg: Color get() = if (isBorderless) Color.Transparent else surface
+    val cardBg: Color get() = if (isBorderless) flatCardBg else surface
     val cardBorderColor: Color get() = if (isBorderless) Color.Transparent else border
     val effectiveBg: Color get() = if (isBorderless && flatBg != Color.Unspecified) flatBg else bg
 }
@@ -87,7 +88,8 @@ fun lightAppColors() = AppColors(
     income        = Color(0xFF059669),
     expense       = Color(0xFFDC2626),
     isDark        = false,
-    flatBg        = Color(0xFFE8EDF5)   // more noticeable tint for flat light
+    flatBg        = Color(0xFFFFFFFF),   // white screen bg in flat mode (= wallet card color)
+    flatCardBg    = Color(0xFFE8EDF5)    // blue-grey card bg in flat mode (reversed from before)
 )
 
 val LocalAppColors = staticCompositionLocalOf { darkAppColors() }

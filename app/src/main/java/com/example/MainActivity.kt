@@ -1250,7 +1250,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    color = if (c.isBorderless) Color.Transparent else c.surface,
+                    color = c.cardBg,
                     shape = RoundedCornerShape(24.dp),
                     border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
                     modifier = Modifier.weight(1f)
@@ -1461,7 +1461,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
         // Net Balance Glow Card
         item {
             Surface(
-                color = if (c.isBorderless) Color.Transparent else c.surface,
+                color = c.cardBg,
                 shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
                 border = if (c.isBorderless) null else BorderStroke(1.2.dp, c.accent.copy(alpha = 0.5f)),
                 modifier = Modifier
@@ -2108,7 +2108,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             val isNewlyImported = recentlyImportedFingerprints.contains(txFingerprint)
                             Surface(
                                 shape = if (c.isBorderless) RoundedCornerShape(4.dp) else RoundedCornerShape(14.dp),
-                                color = if (c.isBorderless) Color.Transparent else c.surface,
+                                color = c.cardBg,
                                 border = if (c.isBorderless) null else if (isNewlyImported) BorderStroke(2.dp, c.income) else BorderStroke(1.dp, c.divider),
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -2691,7 +2691,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
-                        color = if (c.isBorderless) Color.Transparent else c.surface,
+                        color = c.cardBg,
                         shape = RoundedCornerShape(24.dp),
                         border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
                         modifier = Modifier.weight(1f)
@@ -3390,7 +3390,7 @@ private fun AnalyticsOverviewSection(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Surface(
-            color = if (c.isBorderless) Color.Transparent else c.surface,
+            color = c.cardBg,
             shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
             border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
             modifier = Modifier.fillMaxWidth()
@@ -4624,7 +4624,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         }
 
                         Surface(
-                            color = if (c.isBorderless) Color.Transparent else if (c.isBorderless) Color.Transparent else c.surface,
+                            color = if (c.isBorderless) Color.Transparent else c.cardBg,
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
@@ -5105,7 +5105,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     }.sumOf { it.amount }
                     val catExpense = monthExpenses.filter { it.category.equals(cat.name, ignoreCase = true) }.sumOf { it.amount }
                     Surface(
-                        color = if (c.isBorderless) Color.Transparent else c.surface,
+                        color = c.cardBg,
                         shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp),
                         border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
                         modifier = Modifier
@@ -5721,7 +5721,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         // Net Wealth Overview Card
         item {
             Surface(
-                color = if (c.isBorderless) Color.Transparent else c.surface,
+                color = c.cardBg,
                 shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
                 border = if (c.isBorderless) null else BorderStroke(1.2.dp, c.accent.copy(alpha = 0.4f)),
                 modifier = Modifier.fillMaxWidth()
@@ -5811,7 +5811,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             Button(
                 onClick = { showTransferDialog = true },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (c.isBorderless) Color.Transparent else c.surface,
+                    containerColor = c.cardBg,
                     contentColor = c.text
                 ),
                 border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
@@ -5912,7 +5912,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         }
 
                         Surface(
-                            color = if (c.isBorderless) Color.Transparent else c.surface,
+                            color = c.cardBg,
                             shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(20.dp),
                             border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
                             modifier = Modifier
@@ -6487,7 +6487,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
         item {
             if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 1.dp)
             Surface(
-                color = if (c.isBorderless) Color.Transparent else c.surface,
+                color = c.cardBg,
                 shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
                 border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
                 modifier = Modifier.fillMaxWidth()
@@ -6692,7 +6692,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
         item {
             if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 1.dp)
             Card(
-                colors = CardDefaults.cardColors(containerColor = if (c.isBorderless) Color.Transparent else c.surface),
+                colors = CardDefaults.cardColors(containerColor = c.cardBg),
                 border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -6914,7 +6914,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
             if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 1.dp)
             ProGate(isPaid = isPaid, modifier = Modifier.fillMaxWidth()) {
             Card(
-                colors = CardDefaults.cardColors(containerColor = if (c.isBorderless) Color.Transparent else c.surface),
+                colors = CardDefaults.cardColors(containerColor = c.cardBg),
                 border = if (c.isBorderless) null else BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.4f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -7083,7 +7083,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
         if (parserExclusionVisible) item {
             if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 1.dp)
             Card(
-                colors = CardDefaults.cardColors(containerColor = if (c.isBorderless) Color.Transparent else c.surface),
+                colors = CardDefaults.cardColors(containerColor = c.cardBg),
                 border = if (c.isBorderless) null else BorderStroke(1.dp, c.expense.copy(alpha = 0.25f)),
                 modifier = Modifier.fillMaxWidth()
             ) {

@@ -434,7 +434,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 10.dp, bottom = 2.dp, start = 4.dp, end = 4.dp),
+                            .padding(top = 10.dp, bottom = 0.dp, start = 4.dp, end = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // ── Logo + Title ──────────────────────────────────────
@@ -2332,7 +2332,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 }
                             }
                             } // end Surface card
-                            if (c.isBorderless && txIdx < txList.size - 1) {
+                            if (c.isBorderless) {
                                 HorizontalDivider(color = c.divider.copy(0.5f), thickness = 0.5.dp)
                             }
                         }
@@ -3623,7 +3623,7 @@ private fun AnalyticsOverviewSection(
 
             categoryTotals.forEachIndexed { idx, stats ->
                 val active = activeSectorIndex == idx
-                if (c.isBorderless && idx > 0) HorizontalDivider(color = c.divider)
+                if (c.isBorderless) HorizontalDivider(color = c.divider)
                 Surface(
                     color = if (c.isBorderless) Color.Transparent else if (active) stats.category.color.copy(alpha = 0.08f) else c.surface,
                     shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp),
@@ -3697,6 +3697,7 @@ private fun AnalyticsOverviewSection(
                     }
                 }
             }
+            if (c.isBorderless && categoryTotals.isNotEmpty()) HorizontalDivider(color = c.divider)
             } // end breakdown Column
         }
     }
@@ -4678,10 +4679,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         Button(
                             onClick = { showAddCategoryDialog = true },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = c.accent.copy(alpha = 0.15f),
+                                containerColor = if (c.isBorderless) Color.Transparent else c.accent.copy(alpha = 0.15f),
                                 contentColor = c.accent
                             ),
-                            border = BorderStroke(1.dp, c.accent.copy(alpha = 0.5f)),
+                            border = if (c.isBorderless) null else BorderStroke(1.dp, c.accent.copy(alpha = 0.5f)),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                             modifier = Modifier.height(34.dp).testTag("add_custom_category_button")
                         ) {
@@ -4699,7 +4700,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(c.text.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                    .background(if (c.isBorderless) Color.Transparent else c.text.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                     .padding(4.dp)
             ) {
                 val isExp = activeCategoryTypeTab == "EXPENSE"
@@ -5087,7 +5088,8 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         }
                     } // end Surface
                     } // end key(cat.name)
-                }
+                    if (c.isBorderless) HorizontalDivider(color = c.divider.copy(0.5f), thickness = 0.5.dp)
+                } // end budgetedCats.forEach
                 if (unbudgetedCats.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
@@ -5147,6 +5149,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             }
                         }
                     }
+                    if (c.isBorderless) HorizontalDivider(color = c.divider.copy(0.5f), thickness = 0.5.dp)
                 }
 
                 // "Copy from last month" — shown below unbudgeted list, only for EXPENSE tab

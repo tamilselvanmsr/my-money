@@ -741,7 +741,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(darkBg)
+                .background(c.effectiveBg)
                 // ── Passive gesture observer on the PARENT Box ──────────────
                 // PointerEventPass.Final = we see events AFTER the pager processes them.
                 // We never call consume() so scrolling/tapping/swipe navigation are unaffected.
@@ -2036,7 +2036,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
 
             grouped.forEach { (dateStr, txList) ->
                 stickyHeader {
-                    Column(modifier = Modifier.fillMaxWidth().background(c.bg)) {
+                    Column(modifier = Modifier.fillMaxWidth().background(c.effectiveBg)) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -7462,10 +7462,11 @@ fun AddTransactionDialog(
                     color = Color.Transparent,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(modifier = Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                        if (hasOp) Text(calcExpr, fontSize = 13.sp, color = c.textSecondary, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(text = when { calcResult != null -> "₹ ${formatCalcNum(calcResult)}"; calcExpr.isEmpty() -> "₹ 0"; else -> "₹ $calcExpr" }, fontSize = 34.sp, fontWeight = FontWeight.Bold, color = amountColor, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (hasOp) Text(calcExpr, fontSize = 12.sp, color = c.textSecondary, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        var amtFontSize by remember(calcExpr, calcResult) { mutableStateOf(30.sp) }
+                        Text(text = when { calcResult != null -> "₹ ${formatCalcNum(calcResult)}"; calcExpr.isEmpty() -> "₹ 0"; else -> "₹ $calcExpr" }, fontSize = amtFontSize, fontWeight = FontWeight.Bold, color = amountColor, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, onTextLayout = { result -> if (result.hasVisualOverflow && amtFontSize.value > 14f) amtFontSize = (amtFontSize.value * 0.85f).sp })
                         }
                         Spacer(Modifier.width(10.dp))
                     Box(modifier = Modifier.size(46.dp).clip(RoundedCornerShape(8.dp)).background(c.accent.copy(0.12f)).combinedClickable(onClick = { onCalcKey("⌫") }, onLongClick = { onCalcKey("C") }), contentAlignment = Alignment.Center) {
@@ -7483,7 +7484,7 @@ fun AddTransactionDialog(
                     listOf("×" to "op", "1" to "num", "2" to "num", "3" to "num"),
                     listOf("÷" to "op", "00" to "num", "0" to "num", "." to "num")
                 )
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).background(c.bg)) {
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).background(c.effectiveBg)) {
                     calcRows.forEach { row ->
                         Row(modifier = Modifier.fillMaxWidth()) {
                             row.forEach { (key, role) ->
@@ -7747,7 +7748,8 @@ fun EditTransactionDialog(
                     onValueChange = { notesStr = it },
                     label = { Text("Note (Optional)") },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
+                        focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent,
+                        unfocusedTextColor = c.text, unfocusedBorderColor = c.accent.copy(0.35f)
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -7986,6 +7988,7 @@ fun TransactionDateTimePicker(
                     ).show()
                 },
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
+                border = BorderStroke(1.dp, c.accent.copy(0.45f)),
                 modifier = Modifier.weight(1f)
             ) {
                 Text(dateLabel)
@@ -8010,6 +8013,7 @@ fun TransactionDateTimePicker(
                     ).show()
                 },
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
+                border = BorderStroke(1.dp, c.accent.copy(0.45f)),
                 modifier = Modifier.weight(1f)
             ) {
                 Text(timeLabel)

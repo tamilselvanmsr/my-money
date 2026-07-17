@@ -56,7 +56,7 @@ data class AppColors(
     /** Thin flat-mode divider — auto-adapts: faint on dark, visible on light. */
     val flatDivider: Color get() = text.copy(alpha = if (isDark) 0.15f else 0.55f)
     /** Bold flat-mode section-title underline — stronger than flatDivider. */
-    val flatDividerBold: Color get() = text.copy(alpha = if (isDark) 0.30f else 0.85f)
+    val flatDividerBold: Color get() = text.copy(alpha = if (isDark) 0.30f else 0.65f)
 }
 
 fun darkAppColors() = AppColors(

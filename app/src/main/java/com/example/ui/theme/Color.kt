@@ -130,12 +130,12 @@ fun sunsetAppColors() = AppColors(
 
 // ── Theme 5: Gold ──────────────────────────────────────────────────────────
 fun goldAppColors() = AppColors(
-    bg            = Color(0xFFFEFCE8), surface = Color(0xFFFEF9C3), surfaceVariant = Color(0xFFFEF08A),
+    bg            = Color(0xFFFEFCE8), surface = Color(0xFFFFFDE8), surfaceVariant = Color(0xFFFEF9C3),
     border        = Color(0xFFCA8A04), borderStrong = Color(0xFFA86004),
     text          = Color(0xFF1C1000), textSecondary = Color(0xFF78580A), textTertiary = Color(0xFFB08030),
     divider       = Color(0xFFE8C840), accent = Color(0xFFCA8A04), accentDim = Color(0x20CA8A04),
     income        = Color(0xFF166534), expense = Color(0xFF991B1B), isDark = false,
-    flatBg        = Color(0xFFFEED70)
+    flatBg        = Color(0xFFFEF4A8)
 )
 
 // ── Theme 6: Jade ──────────────────────────────────────────────────────────

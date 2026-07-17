@@ -434,7 +434,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 10.dp, bottom = 0.dp, start = 4.dp, end = 4.dp),
+                            .padding(top = 9.dp, bottom = 0.dp, start = 4.dp, end = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // ── Logo + Title ──────────────────────────────────────
@@ -1231,7 +1231,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
         modifier = Modifier
             .fillMaxSize()
             .testTag("dashboard_scroll_column"),
-        contentPadding = if (c.isBorderless) PaddingValues(horizontal = 10.dp, vertical = 8.dp) else PaddingValues(16.dp),
+        contentPadding = if (c.isBorderless) PaddingValues(horizontal = 6.dp, vertical = 4.dp) else PaddingValues(horizontal = 10.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // Active Month/Period Navigation Selector Header
@@ -2682,7 +2682,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
         modifier = Modifier
             .fillMaxSize()
             .testTag("analytics_scroll_column"),
-        contentPadding = if (c.isBorderless) PaddingValues(horizontal = 10.dp, vertical = 8.dp) else PaddingValues(16.dp),
+        contentPadding = if (c.isBorderless) PaddingValues(horizontal = 6.dp, vertical = 4.dp) else PaddingValues(horizontal = 10.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
@@ -4599,7 +4599,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         modifier = Modifier
             .fillMaxSize()
             .testTag("budgets_scroll_column"),
-        contentPadding = if (c.isBorderless) PaddingValues(horizontal = 10.dp, vertical = 8.dp) else PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+        contentPadding = if (c.isBorderless) PaddingValues(horizontal = 6.dp, vertical = 4.dp) else PaddingValues(horizontal = 10.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // Upper Title HUD
@@ -5684,7 +5684,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         modifier = Modifier
             .fillMaxSize()
             .testTag("accounts_scroll_column"),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // Upper balance HUD
@@ -6468,7 +6468,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
         modifier = Modifier
             .fillMaxSize()
             .testTag("auto_scan_hub_screen"),
-        contentPadding = if (c.isBorderless) PaddingValues(horizontal = 10.dp, vertical = 8.dp) else PaddingValues(16.dp),
+        contentPadding = if (c.isBorderless) PaddingValues(horizontal = 6.dp, vertical = 4.dp) else PaddingValues(horizontal = 10.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {

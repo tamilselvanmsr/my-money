@@ -1252,7 +1252,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                 Surface(
                     color = c.cardBg,
                     shape = RoundedCornerShape(24.dp),
-                    border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
+                    border = if (c.isBorderless && !c.isDark) BorderStroke(1.dp, c.flatDivider) else if (!c.isBorderless) BorderStroke(1.dp, c.border) else null,
                     modifier = Modifier.weight(1f)
                 ) {
                     Row(
@@ -2119,7 +2119,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    .padding(horizontal = 12.dp, vertical = if (c.isBorderless) 4.dp else 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Surface(
@@ -2330,7 +2330,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             }
                             } // end Surface card
                             if (c.isBorderless && txIdx < txList.size - 1) {
-                                HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
+                                HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp, modifier = Modifier.padding(start = 72.dp))
                             }
                         }
                     }
@@ -2693,7 +2693,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                     Surface(
                         color = c.cardBg,
                         shape = RoundedCornerShape(24.dp),
-                        border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
+                        border = if (c.isBorderless && !c.isDark) BorderStroke(1.dp, c.flatDivider) else if (!c.isBorderless) BorderStroke(1.dp, c.border) else null,
                         modifier = Modifier.weight(1f)
                     ) {
                         Row(
@@ -3636,7 +3636,7 @@ private fun AnalyticsOverviewSection(
                         }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = if (c.isBorderless) 4.dp else 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
@@ -4572,11 +4572,11 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         val missing = baseCategories.map { it.name }.filter { it !in validSaved }
             .sortedBy { name -> baseCategories.find { it.name == name }?.displayName ?: name }
         categoryOrderKeys = if (validSaved.isNotEmpty()) {
-            // Keep budgeted categories in their saved order; sort all unbudgeted alphabetically
+            // Keep budgeted categories in their saved order; preserve dragged unbudgeted order too
             val budgetedKeys   = validSaved.filter { k -> budgetCategoryNames.contains(k.lowercase()) }
-            val unbudgetedKeys = (validSaved.filter { k -> !budgetCategoryNames.contains(k.lowercase()) } + missing)
-                .distinctBy { it.lowercase() }
-                .sortedBy { name -> baseCategories.find { it.name == name }?.displayName ?: name }
+            val unbudgetedFromSaved = validSaved.filter { k -> !budgetCategoryNames.contains(k.lowercase()) }
+            val newMissing = missing.filter { it !in unbudgetedFromSaved && !budgetCategoryNames.contains(it.lowercase()) }
+            val unbudgetedKeys = (unbudgetedFromSaved + newMissing).distinctBy { it.lowercase() }
             budgetedKeys + unbudgetedKeys
         } else {
             val withBudget = baseCategories.filter { budgetCategoryNames.contains(it.name.lowercase()) }.sortedBy { it.displayName }
@@ -4609,14 +4609,19 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Surface(
+                        color = Color.Transparent,
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(1.dp, c.border)
+                    ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(0.dp)
                     ) {
                         FilledTonalIconButton(
                             onClick = { viewModel.setMonthYear(shiftMonthYear(rawMonthYear, -1)) },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (c.isBorderless) Color.Transparent else c.divider,
+                                containerColor = Color.Transparent,
                                 contentColor = c.text
                             ),
                             modifier = Modifier.size(32.dp)
@@ -4624,23 +4629,18 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             Icon(Icons.Default.ChevronLeft, contentDescription = "Previous month")
                         }
 
-                        Surface(
-                            color = if (c.isBorderless) Color.Transparent else c.cardBg,
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(
-                                text = formatDisplay.format(currentMonthDate),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = c.accent,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                            )
-                        }
+                        Text(
+                            text = formatDisplay.format(currentMonthDate),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = c.accent,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
 
                         FilledTonalIconButton(
                             onClick = { viewModel.setMonthYear(shiftMonthYear(rawMonthYear, 1)) },
                             colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (c.isBorderless) Color.Transparent else c.divider,
+                                containerColor = Color.Transparent,
                                 contentColor = c.text
                             ),
                             modifier = Modifier.size(32.dp)
@@ -4648,6 +4648,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             Icon(Icons.Default.ChevronRight, contentDescription = "Next month")
                         }
                     }
+                    } // end period Surface
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -4942,6 +4943,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         }
 
         // List of configured or unconfigured limits
+        if (activeCategoryTypeTab == "EXPENSE") {
         item {
             Text(
                 text = "MANAGE LIMITS",
@@ -4950,6 +4952,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                 letterSpacing = 1.sp,
                 color = c.textSecondary
             )
+        }
         }
 
         val budgetedCats = standardCategoriesList.filter { cat ->
@@ -5829,7 +5832,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                 Icon(Icons.Default.SwapHoriz, contentDescription = "Transfer icon")
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    if (activeAccounts.size >= 2) "Transfer Funds Between Wallets" else "Add at least 2 wallets to transfer funds",
+                    if (activeAccounts.size >= 2) "Transfer Funds Between Accounts" else "Add at least 2 wallets to transfer funds",
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
@@ -5838,6 +5841,8 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
 
         // List of configured mock cards
         item {
+            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
+            Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -5850,6 +5855,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     letterSpacing = 1.sp,
                     color = c.textSecondary
                 )
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                 TextButton(
                     onClick = { showAddAccountDialog = true },
                     colors = ButtonDefaults.textButtonColors(contentColor = c.accent),
@@ -5859,8 +5865,10 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Add Account", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
+                }
             }
-            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp, modifier = Modifier.padding(top = 0.dp))
+            if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
+            } // end Column
         }
 
         if (activeAccounts.isEmpty()) {
@@ -6490,7 +6498,6 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
 
         // Device Scan Action panel
         item {
-            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.dp else 1.5.dp)
             Surface(
                 color = c.cardBg,
                 shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),

@@ -54,7 +54,7 @@ data class AppColors(
     val cardBorderColor: Color get() = if (isBorderless) Color.Transparent else border
     val effectiveBg: Color get() = if (isBorderless && flatBg != Color.Unspecified) flatBg else bg
     /** Thin flat-mode divider — auto-adapts: faint on dark, visible on light. */
-    val flatDivider: Color get() = text.copy(alpha = if (isDark) 0.15f else 0.55f)
+    val flatDivider: Color get() = text.copy(alpha = if (isDark) 0.15f else 0.35f)
     /** Bold flat-mode section-title underline — stronger than flatDivider. */
     val flatDividerBold: Color get() = text.copy(alpha = if (isDark) 0.30f else 0.65f)
 }
@@ -140,8 +140,7 @@ fun goldAppColors() = AppColors(
     border        = Color(0xFFCA8A04), borderStrong = Color(0xFFA86004),
     text          = Color(0xFF1C1000), textSecondary = Color(0xFF78580A), textTertiary = Color(0xFFB08030),
     divider       = Color(0xFFF5EDBC), accent = Color(0xFFCA8A04), accentDim = Color(0x20CA8A04),
-    income        = Color(0xFF166534), expense = Color(0xFF991B1B), isDark = false,
-    flatBg        = Color(0xFFFEF4A8)
+    income        = Color(0xFF166534), expense = Color(0xFF991B1B), isDark = false
 )
 
 // ── Theme 6: Jade ──────────────────────────────────────────────────────────
@@ -150,8 +149,7 @@ fun jadeAppColors() = AppColors(
     border        = Color(0xFF6EC4A6), borderStrong = Color(0xFF3DA888),
     text          = Color(0xFF0A2920), textSecondary = Color(0xFF1E6550), textTertiary = Color(0xFF4A9C80),
     divider       = Color(0xFFB8DECE), accent = Color(0xFF0D7A5C), accentDim = Color(0x200D7A5C),
-    income        = Color(0xFF15803D), expense = Color(0xFFB91C1C), isDark = false,
-    flatBg        = Color(0xFFB8ECD8)
+    income        = Color(0xFF15803D), expense = Color(0xFFB91C1C), isDark = false
 )
 
 // ── Theme 7: Sand ──────────────────────────────────────────────────────────
@@ -160,8 +158,7 @@ fun sandAppColors() = AppColors(
     border        = Color(0xFFCCAA80), borderStrong = Color(0xFFAA8860),
     text          = Color(0xFF2A1A08), textSecondary = Color(0xFF6E4C2A), textTertiary = Color(0xFFA07850),
     divider       = Color(0xFFDDC4A0), accent = Color(0xFF92400E), accentDim = Color(0x2092400E),
-    income        = Color(0xFF3D7A3D), expense = Color(0xFFA83232), isDark = false,
-    flatBg        = Color(0xFFE8CBB2)
+    income        = Color(0xFF3D7A3D), expense = Color(0xFFA83232), isDark = false
 )
 
 // ── Theme 8: Midnight — deep blue-black, elegant ──────────────────────────
@@ -180,8 +177,7 @@ fun oceanAppColors() = AppColors(
     border        = Color(0xFF77BBDD), borderStrong = Color(0xFF4499BB),
     text          = Color(0xFF0A2535), textSecondary = Color(0xFF1A5070), textTertiary = Color(0xFF4A8AAA),
     divider       = Color(0xFFAAD4E8), accent = Color(0xFF0077B6), accentDim = Color(0x200077B6),
-    income        = Color(0xFF00897B), expense = Color(0xFFD84315), isDark = false,
-    flatBg        = Color(0xFFB0D8EE)
+    income        = Color(0xFF00897B), expense = Color(0xFFD84315), isDark = false
 )
 
 

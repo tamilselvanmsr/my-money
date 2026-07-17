@@ -425,7 +425,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
         topBar = {
             Surface(
                 shadowElevation = 0.dp,
-                color = darkBg
+                color = c.effectiveBg
             ) {
                 Column {
                     // Status bar inset — pushes content below the system status bar
@@ -666,7 +666,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             Column {
                 HorizontalDivider(color = c.border, thickness = 1.dp)
                 NavigationBar(
-                    containerColor = c.bg,
+                    containerColor = c.effectiveBg,
                     tonalElevation = 0.dp,
                     windowInsets = WindowInsets.navigationBars,
                     modifier = Modifier.height(68.dp + with(androidx.compose.ui.platform.LocalDensity.current) {
@@ -2073,7 +2073,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             color = if (dateNet >= 0) c.income else c.expense
                         )
                     }
-                    if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.5.dp else 2.dp)
+                    if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
                     } // end Column
                 }
 
@@ -2112,7 +2112,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 border = if (c.isBorderless) null else if (isNewlyImported) BorderStroke(2.dp, c.income) else BorderStroke(1.dp, c.divider),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 2.dp)
+                        .padding(vertical = if (c.isBorderless) 0.dp else 2.dp)
                                     .clickable { selectedTxForEdit = tx }
                                     .testTag("transaction_item_${tx.id}")
                             ) {
@@ -3609,7 +3609,7 @@ private fun AnalyticsOverviewSection(
         }
 
         if (categoryTotals.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(verticalArrangement = if (c.isBorderless) Arrangement.spacedBy(0.dp) else Arrangement.spacedBy(4.dp)) {
             Column(modifier = Modifier.fillMaxWidth()) {
             Text(
                 text = breakdownLabel,
@@ -3618,7 +3618,7 @@ private fun AnalyticsOverviewSection(
                 letterSpacing = 1.sp,
                 color = c.textSecondary
             )
-            if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.5.dp else 2.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
             } // end title+underline Column
 
             categoryTotals.forEachIndexed { idx, stats ->
@@ -4962,7 +4962,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         item {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = if (c.isBorderless) Arrangement.spacedBy(0.dp) else Arrangement.spacedBy(8.dp)
             ) {
                 if (budgetedCats.isNotEmpty()) {
                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -4971,7 +4971,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp,
                             color = c.accent, modifier = Modifier.padding(vertical = 4.dp)
                         )
-                        if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.5.dp else 2.dp)
+                        if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
                     }
                 }
                 budgetedCats.forEach { cat ->
@@ -5100,7 +5100,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp,
                             color = c.textSecondary, modifier = Modifier.padding(vertical = 4.dp)
                         )
-                        if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.5.dp else 2.dp)
+                        if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
                     }
                 }
                 unbudgetedCats.forEach { cat ->
@@ -6490,11 +6490,11 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
 
         // Device Scan Action panel
         item {
-            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.5.dp else 2.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.dp else 1.5.dp)
             Surface(
                 color = c.cardBg,
                 shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
-                border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
+                border = if (c.isBorderless) null else BorderStroke(1.dp, c.accent.copy(0.45f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -6695,10 +6695,10 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
         // Manual pasted SMS analyzer — shown only when Parser Key Rules are unlocked
         // Parser Key Rules — always visible (no unlock needed)
         item {
-            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.5.dp else 2.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.dp else 1.5.dp)
             Card(
                 colors = CardDefaults.cardColors(containerColor = c.cardBg),
-                border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
+                border = if (c.isBorderless) null else BorderStroke(1.dp, c.income.copy(0.5f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -6846,7 +6846,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                             }
                         },
                         enabled = !isSmsParsing,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF), contentColor = c.text),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E), contentColor = Color.White),
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth().height(48.dp)
                     ) {
@@ -6916,7 +6916,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
 
         // ── Merchant → Category Mapping ───────────────────────────────────────
         item {
-            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.5.dp else 2.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.dp else 1.5.dp)
             ProGate(isPaid = isPaid, modifier = Modifier.fillMaxWidth()) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = c.cardBg),
@@ -7086,7 +7086,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
 
         // Parser exclusion rules reference card
         if (parserExclusionVisible) item {
-            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.5.dp else 2.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 1.dp else 1.5.dp)
             Card(
                 colors = CardDefaults.cardColors(containerColor = c.cardBg),
                 border = if (c.isBorderless) null else BorderStroke(1.dp, c.expense.copy(alpha = 0.25f)),
@@ -7633,7 +7633,7 @@ fun EditTransactionDialog(
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.verticalScroll(rememberScrollState())
+                modifier = Modifier.verticalScroll(rememberScrollState()).padding(bottom = (-8).dp)
             ) {
                 val amountColor = when (editType) {
                     "EXPENSE" -> c.expense

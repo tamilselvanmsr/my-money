@@ -3610,7 +3610,6 @@ private fun AnalyticsOverviewSection(
 
         if (categoryTotals.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
             Text(
                 text = breakdownLabel,
                 fontWeight = FontWeight.Bold,
@@ -3618,6 +3617,7 @@ private fun AnalyticsOverviewSection(
                 letterSpacing = 1.sp,
                 color = c.textSecondary
             )
+            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
 
             categoryTotals.forEachIndexed { idx, stats ->
                 val active = activeSectorIndex == idx
@@ -4964,12 +4964,12 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (budgetedCats.isNotEmpty()) {
-                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
                     Text(
                         text = if (activeCategoryTypeTab == "EXPENSE") "BUDGETED" else "EXPECTED INCOME",
                         fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp,
                         color = c.accent, modifier = Modifier.padding(vertical = 4.dp)
                     )
+                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
                 }
                 budgetedCats.forEach { cat ->
                     // key() tells Compose to track this composable by cat.name (not list position).
@@ -5090,13 +5090,13 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
                 } // end budgetedCats.forEach
                 if (unbudgetedCats.isNotEmpty()) {
-                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "NOT BUDGETED",
                         fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp,
                         color = c.textSecondary, modifier = Modifier.padding(vertical = 4.dp)
                     )
+                    if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
                 }
                 unbudgetedCats.forEach { cat ->
                     val catIncome = txs.filter {
@@ -5721,9 +5721,9 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         // Net Wealth Overview Card
         item {
             Surface(
-                color = c.surface,
-                shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.2.dp, c.accent.copy(alpha = 0.4f)),
+                color = if (c.isBorderless) Color.Transparent else c.surface,
+                shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
+                border = if (c.isBorderless) null else BorderStroke(1.2.dp, c.accent.copy(alpha = 0.4f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -5807,14 +5807,14 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
 
         // Actions: inter-wallet transfer setup
         item {
-            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 1.dp)
             Button(
                 onClick = { showTransferDialog = true },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = c.accent.copy(alpha = 0.15f),
-                    contentColor = c.accent
+                    containerColor = if (c.isBorderless) Color.Transparent else c.surface,
+                    contentColor = c.text
                 ),
-                border = BorderStroke(0.5.dp, c.accent.copy(0.45f)),
+                border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -5833,7 +5833,6 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
 
         // List of configured mock cards
         item {
-            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -5856,6 +5855,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     Text("Add Account", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
+            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.30f), thickness = 1.5.dp)
         }
 
         if (activeAccounts.isEmpty()) {
@@ -5912,9 +5912,9 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         }
 
                         Surface(
-                            color = c.surface,
-                            shape = RoundedCornerShape(20.dp),
-                            border = BorderStroke(1.dp, c.border),
+                            color = if (c.isBorderless) Color.Transparent else c.surface,
+                            shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(20.dp),
+                            border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { selectedAccountForEdit = acc }
@@ -6485,7 +6485,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
 
         // Device Scan Action panel
         item {
-            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 1.dp)
             Surface(
                 color = if (c.isBorderless) Color.Transparent else c.surface,
                 shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
@@ -6690,7 +6690,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
         // Manual pasted SMS analyzer — shown only when Parser Key Rules are unlocked
         // Parser Key Rules — always visible (no unlock needed)
         item {
-            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 1.dp)
             Card(
                 colors = CardDefaults.cardColors(containerColor = if (c.isBorderless) Color.Transparent else c.surface),
                 border = if (c.isBorderless) null else BorderStroke(1.dp, c.border),
@@ -6911,7 +6911,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
 
         // ── Merchant → Category Mapping ───────────────────────────────────────
         item {
-            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 0.5.dp)
+            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 1.dp)
             ProGate(isPaid = isPaid, modifier = Modifier.fillMaxWidth()) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = if (c.isBorderless) Color.Transparent else c.surface),
@@ -7081,9 +7081,10 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
 
         // Parser exclusion rules reference card
         if (parserExclusionVisible) item {
+            if (c.isBorderless) HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 1.dp)
             Card(
-                colors = CardDefaults.cardColors(containerColor = c.surface),
-                border = BorderStroke(1.dp, c.expense.copy(alpha = 0.25f)),
+                colors = CardDefaults.cardColors(containerColor = if (c.isBorderless) Color.Transparent else c.surface),
+                border = if (c.isBorderless) null else BorderStroke(1.dp, c.expense.copy(alpha = 0.25f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -7230,6 +7231,7 @@ private fun formatCalcNum(d: Double): String =
     if (d == kotlin.math.floor(d) && d < 1_000_000_000.0) d.toLong().toString()
     else "%.2f".format(d)
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AddTransactionDialog(
     viewModel: FinanceViewModel,
@@ -7347,7 +7349,7 @@ fun AddTransactionDialog(
                     // Payee
                     OutlinedTextField(
                         value = title, onValueChange = { title = it },
-                        label = { Text("Payee / Merchant", fontSize = 12.sp) },
+                        label = { Text("Payee / Merchant", fontSize = 14.sp) },
                         singleLine = true,
                         shape = RoundedCornerShape(8.dp),
                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent, unfocusedTextColor = c.text, unfocusedBorderColor = c.border),
@@ -7439,7 +7441,7 @@ fun AddTransactionDialog(
                     // Notes — 3 lines
                     OutlinedTextField(
                         value = notesStr, onValueChange = { notesStr = it },
-                        label = { Text("Notes (Optional)", fontSize = 12.sp) },
+                        label = { Text("Notes (Optional)", fontSize = 14.sp) },
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
                         shape = RoundedCornerShape(8.dp),
                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent, unfocusedTextColor = c.text, unfocusedBorderColor = c.border),
@@ -7455,13 +7457,13 @@ fun AddTransactionDialog(
                     color = Color.Transparent,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                         if (hasOp) Text(calcExpr, fontSize = 13.sp, color = c.textSecondary, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(text = when { calcResult != null -> "₹ ${formatCalcNum(calcResult)}"; calcExpr.isEmpty() -> "₹ 0"; else -> "₹ $calcExpr" }, fontSize = 30.sp, fontWeight = FontWeight.Bold, color = amountColor, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(text = when { calcResult != null -> "₹ ${formatCalcNum(calcResult)}"; calcExpr.isEmpty() -> "₹ 0"; else -> "₹ $calcExpr" }, fontSize = 34.sp, fontWeight = FontWeight.Bold, color = amountColor, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         Spacer(Modifier.width(10.dp))
-                    Box(modifier = Modifier.size(42.dp).clip(RoundedCornerShape(8.dp)).background(c.accent.copy(0.12f)).clickable { onCalcKey("⌫") }, contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.size(46.dp).clip(RoundedCornerShape(8.dp)).background(c.accent.copy(0.12f)).combinedClickable(onClick = { onCalcKey("⌫") }, onLongClick = { onCalcKey("C") }), contentAlignment = Alignment.Center) {
                         Text("⌫", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = c.accent)
                         }
                     }
@@ -7485,7 +7487,7 @@ fun AddTransactionDialog(
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(50.dp)
+                                        .height(58.dp)
                                         .padding(1.5.dp)
                                         .clip(RoundedCornerShape(4.dp))
                                         .background(keyBg)
@@ -7626,7 +7628,12 @@ fun EditTransactionDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.verticalScroll(rememberScrollState())
             ) {
-                val amountColor = if (editType == "EXPENSE") c.expense else if (editType == "INCOME") c.income else c.accent
+                val amountColor = when (editType) {
+                    "EXPENSE" -> c.expense
+                    "INCOME" -> c.income
+                    "DUPLICATE" -> c.textSecondary
+                    else -> c.accent
+                }
                 OutlinedTextField(
                     value = amountStr,
                     onValueChange = { amountStr = it },
@@ -7671,6 +7678,7 @@ fun EditTransactionDialog(
                     value = title,
                     onValueChange = { title = it },
                     label = { Text("Payee / Merchant") },
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                     ),
@@ -7779,7 +7787,7 @@ fun EditTransactionDialog(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Apply to all '$title' entries", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = c.text)
+                            Text("Same category to all '${title.ifBlank { "..." }}' entries", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = c.text)
                         }
                         Switch(
                             checked = applyToAllPayees,

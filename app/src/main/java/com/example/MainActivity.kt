@@ -423,78 +423,88 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             .fillMaxSize()
             .testTag("main_scaffold"),
         topBar = {
-            TopAppBar(
-                title = {
+            Surface(
+                shadowElevation = 2.dp,
+                color = darkBg
+            ) {
+                Column {
+                    // Status bar inset — pushes content below the system status bar
+                    Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+                    // Actual bar content: 10dp top padding (title visually lower) + 4dp bottom
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Start
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp, bottom = 4.dp, start = 4.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Surface(
-                            color = c.accentDim,
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.size(28.dp)
+                        // ── Logo + Title ──────────────────────────────────────
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Start
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.AccountBalanceWallet,
-                                    contentDescription = "Wallet Logo",
-                                    tint = c.accent,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "AutoLedger",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                            letterSpacing = 0.5.sp,
-                            color = c.text,
-                            modifier = Modifier  // no tap gesture on title
-                        )
-                    }
-                },
-                expandedHeight = 48.dp,
-                actions = {
-                    // ── Notification bell ─────────────────────────────────────
-                    val unreadCount = notifications.count { !it.isRead }
-                    BadgedBox(
-                        badge = {
-                            if (unreadCount > 0) Badge(
-                                containerColor = Color(0xFFE53935),
-                                contentColor = Color.White
+                            Surface(
+                                color = c.accentDim,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.size(28.dp)
                             ) {
-                                Text(
-                                    if (unreadCount > 99) "99+" else unreadCount.toString(),
-                                    fontSize = 9.sp, fontWeight = FontWeight.Bold
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.AccountBalanceWallet,
+                                        contentDescription = "Wallet Logo",
+                                        tint = c.accent,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "AutoLedger",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp,
+                                letterSpacing = 0.5.sp,
+                                color = c.text
+                            )
+                        }
+                        // ── Notification bell ─────────────────────────────────
+                        val unreadCount = notifications.count { !it.isRead }
+                        BadgedBox(
+                            badge = {
+                                if (unreadCount > 0) Badge(
+                                    containerColor = Color(0xFFE53935),
+                                    contentColor = Color.White
+                                ) {
+                                    Text(
+                                        if (unreadCount > 99) "99+" else unreadCount.toString(),
+                                        fontSize = 9.sp, fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            },
+                            modifier = Modifier.padding(end = 4.dp)
+                        ) {
+                            IconButton(onClick = {
+                                showNotificationsPanel = true
+                                viewModel.markAllNotificationsRead()
+                            }) {
+                                Icon(
+                                    imageVector = if (unreadCount > 0) Icons.Default.Notifications else Icons.Default.NotificationsNone,
+                                    contentDescription = "Notifications",
+                                    tint = if (unreadCount > 0) c.accent else c.textSecondary
                                 )
                             }
-                        },
-                        modifier = Modifier.padding(end = 4.dp)
-                    ) {
-                        IconButton(onClick = {
-                            showNotificationsPanel = true
-                            viewModel.markAllNotificationsRead()
-                        }) {
-                            Icon(
-                                imageVector = if (unreadCount > 0) Icons.Default.Notifications else Icons.Default.NotificationsNone,
-                                contentDescription = "Notifications",
-                                tint = if (unreadCount > 0) c.accent else c.textSecondary
-                            )
                         }
-                    }
-                    // ── Hamburger / overflow menu ─────────────────────────────
-                    Box {
-                        IconButton(
-                            onClick = { showAppMenu = !showAppMenu },
-                            modifier = Modifier.testTag("app_overflow_button")
-                        ) {
-                            Icon(
-                                imageVector = if (showAppMenu) Icons.Default.Close else Icons.Default.Menu,
-                                contentDescription = "App menu",
-                                tint = c.accent
-                            )
-                        }
+                        // ── Hamburger / overflow menu ─────────────────────────
+                        Box {
+                            IconButton(
+                                onClick = { showAppMenu = !showAppMenu },
+                                modifier = Modifier.testTag("app_overflow_button")
+                            ) {
+                                Icon(
+                                    imageVector = if (showAppMenu) Icons.Default.Close else Icons.Default.Menu,
+                                    contentDescription = "App menu",
+                                    tint = c.accent
+                                )
+                            }
                         DropdownMenu(
                             expanded = showAppMenu,
                             onDismissRequest = { showAppMenu = false },
@@ -661,11 +671,9 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             )
                         }
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = darkBg
-                )
-            )
+                    } // end Row
+                } // end Column
+            } // end Surface
         },
         bottomBar = {
             Column {

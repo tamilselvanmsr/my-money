@@ -50,6 +50,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -59,13 +60,21 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -559,7 +568,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                 shape = RoundedCornerShape(16.dp),
                                 containerColor = c.surface,
                                 shadowElevation = 10.dp,
-                                modifier = Modifier.widthIn(min = 180.dp, max = 220.dp)
+                                modifier = Modifier.widthIn(max = 240.dp)
                             ) {
                                 // ── Pro Status entry ──────────────────────────
                                 val proLabel = when {
@@ -725,7 +734,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                         NavigationBarItem(
                             selected = currentTab == tab,
                             onClick = { currentTab = tab },
-                            label = { Text(tab.label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
+                            label = { Text(tab.label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             icon = {
                                 Icon(
                                     imageVector = tab.icon,
@@ -747,21 +756,26 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
         },
         floatingActionButton = {
             if (currentTab == AppTab.DASHBOARD) {
-                FloatingActionButton(
-                    onClick = { showAddDialog = true },
-                    containerColor = c.accent,
-                    contentColor = c.bg,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier
-                        .testTag("add_transaction_fab")
-                        .padding(bottom = 8.dp)
-                        .alpha(fabAlpha)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Add Transaction",
-                        modifier = Modifier.size(28.dp)
-                    )
+                BoxWithConstraints {
+                    val fabSize = if (maxWidth < 360.dp) 48.dp else 56.dp
+                    val iconSize = if (maxWidth < 360.dp) 22.dp else 28.dp
+                    FloatingActionButton(
+                        onClick = { showAddDialog = true },
+                        containerColor = c.accent,
+                        contentColor = c.bg,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .size(fabSize)
+                            .testTag("add_transaction_fab")
+                            .padding(bottom = 0.dp)
+                            .alpha(fabAlpha)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add Transaction",
+                            modifier = Modifier.size(iconSize)
+                        )
+                    }
                 }
             }
         }
@@ -1806,7 +1820,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 Icon(Icons.Default.Close, contentDescription = "Clear", tint = c.textSecondary)
                             }
                         },
-                        label = { Text("Search") },
+                        label = { Text("Search", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = c.text, unfocusedTextColor = c.text,
@@ -1827,7 +1841,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             FilterChip(
                                 selected = sel,
                                 onClick = { filterTypes = if (sel) filterTypes - t else filterTypes + t },
-                                label = { Text(t.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 12.sp) },
+                                label = { Text(t.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp)) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = color.copy(alpha = 0.18f), selectedLabelColor = color,
@@ -1861,7 +1875,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     InputChip(
                                         selected = true,
                                         onClick = { filterCategories = filterCategories - catKey },
-                                        label = { Text(resolved.displayName, fontSize = 11.sp) },
+                                        label = { Text(resolved.displayName, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                         leadingIcon = { Icon(resolved.icon, contentDescription = null, modifier = Modifier.size(13.dp), tint = resolved.color) },
                                         trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
                                         colors = InputChipDefaults.inputChipColors(selectedContainerColor = resolved.color.copy(0.15f), selectedLabelColor = resolved.color)
@@ -1937,7 +1951,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                             onClick = { filterAccounts = filterAccounts - acc },
                                             label = { Text(acc, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                             trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(12.dp)) },
-                                            modifier = Modifier.widthIn(max = 180.dp),
+                                            modifier = Modifier.widthIn(max = 180.dp).fillMaxWidth(0.92f),
                                             colors = InputChipDefaults.inputChipColors(selectedContainerColor = c.accent.copy(0.15f), selectedLabelColor = c.accent)
                                         )
                                     }
@@ -1963,7 +1977,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     shape = RoundedCornerShape(16.dp),
                                     containerColor = c.surfaceVariant,
                                     shadowElevation = 10.dp,
-                                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp).heightIn(max = 260.dp)
+                                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp).fillMaxWidth(0.92f).heightIn(max = 260.dp)
                                 ) {
                                     accountsInUse.forEach { name ->
                                         val selected = name in filterAccounts
@@ -2731,8 +2745,19 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
     val filteredOverviewTotal = filteredCategoryTotals.sumOf { it.total }
     val recalcCategoryTotals = if (analyticsCategoryFilter.isEmpty()) filteredCategoryTotals
     else filteredCategoryTotals.map { it.copy(percentage = if (filteredOverviewTotal > 0) it.total / filteredOverviewTotal else 0.0) }
-    // Budgeted-only filter: recalculate percentages relative to budgeted subset
-    val budgetedCatNamesForFilter = activeBudgetsForAnalytics.map { it.category.lowercase() }.toSet()
+    // Budgeted-only filter: recalculate percentages relative to budgeted subset.
+    // IMPORTANT: `monthlyBudgets` is backed by a Room Flow keyed on the selected month
+    // (flatMapLatest), so right after navigating to a different period it can briefly
+    // still hold the PREVIOUS month's budget rows until the new query emits. Without
+    // the monthYear guard below, that stale list would leak through and make category
+    // totals (income in particular, since income rarely has a matching budget every
+    // month) flash correct-then-empty — the "shown and immediately hidden" glitch.
+    // Filtering to rows whose monthYear actually matches the period being displayed
+    // makes the stale frame resolve to "no match" (safe/empty) instead of a wrong match.
+    val budgetedCatNamesForFilter = activeBudgetsForAnalytics
+        .filter { it.monthYear == rawMonthYear }
+        .map { it.category.lowercase() }
+        .toSet()
     val displayCategoryTotals = if (analyticsShowBudgetedOnly) {
         val subset = recalcCategoryTotals.filter { it.category.name.lowercase() in budgetedCatNamesForFilter }
         val subsetTotal = subset.sumOf { it.total }
@@ -2740,9 +2765,15 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
     } else recalcCategoryTotals
     val displayOverviewTotal = if (analyticsShowBudgetedOnly) displayCategoryTotals.sumOf { it.total }
         else if (analyticsCategoryFilter.isEmpty()) totalOverviewSum else filteredOverviewTotal
-    // Category-filtered transactions for flow & account analysis
+    // Category-filtered transactions for flow & account analysis.
+    // "Budgeted Only" has no UI toggle in Account Analysis (the category-filter icon is
+    // only shown for the Overview/Flow modes), so it must never silently apply there —
+    // otherwise Account Analysis inherits whatever budgeted-only state was last left on
+    // in Expense/Income Overview, wiping out income (and sometimes expense) entries for
+    // periods that don't happen to share the same budgeted categories.
     val categoryFilteredTxns = when {
-        analyticsShowBudgetedOnly -> filteredTransactions.filter { it.category.lowercase() in budgetedCatNamesForFilter }
+        analyticsShowBudgetedOnly && selectedMode != AnalyticsMode.ACCOUNT_ANALYSIS ->
+            filteredTransactions.filter { it.category.lowercase() in budgetedCatNamesForFilter }
         analyticsCategoryFilter.isEmpty() -> filteredTransactions
         else -> filteredTransactions.filter { it.category in analyticsCategoryFilter }
     }
@@ -2823,36 +2854,38 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                             shape = RoundedCornerShape(16.dp),
                             containerColor = c.surfaceVariant,
                             shadowElevation = 10.dp,
-                            modifier = Modifier.width(180.dp)
+                            modifier = Modifier.widthIn(min = 170.dp, max = 240.dp)
                         ) {
-                            DropdownMenuItem(
-                                text = { Text("PERIOD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary) },
-                                onClick = {},
-                                enabled = false,
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp)
+                            Text(
+                                "PERIOD",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = c.textSecondary,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)
                             )
+                            // Plain clickable Row instead of DropdownMenuItem: Material3's
+                            // DropdownMenuItem enforces a 48dp minimum row height regardless
+                            // of contentPadding, which was the cause of the large gaps between
+                            // period entries — a custom Row lets us use a compact, real height.
                             listOf("DAILY" to "Daily", "WEEKLY" to "Weekly", "MONTHLY" to "Monthly", "3M" to "3 Months", "6M" to "6 Months", "1Y" to "1 Year").forEach { (key, label) ->
                                 val isProPeriod = key == "3M" || key == "6M" || key == "1Y"
                                 val ctx = LocalContext.current
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(label, color = if (timeFilter == key) c.accent else if (isProPeriod && !isPaid) c.textTertiary else c.text, fontSize = 13.sp)
-                                            if (isProPeriod && !isPaid) Surface(color = Color(0xFFFFA000), shape = RoundedCornerShape(4.dp)) {
-                                                Text("PRO", fontSize = 7.sp, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp))
-                                            } else if (timeFilter == key) Icon(Icons.Default.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            if (isProPeriod && !isPaid) { showPeriodMenu = false; Toast.makeText(ctx, "Pro feature — unlock in AutoLedger Pro", Toast.LENGTH_SHORT).show() }
+                                            else { timeFilter = key; showPeriodMenu = false }
                                         }
-                                    },
-                                    onClick = {
-                                        if (isProPeriod && !isPaid) { showPeriodMenu = false; Toast.makeText(ctx, "Pro feature — unlock in AutoLedger Pro", Toast.LENGTH_SHORT).show() }
-                                        else { timeFilter = key; showPeriodMenu = false }
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-                                )
+                                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(label, color = if (timeFilter == key) c.accent else if (isProPeriod && !isPaid) c.textTertiary else c.text, fontSize = 13.sp)
+                                    if (isProPeriod && !isPaid) Surface(color = Color(0xFFFFA000), shape = RoundedCornerShape(4.dp)) {
+                                        Text("PRO", fontSize = 7.sp, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp))
+                                    } else if (timeFilter == key) Icon(Icons.Default.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
+                                }
                             }
                         }
                     }
@@ -2887,7 +2920,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                 shape = RoundedCornerShape(16.dp),
                                 containerColor = c.surfaceVariant,
                                 shadowElevation = 10.dp,
-                                modifier = Modifier.widthIn(min = 200.dp, max = 260.dp).heightIn(max = 350.dp)
+                                modifier = Modifier.widthIn(max = 240.dp).heightIn(max = 350.dp)
                             ) {
                                 DropdownMenuItem(
                                     text = {
@@ -3342,8 +3375,9 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
             onDismissRequest = { categoryDetailItem = null; expandedNotesTxId = null },
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
         ) {
+            EdgeToEdgeDialogWindowEffect(isDarkBackground = c.isDark)
             Surface(modifier = Modifier.fillMaxSize(), color = c.bg) {
-                Column(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
                     Surface(shadowElevation = 6.dp, color = c.bg) {
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
@@ -3399,7 +3433,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                         Text("of total spending", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
                                         Spacer(Modifier.height(4.dp))
                                         Text("₹${amtFormatter.format(cat.total)}", fontSize = 14.sp, color = cat.category.color, fontWeight = FontWeight.Bold)
-                                        Text("out of ${compactCurrency(filteredOverviewTotal)}", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
+                                        Text("out of ₹${amtFormatter.format(displayOverviewTotal)}", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
@@ -3454,7 +3488,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                 }
                             }
                         }
-                        Spacer(Modifier.height(32.dp))
+                        Spacer(Modifier.height(2.dp))
                     }
                 }
             }
@@ -4803,20 +4837,39 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         }
                     } // end Box
 
-                    Button(
-                        onClick = { showAddCategoryDialog = true },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.Transparent,
-                            contentColor = c.accent
-                        ),
-                        border = BorderStroke(0.5.dp, c.accent.copy(alpha = 0.55f)),
-                        elevation = ButtonDefaults.buttonElevation(0.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                        modifier = Modifier.height(36.dp).testTag("add_custom_category_button")
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Category", modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("Add Category", fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1)
+                    BoxWithConstraints {
+                        if (maxWidth >= 260.dp) {
+                            Button(
+                                onClick = { showAddCategoryDialog = true },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color.Transparent,
+                                    contentColor = c.accent
+                                ),
+                                border = BorderStroke(0.5.dp, c.accent.copy(alpha = 0.55f)),
+                                elevation = ButtonDefaults.buttonElevation(0.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                modifier = Modifier.height(36.dp).testTag("add_custom_category_button")
+                            ) {
+                                Surface(shape = CircleShape, color = c.accent.copy(alpha = 0.18f), modifier = Modifier.size(18.dp)) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Add, contentDescription = "Add Category", tint = c.accent, modifier = Modifier.size(12.dp))
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text("Add Category", fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        } else {
+                            FilledTonalIconButton(
+                                onClick = { showAddCategoryDialog = true },
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = c.accent.copy(alpha = 0.12f),
+                                    contentColor = c.accent
+                                ),
+                                modifier = Modifier.size(36.dp).testTag("add_custom_category_button")
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Add Category", modifier = Modifier.size(18.dp))
+                            }
+                        }
                     }
                 }
             }
@@ -4842,7 +4895,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         .testTag("categories_tab_expense"),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Expense Categories", color = if (isExp) c.accent else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Expense Categories", color = if (isExp) c.accent else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp))
                 }
                 Box(
                     modifier = Modifier
@@ -4855,7 +4908,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         .testTag("categories_tab_income"),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Income Categories", color = if (!isExp) c.accent else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Income Categories", color = if (!isExp) c.accent else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp))
                 }
             }
         }
@@ -5308,7 +5361,14 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     ) {
                         Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Copy budgets from last month", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        ShrinkingSingleLineText(
+                            text = "Copy last month's budgets",
+                            color = c.textSecondary,
+                            initialFontSize = 13f,
+                            minFontSize = 9f,
+                            modifier = Modifier,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
@@ -5336,173 +5396,173 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             selectedColor = cat.color
         }
 
-        AlertDialog(
-            onDismissRequest = { showEditCategoryDialog = null },
-            title = { Text("Edit Category", fontWeight = FontWeight.Bold, color = c.text, fontSize = 16.sp) },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.verticalScroll(rememberScrollState())
+        val editIconVec = suitableIconsList.firstOrNull { it.first == selectedIconName }?.second ?: Icons.Default.Category
+
+        ModernDialogFrame(
+            title = "Edit Category",
+            icon = editIconVec,
+            iconColor = selectedColor,
+            onDismiss = { showEditCategoryDialog = null },
+            actions = {
+                OutlinedButton(
+                    onClick = {
+                        if (cat.isCustom) viewModel.deleteCustomCategory(cat.customId)
+                        else viewModel.hideStandardCategory(cat.name, cat.type)
+                        if (checkCurrent != null) viewModel.deleteBudget(checkCurrent.id)
+                        showEditCategoryDialog = null
+                    },
+                    shape = RoundedCornerShape(percent = 50),
+                    border = BorderStroke(1.dp, c.expense.copy(alpha = 0.6f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = c.expense),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                    modifier = Modifier.weight(1f).testTag("delete_custom_category_button")
                 ) {
-                    OutlinedTextField(
-                        value = editCatName,
-                        onValueChange = { editCatName = it },
-                        label = { Text("Category Name") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = c.text,
-                            unfocusedTextColor = c.text,
-                            focusedBorderColor = c.accent,
-                            focusedLabelColor = c.accent,
-                            unfocusedBorderColor = c.textTertiary,
-                            unfocusedLabelColor = c.textSecondary
-                        ),
-                        modifier = Modifier.fillMaxWidth().testTag("edit_category_name_field")
-                    )
-
-                    Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(58.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
-                    ) {
-                        items(suitableIconsList) { (iconName, iconVec) ->
-                            val isSelected = selectedIconName == iconName
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable { selectedIconName = iconName }
-                                    .padding(vertical = 4.dp)
-                                    .testTag("edit_icon_$iconName")
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
-                                    border = BorderStroke(if (isSelected) 2.dp else 0.dp, if (isSelected) selectedColor else Color.Transparent),
-                                    modifier = Modifier.size(44.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = iconVec,
-                                            contentDescription = iconName,
-                                            tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Text(
-                                    text = iconLabel(iconName),
-                                    fontSize = 7.sp,
-                                    color = if (isSelected) selectedColor else c.textTertiary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-                    }
-
-                    Text("Select Color", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(categoryColorsList) { (hexStr, colorObj) ->
-                            val isSelected = selectedColorHex == hexStr
-                            Surface(
-                                shape = CircleShape,
-                                color = colorObj,
-                                border = BorderStroke(2.dp, if (isSelected) c.text else Color.Transparent),
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clickable { selectedColorHex = hexStr; selectedColor = colorObj }
-                                    .testTag("edit_color_$hexStr")
-                            ) {
-                                if (isSelected) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = "Selected",
-                                            tint = c.text,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Delete", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-            },
-            confirmButton = {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(bottom = 4.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            if (cat.isCustom) viewModel.deleteCustomCategory(cat.customId)
-                            else viewModel.hideStandardCategory(cat.name, cat.type)
-                            if (checkCurrent != null) viewModel.deleteBudget(checkCurrent.id)
-                            showEditCategoryDialog = null
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = c.expense, contentColor = c.text),
-                        modifier = Modifier.testTag("delete_custom_category_button")
-                    ) {
-                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Delete", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-
-                    Button(
-                        onClick = {
-                            val cleanName = editCatName.trim()
-                            val oldKey = cat.name
-                            if (cat.isCustom) {
-                                viewModel.updateCustomCategory(
-                                    id = cat.customId,
-                                    oldName = cat.name,
-                                    newName = cleanName,
-                                    iconName = selectedIconName,
-                                    colorHex = selectedColorHex,
-                                    type = cat.type
-                                )
-                            } else {
-                                viewModel.customizeStandardCategory(
-                                    oldName = cat.name,
-                                    newName = cleanName,
-                                    iconName = selectedIconName,
-                                    colorHex = selectedColorHex,
-                                    type = cat.type
-                                )
-                            }
-                            // Keep renamed category at its current position in the order list
-                            if (cleanName != oldKey && categoryOrderKeys.contains(oldKey)) {
-                                categoryOrderKeys = categoryOrderKeys.map { if (it == oldKey) cleanName else it }
-                                viewModel.saveCategoryOrder(activeCategoryTypeTab, categoryOrderKeys)
-                            }
-                            showEditCategoryDialog = null
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
-                        modifier = Modifier.testTag("save_category_changes_button")
-                    ) {
-                        Text("Save Changes", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(
+                OutlinedButton(
                     onClick = { showEditCategoryDialog = null },
-                    modifier = Modifier.testTag("cancel_category_changes_button")
+                    shape = RoundedCornerShape(percent = 50),
+                    border = BorderStroke(1.dp, c.text.copy(alpha = 0.25f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = c.textSecondary),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                    modifier = Modifier.weight(1f).testTag("cancel_category_changes_button")
                 ) {
-                    Text("Cancel", color = c.text)
+                    Text("Cancel", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-            },
-            containerColor = c.surface
-        )
+                Button(
+                    onClick = {
+                        val cleanName = editCatName.trim()
+                        val oldKey = cat.name
+                        if (cat.isCustom) {
+                            viewModel.updateCustomCategory(
+                                id = cat.customId,
+                                oldName = cat.name,
+                                newName = cleanName,
+                                iconName = selectedIconName,
+                                colorHex = selectedColorHex,
+                                type = cat.type
+                            )
+                        } else {
+                            viewModel.customizeStandardCategory(
+                                oldName = cat.name,
+                                newName = cleanName,
+                                iconName = selectedIconName,
+                                colorHex = selectedColorHex,
+                                type = cat.type
+                            )
+                        }
+                        // Keep renamed category at its current position in the order list
+                        if (cleanName != oldKey && categoryOrderKeys.contains(oldKey)) {
+                            categoryOrderKeys = categoryOrderKeys.map { if (it == oldKey) cleanName else it }
+                            viewModel.saveCategoryOrder(activeCategoryTypeTab, categoryOrderKeys)
+                        }
+                        showEditCategoryDialog = null
+                    },
+                    shape = RoundedCornerShape(percent = 50),
+                    colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                    modifier = Modifier.weight(1f).testTag("save_category_changes_button")
+                ) {
+                    Text("Save", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        ) {
+            OutlinedTextField(
+                value = editCatName,
+                onValueChange = { editCatName = it },
+                label = { Text("Category Name", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = c.text,
+                    unfocusedTextColor = c.text,
+                    focusedBorderColor = c.accent,
+                    focusedLabelColor = c.accent,
+                    unfocusedBorderColor = c.textTertiary,
+                    unfocusedLabelColor = c.textSecondary
+                ),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().testTag("edit_category_name_field")
+            )
+
+            Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(58.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
+            ) {
+                items(suitableIconsList) { (iconName, iconVec) ->
+                    val isSelected = selectedIconName == iconName
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { selectedIconName = iconName }
+                            .padding(vertical = 4.dp)
+                            .testTag("edit_icon_$iconName")
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
+                            border = BorderStroke(if (isSelected) 2.dp else 0.dp, if (isSelected) selectedColor else Color.Transparent),
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = iconVec,
+                                    contentDescription = iconName,
+                                    tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = iconLabel(iconName),
+                            fontSize = 7.sp,
+                            color = if (isSelected) selectedColor else c.textTertiary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            Text("Select Color", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(categoryColorsList) { (hexStr, colorObj) ->
+                    val isSelected = selectedColorHex == hexStr
+                    Surface(
+                        shape = CircleShape,
+                        color = colorObj,
+                        border = BorderStroke(2.dp, if (isSelected) c.text else Color.Transparent),
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clickable { selectedColorHex = hexStr; selectedColor = colorObj }
+                            .testTag("edit_color_$hexStr")
+                    ) {
+                        if (isSelected) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = c.text,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     showBudgetAmountDialog?.let { cat ->
@@ -5539,7 +5599,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                 OutlinedTextField(
                     value = budgetValStr,
                     onValueChange = { budgetValStr = it },
-                    label = { Text("₹ Amount") },
+                    label = { Text("₹ Amount", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = c.text,
@@ -5629,8 +5689,9 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             onDismissRequest = { showBudgetCategoryDetailFor = null },
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
         ) {
+            EdgeToEdgeDialogWindowEffect(isDarkBackground = c.isDark)
             Surface(modifier = Modifier.fillMaxSize(), color = c.bg) {
-                Column(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
                     // ── Top bar ──────────────────────────────────────────────
                     Surface(shadowElevation = 6.dp, color = c.bg) {
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -5659,24 +5720,31 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 Text(cat.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Spacer(Modifier.height(4.dp))
                                 if (limitDetail > 0) {
-                                    ShrinkingSingleLineText(
-                                        text = "₹${amtFmt.format(catSpendDetail)} of ₹${amtFmt.format(limitDetail)}",
-                                        color = progressColor,
-                                        initialFontSize = 12f,
-                                        minFontSize = 8f,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        fontWeight = FontWeight.ExtraBold
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    val overBudget = remaining < 0
-                                    val badgeColor = if (overBudget) c.expense else c.income
-                                    Surface(color = badgeColor.copy(alpha = 0.12f), shape = RoundedCornerShape(5.dp), modifier = Modifier.wrapContentWidth()) {
-                                        Text(
-                                            if (overBudget) "↑ ₹${amtFmt.format(-remaining)} over" else "↓ ₹${amtFmt.format(remaining)} left",
-                                            fontSize = 10.sp, color = badgeColor, fontWeight = FontWeight.Bold,
-                                            maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        ShrinkingSingleLineText(
+                                            text = "₹${amtFmt.format(catSpendDetail)} of ₹${amtFmt.format(limitDetail)}",
+                                            color = progressColor,
+                                            initialFontSize = 12f,
+                                            minFontSize = 8f,
+                                            modifier = Modifier.weight(1f, fill = false),
+                                            fontWeight = FontWeight.ExtraBold
                                         )
+                                        val overBudget = remaining < 0
+                                        val badgeColor = if (overBudget) c.expense else c.income
+                                        Surface(color = badgeColor.copy(alpha = 0.12f), shape = RoundedCornerShape(5.dp)) {
+                                            ShrinkingSingleLineText(
+                                                text = if (overBudget) "↑ ₹${amtFmt.format(-remaining)} over" else "↓ ₹${amtFmt.format(remaining)} left",
+                                                color = badgeColor,
+                                                initialFontSize = 10f,
+                                                minFontSize = 7f,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 } else {
                                     Text("₹${amtFmt.format(catSpendDetail)} spent", fontSize = 14.sp, color = cat.color, fontWeight = FontWeight.SemiBold)
@@ -5792,7 +5860,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             }
                         }
                         }
-                        Spacer(Modifier.height(32.dp))
+                        Spacer(Modifier.height(2.dp))
                     }
                 }
             }
@@ -5806,171 +5874,24 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         var selectedColor by remember { mutableStateOf(c.accent) }
         var selectedType by remember { mutableStateOf("EXPENSE") }
         var initialBudgetAmt by remember { mutableStateOf("") }
+        val addCatIconVec = suitableIconsList.firstOrNull { it.first == selectedIconName }?.second ?: Icons.Default.Category
 
-        AlertDialog(
-            onDismissRequest = { showAddCategoryDialog = false },
-            title = {
-                Text(
-                    "Add New Category",
-                    fontWeight = FontWeight.Bold,
-                    color = c.text,
-                    fontSize = 18.sp
-                )
-            },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.verticalScroll(rememberScrollState())
+        ModernDialogFrame(
+            title = "Add New Category",
+            icon = addCatIconVec,
+            iconColor = selectedColor,
+            onDismiss = { showAddCategoryDialog = false },
+            actions = {
+                OutlinedButton(
+                    onClick = { showAddCategoryDialog = false },
+                    shape = RoundedCornerShape(percent = 50),
+                    border = BorderStroke(1.dp, c.text.copy(alpha = 0.2f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                    modifier = Modifier.weight(1f).testTag("add_category_cancel_button")
                 ) {
-                    OutlinedTextField(
-                        value = newCatName,
-                        onValueChange = { newCatName = it },
-                        label = { Text("Category Name") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = c.text,
-                            unfocusedTextColor = c.text,
-                            focusedBorderColor = c.accent,
-                            focusedLabelColor = c.accent,
-                            unfocusedBorderColor = c.textTertiary,
-                            unfocusedLabelColor = c.textSecondary
-                        ),
-                        modifier = Modifier.fillMaxWidth().testTag("add_category_name_field")
-                    )
-
-                    Text("Category Type", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(c.text.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
-                            .padding(4.dp)
-                    ) {
-                        val isExp = selectedType == "EXPENSE"
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (isExp) c.expense else Color.Transparent)
-                                .clickable { selectedType = "EXPENSE" }
-                                .padding(8.dp)
-                                .testTag("type_selector_expense"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Expense", color = if (isExp) c.text else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (!isExp) c.income else Color.Transparent)
-                                .clickable { selectedType = "INCOME" }
-                                .padding(8.dp)
-                                .testTag("type_selector_income"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Income", color = if (!isExp) c.text else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
-                    }
-
-                    if (selectedType == "EXPENSE") {
-                        OutlinedTextField(
-                            value = initialBudgetAmt,
-                            onValueChange = { initialBudgetAmt = it },
-                            label = { Text("Monthly Budget Limit (₹, Optional)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = c.text,
-                                unfocusedTextColor = c.text,
-                                focusedBorderColor = c.accent,
-                                focusedLabelColor = c.accent,
-                                unfocusedBorderColor = c.textTertiary,
-                                unfocusedLabelColor = c.textSecondary
-                            ),
-                            modifier = Modifier.fillMaxWidth().testTag("add_category_budget_field")
-                        )
-                    }
-
-                    Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(58.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
-                    ) {
-                        items(suitableIconsList) { (iconName, iconVec) ->
-                            val isSelected = selectedIconName == iconName
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable { selectedIconName = iconName }
-                                    .padding(vertical = 4.dp)
-                                    .testTag("add_icon_$iconName")
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
-                                    border = BorderStroke(if (isSelected) 2.dp else 0.dp, if (isSelected) selectedColor else Color.Transparent),
-                                    modifier = Modifier.size(44.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = iconVec,
-                                            contentDescription = iconName,
-                                            tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Text(
-                                    text = iconLabel(iconName),
-                                    fontSize = 7.sp,
-                                    color = if (isSelected) selectedColor else c.textTertiary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-                    }
-
-                    Text("Select Color", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(categoryColorsList) { (hexStr, colorObj) ->
-                            val isSelected = selectedColorHex == hexStr
-                            Surface(
-                                shape = CircleShape,
-                                color = colorObj,
-                                border = BorderStroke(2.dp, if (isSelected) c.text else Color.Transparent),
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clickable {
-                                        selectedColorHex = hexStr
-                                        selectedColor = colorObj
-                                    }
-                                    .testTag("add_color_$hexStr")
-                            ) {
-                                if (isSelected) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = "Selected",
-                                            tint = c.text,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    Text("Cancel", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-            },
-            confirmButton = {
                 Button(
                     onClick = {
                         val cleanName = newCatName.trim()
@@ -5983,22 +5904,164 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         }
                         showAddCategoryDialog = false
                     },
+                    shape = RoundedCornerShape(percent = 50),
                     colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
-                    modifier = Modifier.testTag("add_category_confirm_button")
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                    modifier = Modifier.weight(1f).testTag("add_category_confirm_button")
                 ) {
-                    Text("Add Category", fontWeight = FontWeight.Bold)
+                    Text("Add Category", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showAddCategoryDialog = false },
-                    modifier = Modifier.testTag("add_category_cancel_button")
+            }
+        ) {
+            OutlinedTextField(
+                value = newCatName,
+                onValueChange = { newCatName = it },
+                label = { Text("Category Name", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = c.text,
+                    unfocusedTextColor = c.text,
+                    focusedBorderColor = c.accent,
+                    focusedLabelColor = c.accent,
+                    unfocusedBorderColor = c.textTertiary,
+                    unfocusedLabelColor = c.textSecondary
+                ),
+                modifier = Modifier.fillMaxWidth().testTag("add_category_name_field")
+            )
+
+            Text("Category Type", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(c.text.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                    .padding(4.dp)
+            ) {
+                val isExp = selectedType == "EXPENSE"
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isExp) c.expense else Color.Transparent)
+                        .clickable { selectedType = "EXPENSE" }
+                        .padding(8.dp)
+                        .testTag("type_selector_expense"),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text("Cancel", color = c.text)
+                    Text("Expense", color = if (isExp) c.text else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-            },
-            containerColor = c.surface
-        )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (!isExp) c.income else Color.Transparent)
+                        .clickable { selectedType = "INCOME" }
+                        .padding(8.dp)
+                        .testTag("type_selector_income"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Income", color = if (!isExp) c.text else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+
+            if (selectedType == "EXPENSE") {
+                OutlinedTextField(
+                    value = initialBudgetAmt,
+                    onValueChange = { initialBudgetAmt = it },
+                    label = { Text("Monthly Budget Limit (₹, Optional)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = c.text,
+                        unfocusedTextColor = c.text,
+                        focusedBorderColor = c.accent,
+                        focusedLabelColor = c.accent,
+                        unfocusedBorderColor = c.textTertiary,
+                        unfocusedLabelColor = c.textSecondary
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("add_category_budget_field")
+                )
+            }
+
+            Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(58.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
+            ) {
+                items(suitableIconsList) { (iconName, iconVec) ->
+                    val isSelected = selectedIconName == iconName
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { selectedIconName = iconName }
+                            .padding(vertical = 4.dp)
+                            .testTag("add_icon_$iconName")
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
+                            border = BorderStroke(if (isSelected) 2.dp else 0.dp, if (isSelected) selectedColor else Color.Transparent),
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = iconVec,
+                                    contentDescription = iconName,
+                                    tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = iconLabel(iconName),
+                            fontSize = 7.sp,
+                            color = if (isSelected) selectedColor else c.textTertiary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            Text("Select Color", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(categoryColorsList) { (hexStr, colorObj) ->
+                    val isSelected = selectedColorHex == hexStr
+                    Surface(
+                        shape = CircleShape,
+                        color = colorObj,
+                        border = BorderStroke(2.dp, if (isSelected) c.text else Color.Transparent),
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clickable {
+                                selectedColorHex = hexStr
+                                selectedColor = colorObj
+                            }
+                            .testTag("add_color_$hexStr")
+                    ) {
+                        if (isSelected) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = c.text,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -6215,14 +6278,21 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     color = c.textSecondary
                 )
                 CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-                TextButton(
+                OutlinedButton(
                     onClick = { showAddAccountDialog = true },
-                    colors = ButtonDefaults.textButtonColors(contentColor = c.accent),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    shape = RoundedCornerShape(percent = 50),
+                    border = if (c.isBorderless) null else BorderStroke(0.5.dp, c.accent.copy(alpha = 0.55f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = c.accent),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    modifier = Modifier.height(36.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Icon", modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Add Account", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Surface(shape = CircleShape, color = c.accent.copy(alpha = 0.18f), modifier = Modifier.size(18.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Add, contentDescription = "Add Icon", tint = c.accent, modifier = Modifier.size(12.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text("Add Account", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 }
             }
@@ -6392,7 +6462,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     OutlinedTextField(
                         value = trAmount,
                         onValueChange = { trAmount = it },
-                        label = { Text("Transfer Amount (₹)") },
+                        label = { Text("Transfer Amount (₹)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
@@ -6513,7 +6583,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     OutlinedTextField(
                         value = nameInput,
                         onValueChange = { nameInput = it },
-                        label = { Text("Account Name (e.g. SBI Bank)") },
+                        label = { Text("Account Name (e.g. SBI Bank)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -6521,7 +6591,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     OutlinedTextField(
                         value = baseBalanceInput,
                         onValueChange = { baseBalanceInput = it },
-                        label = { Text("Initial Ledger Balance (₹)") },
+                        label = { Text("Initial Ledger Balance (₹)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
                         modifier = Modifier.fillMaxWidth()
@@ -6536,7 +6606,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     OutlinedTextField(
                         value = last4Input,
                         onValueChange = { last4Input = it },
-                        label = { Text("Last 4 digits (optional ID)") },
+                        label = { Text("Last 4 digits (optional ID)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
                         modifier = Modifier.fillMaxWidth()
@@ -6557,7 +6627,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                         .padding(6.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(t.replace("_", " "), fontSize = 9.sp, color = if (sel) c.accent else c.text, fontWeight = FontWeight.Bold)
+                                    Text(t.replace("_", " "), fontSize = 9.sp, color = if (sel) c.accent else c.text, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         }
@@ -6626,7 +6696,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     OutlinedTextField(
                         value = editName,
                         onValueChange = { editName = it },
-                        label = { Text("Account Name") },
+                        label = { Text("Account Name", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -6634,7 +6704,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     OutlinedTextField(
                         value = editBalanceInput,
                         onValueChange = { editBalanceInput = it },
-                        label = { Text("Set New Balance (₹)") },
+                        label = { Text("Set New Balance (₹)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         placeholder = { Text("e.g. 25000", color = c.text.copy(0.4f)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
@@ -6645,7 +6715,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         OutlinedTextField(
                             value = editCreditLimit,
                             onValueChange = { editCreditLimit = it },
-                            label = { Text("Credit Limit (₹)") },
+                            label = { Text("Credit Limit (₹)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
                             modifier = Modifier.fillMaxWidth()
@@ -6691,7 +6761,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                         .padding(6.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(t.replace("_", " "), fontSize = 9.sp, color = if (sel) c.accent else c.text, fontWeight = FontWeight.Bold)
+                                    Text(t.replace("_", " "), fontSize = 9.sp, color = if (sel) c.accent else c.text, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         }
@@ -6699,69 +6769,67 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             },
             actions = {
                 Column {
-                    // Cancel + Delete (destructive) — Cancel is compact so Delete Account doesn't wrap
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { selectedAccountForEdit = null },
-                            border = BorderStroke(1.dp, c.divider),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text)
-                        ) {
-                            Text("Cancel")
-                        }
+                    // Save Changes — primary, full width
                         Button(
                             onClick = {
-                                viewModel.deleteAccount(acc.id)
+                                val targetBal = editBalanceInput.toDoubleOrNull() ?: computedBal
+                                val oldName = acc.name
+                                if (Math.abs(targetBal - computedBal) >= 0.01) {
+                                    viewModel.adjustAccountBalance(oldName, computedBal, targetBal)
+                                }
+                                val updatedAcc = acc.copy(
+                                    name = editName,
+                                    type = editType,
+                                    lastFour = editName.filter { it.isDigit() }.takeLast(4).ifBlank { null },
+                                    creditLimit = editCreditLimit.toDoubleOrNull() ?: acc.creditLimit,
+                                    showCreditLimitBalance = editShowCreditLimitBalance
+                                )
+                                val metadataChanged = updatedAcc.name != acc.name ||
+                                    updatedAcc.type != acc.type ||
+                                    updatedAcc.lastFour != acc.lastFour ||
+                                    updatedAcc.creditLimit != acc.creditLimit ||
+                                    updatedAcc.showCreditLimitBalance != acc.showCreditLimitBalance
+                                if (metadataChanged) viewModel.updateAccount(updatedAcc)
+                                if (oldName != editName) viewModel.renameAccountTransactions(oldName, editName)
                                 selectedAccountForEdit = null
                             },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = c.expense, contentColor = Color.White)
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
                         ) {
-                            Text("Delete Account", fontWeight = FontWeight.Bold, maxLines = 1)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Save Changes", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    // Row 2: Save Changes (primary action, full width)
-                    Button(
-                        onClick = {
-                            val targetBal = editBalanceInput.toDoubleOrNull() ?: computedBal
-                            val oldName = acc.name
-
-                            // Create Adjust transaction if balance changed
-                            if (Math.abs(targetBal - computedBal) >= 0.01) {
-                                viewModel.adjustAccountBalance(oldName, computedBal, targetBal)
+                        Spacer(Modifier.height(8.dp))
+                        // Delete + Cancel in one row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.deleteAccount(acc.id)
+                                    selectedAccountForEdit = null
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, c.expense.copy(0.5f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = c.expense)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Delete", fontWeight = FontWeight.SemiBold, maxLines = 1)
                             }
-
-                            // Update account metadata only when something actually changed to avoid
-                            // spurious "wallet configuration updated" toasts/notifications.
-                            val updatedAcc = acc.copy(
-                                name = editName,
-                                type = editType,
-                                lastFour = editName.filter { it.isDigit() }.takeLast(4).ifBlank { null },
-                                creditLimit = editCreditLimit.toDoubleOrNull() ?: acc.creditLimit,
-                                showCreditLimitBalance = editShowCreditLimitBalance
-                            )
-                            val metadataChanged = updatedAcc.name != acc.name ||
-                                updatedAcc.type != acc.type ||
-                                updatedAcc.lastFour != acc.lastFour ||
-                                updatedAcc.creditLimit != acc.creditLimit ||
-                                updatedAcc.showCreditLimitBalance != acc.showCreditLimitBalance
-                            if (metadataChanged) {
-                                viewModel.updateAccount(updatedAcc)
+                            OutlinedButton(
+                                onClick = { selectedAccountForEdit = null },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, c.divider),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = c.textSecondary)
+                            ) {
+                                Text("Cancel", fontWeight = FontWeight.SemiBold)
                             }
-
-                            if (oldName != editName) {
-                                viewModel.renameAccountTransactions(oldName, editName)
-                            }
-                            selectedAccountForEdit = null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
-                    ) {
-                        Text("Save Changes", fontWeight = FontWeight.Bold)
-                    }
+                        }
                 }
             }
         )
@@ -6921,12 +6989,13 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                             color = if (hasSmsPermissions) c.income.copy(alpha = 0.15f) else c.expense.copy(alpha = 0.15f),
                             shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text(
+                            ShrinkingSingleLineText(
                                 text = if (hasSmsPermissions) "GRANTED" else "REQUIRED",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
                                 color = if (hasSmsPermissions) c.income else c.expense,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                initialFontSize = 10f,
+                                minFontSize = 7f,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -6954,7 +7023,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                                     minFontSize = 7f,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 8.dp),
+                                        .padding(horizontal = 6.dp, vertical = 8.dp),
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                                     textAlign = TextAlign.Center
                                 )
@@ -7120,40 +7189,44 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                         )
                     }
                     Spacer(modifier = Modifier.height(4.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(0.dp)
-                    ) {
-                        forcePatternOptions.forEach { pattern ->
-                            FilterChip(
-                                selected = selectedForcePatterns.contains(pattern),
-                                onClick = {
-                                    selectedForcePatterns = if (selectedForcePatterns.contains(pattern)) {
-                                        selectedForcePatterns - pattern
-                                    } else {
-                                        selectedForcePatterns + pattern
+                    val chunkSize = 3
+                    forcePatternOptions.chunked(chunkSize).forEach { rowItems ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            rowItems.forEach { pattern ->
+                                val selected = selectedForcePatterns.contains(pattern)
+                                Surface(
+                                    onClick = {
+                                        selectedForcePatterns = if (selected)
+                                            selectedForcePatterns - pattern
+                                        else
+                                            selectedForcePatterns + pattern
+                                    },
+                                    color = if (selected) c.accent.copy(alpha = 0.18f) else c.divider,
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(if (selected) 1.dp else 0.dp, if (selected) c.accent.copy(alpha = 0.45f) else Color.Transparent),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 5.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (selected) Icon(Icons.Default.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(10.dp))
+                                        Spacer(Modifier.width(if (selected) 3.dp else 0.dp))
+                                        Text(pattern, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                                            color = if (selected) c.accent else c.text,
+                                            softWrap = false, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            textAlign = TextAlign.Center)
                                     }
-                                },
-                                label = { Text(pattern) },
-                                leadingIcon = if (selectedForcePatterns.contains(pattern)) {
-                                    { Icon(Icons.Default.Check, contentDescription = pattern, modifier = Modifier.size(16.dp)) }
-                                } else {
-                                    null
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = c.accent.copy(alpha = 0.18f),
-                                    selectedLabelColor = c.accent,
-                                    selectedLeadingIconColor = c.accent,
-                                    containerColor = c.divider,
-                                    labelColor = c.text
-                                ),
-                                border = FilterChipDefaults.filterChipBorder(
-                                    enabled = true,
-                                    selected = selectedForcePatterns.contains(pattern),
-                                    borderColor = c.divider,
-                                    selectedBorderColor = c.accent.copy(alpha = 0.45f)
-                                )
-                            )
+                                }
+                            }
+                            // Pad incomplete last row so chips don't stretch
+                            repeat(chunkSize - rowItems.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
                         }
                     }
 
@@ -7167,7 +7240,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                         OutlinedTextField(
                             value = customPatternInput,
                             onValueChange = { customPatternInput = it },
-                            label = { Text("Add Custom Pattern") },
+                            label = { Text("Add Custom Pattern", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             placeholder = { Text("balance | !(salary)") },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
@@ -7198,7 +7271,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                                 InputChip(
                                     selected = true,
                                     onClick = { customPatterns = customPatterns.filterNot { it == pattern } },
-                                    label = { Text(pattern) },
+                                    label = { Text(pattern, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                     trailingIcon = {
                                         Icon(Icons.Default.Close, contentDescription = "Remove pattern", modifier = Modifier.size(16.dp))
                                     },
@@ -7264,7 +7337,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                     OutlinedTextField(
                         value = manualSmsSender,
                         onValueChange = { manualSmsSender = it },
-                        label = { Text("Sender ID") },
+                        label = { Text("Sender ID", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                         ),
@@ -7276,7 +7349,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                     OutlinedTextField(
                         value = manualSmsBody,
                         onValueChange = { manualSmsBody = it },
-                        label = { Text("Real SMS Body") },
+                        label = { Text("Real SMS Body", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
                         ),
@@ -7291,12 +7364,21 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                         enabled = manualSmsBody.isNotBlank() && !isSmsParsing,
                         colors = ButtonDefaults.buttonColors(containerColor = c.income, contentColor = c.bg),
                         shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp)
                             .testTag("analyze_pasted_sms_button")
                     ) {
-                        Text(if (isSmsParsing) "Analyzing…" else "Analyze & Import Pasted SMS", fontWeight = FontWeight.Bold)
+                        ShrinkingSingleLineText(
+                            text = if (isSmsParsing) "Analyzing…" else "Analyze & Import Pasted SMS",
+                            color = c.bg,
+                            initialFontSize = 15f,
+                            minFontSize = 9f,
+                            modifier = Modifier,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }
@@ -7330,7 +7412,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                     OutlinedTextField(
                         value = merchantPatternInput,
                         onValueChange = { merchantPatternInput = it },
-                        label = { Text("Merchant Pattern (e.g. *paytm*)") },
+                        label = { Text("Merchant Pattern (e.g. *paytm*)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = c.text, unfocusedTextColor = c.text,
@@ -7349,7 +7431,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                             value = selectedResolved?.displayName ?: "",
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Target Category") },
+                            label = { Text("Target Category", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             leadingIcon = selectedResolved?.let { cat ->
                                 { Icon(cat.icon, contentDescription = null, tint = cat.color, modifier = Modifier.size(18.dp)) }
                             },
@@ -7637,7 +7719,13 @@ private fun ShrinkingSingleLineText(
     fontWeight: FontWeight? = null,
     textAlign: TextAlign = TextAlign.Start
 ) {
-    var fontSize by remember(text) { mutableStateOf(initialFontSize.sp) }
+    // Keyed on BOTH text and initialFontSize — keying on `text` alone meant that once the
+    // dialog shrank (e.g. screen got smaller) and the font size was reduced to fit, the
+    // remembered value never recovered when the screen returned to its normal size (since
+    // `text`, e.g. the date/time label, hadn't changed). Including `initialFontSize` — which
+    // is recomputed from the available height every time the container resizes — forces the
+    // state to reset to the correct starting size whenever the layout's proportions change.
+    var fontSize by remember(text, initialFontSize) { mutableStateOf(initialFontSize.sp) }
     Text(
         text = text,
         modifier = modifier,
@@ -7654,6 +7742,27 @@ private fun ShrinkingSingleLineText(
             }
         }
     )
+}
+
+/** Forces a full-screen [Dialog]'s own Android Window to draw edge-to-edge (so
+ * WindowInsets.safeDrawing / safeDrawingPadding are dispatched correctly) AND matches its
+ * status/navigation bar icon contrast to the dialog's own background — instead of silently
+ * inheriting whatever appearance the host Activity's window last set. Without this, a dialog
+ * whose content extends behind the status bar (as all our full-screen dialogs do) can leave
+ * status bar icons unreadable (e.g. light icons over a light dialog background) whenever the
+ * dialog's theme differs from what the icons were last set up for.
+ */
+@Composable
+private fun EdgeToEdgeDialogWindowEffect(isDarkBackground: Boolean) {
+    val dialogView = LocalView.current
+    SideEffect {
+        (dialogView.parent as? DialogWindowProvider)?.window?.let { window ->
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            val insetsController = WindowCompat.getInsetsController(window, dialogView)
+            insetsController.isAppearanceLightStatusBars = !isDarkBackground
+            insetsController.isAppearanceLightNavigationBars = !isDarkBackground
+        }
+    }
 }
 
 /** Full-screen dialog to log a new cash flow (expense or income).
@@ -7685,6 +7794,15 @@ fun AddTransactionDialog(
     val allCategories = CategoryResolver.getAll(customCats)
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
     val selectablesWallets = accounts.map { it.name }
+
+    // Known payee names (from full transaction history) — used to flag a brand-new
+    // Payee/Merchant entry with a "NEW" badge, the same visual cue used for freshly
+    // imported SMS records elsewhere in the app.
+    val txsForNewPayeeCheck by viewModel.allTransactions.collectAsStateWithLifecycle()
+    val knownPayeeNames = remember(txsForNewPayeeCheck) {
+        txsForNewPayeeCheck.map { it.title.trim().lowercase() }.toSet()
+    }
+    val isNewPayee = title.isNotBlank() && title.trim().lowercase() !in knownPayeeNames
 
     LaunchedEffect(accounts) {
         if (accounts.isNotEmpty() && accountSelection.isBlank()) {
@@ -7736,247 +7854,431 @@ fun AddTransactionDialog(
 
     val amountColor = if (transactionType == "INCOME") c.income else c.expense
 
+    val calcRowDef = remember {
+        listOf(
+            listOf("+" to "op", "7" to "num", "8" to "num", "9" to "num"),
+            listOf("-" to "op", "4" to "num", "5" to "num", "6" to "num"),
+            listOf("×" to "op", "1" to "num", "2" to "num", "3" to "num"),
+            listOf("÷" to "op", "00" to "num", "0" to "num", "." to "num")
+        )
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
+        // Force the dialog's own Window to draw edge-to-edge (so WindowInsets.safeDrawing /
+        // safeDrawingPadding is dispatched correctly) and keep status/nav bar icons legible
+        // against this dialog's own background.
+        EdgeToEdgeDialogWindowEffect(isDarkBackground = c.isDark)
         Surface(modifier = Modifier.fillMaxSize(), color = c.bg) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            // Deliberately excludes the IME (soft keyboard) from the insets used to size
+            // this Column. Padding for status/navigation bars + display cutout is still
+            // applied — and the layout below still shrinks normally on real screen-size
+            // changes (rotation, split-screen, small devices) since that only depends on
+            // the Window's physical bounds — but opening the keyboard to type in Payee/
+            // Notes no longer shrinks the WHOLE proportional layout (calculator included)
+            // to make room; the keyboard simply overlays the bottom of the dialog instead.
+            Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.exclude(WindowInsets.ime))) {
 
-                // ── Top bar ───────────────────────────────────────────────────
-                Surface(shadowElevation = 4.dp, color = c.surface) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(20.dp))
-                        }
-                        Text("Log Cashflow", fontWeight = FontWeight.Bold, fontSize = 19.sp, color = c.text, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-                        TextButton(onClick = {
-                            if (resolvedAmount > 0.0) {
-                                val cleanTitle = if (title.isBlank()) "Merchant Log" else title
-                                viewModel.saveLastUsedAccount(accountSelection)
-                                viewModel.saveLastUsedCategory(transactionType, categorySelection)
-                                onConfirm(cleanTitle, resolvedAmount, categorySelection, transactionType, makeNoteWithAccount(notesStr, accountSelection), selectedTimestamp)
-                            }
-                        }) { Text("Save", fontWeight = FontWeight.Bold, color = c.accent, fontSize = 15.sp) }
-                    }
-                }
+                // ── Body: every section (including the top controls row and the
+                // calculator) gets a proportional weight of the available height. This
+                // guarantees the WHOLE dialog always fits exactly — no scrolling, no
+                // overflow, nothing ever hidden or clipped. The Close/Title/Save row used
+                // to be a FIXED-height Surface living OUTSIDE this weight system — if the
+                // dialog's total measured height was ever wrong (a known Compose Dialog
+                // insets bug — see repo memory), that fixed row would consume its normal
+                // height regardless, silently pushing the proportional error entirely onto
+                // the content below it (worst-case: the calculator). Folding it into the
+                // SAME weighted Column means every section — including the top row —
+                // shares in any shrink/error equally, instead of one part of the screen
+                // absorbing 100% of the discrepancy.
+                // Material's OutlinedTextField / OutlinedButton both enforce their own
+                // minimum touch-target height, which silently broke this math in earlier
+                // attempts — replaced below with plain Surface/BasicTextField equivalents
+                // that have no such floor and can shrink to whatever weight gives them.
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    val totalH = maxHeight
 
-                // ── All fields (no scroll — everything fits) ──────────────────
-                Column(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // Type: EXPENSE / INCOME
-                    Row(modifier = Modifier.fillMaxWidth().background(c.text.copy(0.05f), RoundedCornerShape(6.dp)).padding(3.dp)) {
-                        listOf("EXPENSE" to "Expense", "INCOME" to "Income").forEach { (type, label) ->
-                            val sel = transactionType == type
-                            Box(modifier = Modifier.weight(1f).clip(RoundedCornerShape(5.dp)).background(if (sel) (if (type == "EXPENSE") c.expense else c.income) else Color.Transparent).clickable { transactionType = type; categorySelection = if (type == "EXPENSE") "FOOD" else "SALARY" }.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                                Text(label, color = if (sel) Color.White else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            }
-                        }
-                    }
-
-                    // Payee
-                    OutlinedTextField(
-                        value = title, onValueChange = { title = it },
-                        label = { Text("Payee / Merchant", fontSize = 14.sp) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(8.dp),
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent, unfocusedTextColor = c.text, unfocusedBorderColor = c.accent.copy(0.4f)),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    // Date + Time in one row
+                    // Shared date/time state
                     val dateLabel = remember(selectedTimestamp) { java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(selectedTimestamp)) }
                     val timeLabel = remember(selectedTimestamp) { java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(selectedTimestamp)) }
-                    val dialogCtx = LocalContext.current
-                    val isDarkForPicker = isSystemInDarkTheme()
-                    val pickerCtx = remember(isDarkForPicker, dialogCtx) { android.view.ContextThemeWrapper(dialogCtx, if (isDarkForPicker) android.R.style.Theme_Material_Dialog else android.R.style.Theme_Material_Light_Dialog) }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        OutlinedButton(onClick = {
-                            val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
-                            android.app.DatePickerDialog(pickerCtx, { _, y, m, d -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(y, m, d) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH)).show()
-                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.accent.copy(0.5f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) {
-                            ShrinkingSingleLineText(dateLabel, c.text, 14f, 9f, Modifier, FontWeight.Medium)
-                        }
-                        OutlinedButton(onClick = {
-                            val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
-                            android.app.TimePickerDialog(pickerCtx, { _, h, min -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(java.util.Calendar.HOUR_OF_DAY, h); set(java.util.Calendar.MINUTE, min) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), false).show()
-                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.accent.copy(0.5f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) {
-                            ShrinkingSingleLineText(timeLabel, c.text, 14f, 9f, Modifier, FontWeight.Medium)
-                        }
-                    }
+                    val dialogCtxShared = LocalContext.current
+                    val isDarkForPickerShared = isSystemInDarkTheme()
+                    val pickerCtx = remember(isDarkForPickerShared, dialogCtxShared) { android.view.ContextThemeWrapper(dialogCtxShared, if (isDarkForPickerShared) android.R.style.Theme_Material_Dialog else android.R.style.Theme_Material_Light_Dialog) }
 
-                    // Account | Category — title label above + icon and name inline
-                    val acctType = accounts.find { it.name == accountSelection }?.type
-                    val acctIcon = walletIconFor(accountSelection, acctType)
+                    // Account / category shared values
+                    val acctType  = accounts.find { it.name == accountSelection }?.type
+                    val acctIcon  = walletIconFor(accountSelection, acctType)
                     val acctColor = when (acctType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
-                    val catIcon = selectedCategory?.icon ?: Icons.Default.Category
-                    val catColor = selectedCategory?.color ?: c.accent
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Account", fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
-                            OutlinedButton(
-                                onClick = { showWalletPicker = true },
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, acctColor.copy(0.4f)),
-                                modifier = Modifier.fillMaxWidth().height(44.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Icon(acctIcon, null, tint = acctColor, modifier = Modifier.size(17.dp))
-                                Spacer(Modifier.width(6.dp))
-                                var acctFontSize by remember(accountSelection) { mutableStateOf(13.sp) }
-                                Text(
-                                    text = accountSelection.ifBlank { "Account" },
-                                    fontSize = acctFontSize,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Clip,
-                                    softWrap = false,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = c.text,
-                                    modifier = Modifier.weight(1f),
-                                    onTextLayout = { result ->
-                                        if (result.hasVisualOverflow && acctFontSize.value > 8f)
-                                            acctFontSize = (acctFontSize.value * 0.85f).sp
-                                    }
-                                )
-                            }
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Category", fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
-                            OutlinedButton(
-                                onClick = { showCategoryPicker = true },
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, catColor.copy(0.4f)),
-                                modifier = Modifier.fillMaxWidth().height(44.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Icon(catIcon, null, tint = catColor, modifier = Modifier.size(17.dp))
-                                Spacer(Modifier.width(6.dp))
-                                var catFontSize by remember(categorySelection) { mutableStateOf(13.sp) }
-                                Text(
-                                    text = selectedCategory?.displayName ?: "Category",
-                                    fontSize = catFontSize,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Clip,
-                                    softWrap = false,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = c.text,
-                                    modifier = Modifier.weight(1f),
-                                    onTextLayout = { result ->
-                                        if (result.hasVisualOverflow && catFontSize.value > 8f)
-                                            catFontSize = (catFontSize.value * 0.85f).sp
-                                    }
-                                )
-                            }
+                    val catIcon   = selectedCategory?.icon ?: Icons.Default.Category
+                    val catColor  = selectedCategory?.color ?: c.accent
+
+                    // Fonts/paddings shrink together with the screen — same totalH the calculator uses.
+                    val scale  = (totalH.value / 700f).coerceIn(0.55f, 1f)
+                    val gap    = (6.dp * scale).coerceAtLeast(3.dp)
+                    // Slightly bigger than before — the "Account"/"Category" sub-labels were
+                    // reported as too small to read comfortably.
+                    val lbFsz  = (13f * scale).coerceAtLeast(10f)
+                    val inFsz  = (14f * scale).coerceAtLeast(10f)
+                    val tgFsz  = (16f * scale).coerceAtLeast(12f)
+                    val icSz   = (17.dp * scale).coerceAtLeast(13.dp)
+                    val bsSz   = (40.dp * scale).coerceAtLeast(26.dp)
+
+                    // A shared, centered text style — disables extra font-padding and centers
+                    // line-height so short text aligns visually with the middle of its
+                    // container instead of drifting toward the bottom/border as the container
+                    // shrinks (Compose's default Text vertical metrics otherwise leave
+                    // asymmetric ascent/descent space around short single-line text). Declared
+                    // early so every section below (type toggle, account/category buttons) can
+                    // share it.
+                    val centeredBtnTextStyle = LocalTextStyle.current.copy(
+                        platformStyle = PlatformTextStyle(includeFontPadding = false),
+                        lineHeightStyle = LineHeightStyle(alignment = LineHeightStyle.Alignment.Center, trim = LineHeightStyle.Trim.Both)
+                    )
+
+                    // A bordered, clickable row with NO enforced Material min-size — unlike
+                    // OutlinedButton, this can shrink to whatever height weight() gives it.
+                    // NOTE: uses the plain Surface constructor + Modifier.clickable — NOT
+                    // Surface(onClick = ...), which silently applies a 48dp minimum
+                    // interactive-component size and would reintroduce the same
+                    // "clipped calculator" bug this rewrite is meant to fix.
+                    @Composable
+                    fun CustomOutlinedButton(modifier: Modifier, borderColor: Color, shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(8.dp), onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
+                        Surface(shape = shape, color = Color.Transparent, border = BorderStroke(1.dp, borderColor), modifier = modifier.clickable(onClick = onClick)) {
+                            Row(modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, content = content)
                         }
                     }
 
-                    // Notes — 3 lines
-                    OutlinedTextField(
-                        value = notesStr, onValueChange = { notesStr = it },
-                        label = { Text("Notes (Optional)", fontSize = 14.sp) },
-                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent, unfocusedTextColor = c.text, unfocusedBorderColor = c.accent.copy(0.4f)),
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3, maxLines = 4
-                    )
-                }
-
-                BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp)) {
-                    val calculatorWidth = maxWidth.coerceAtLeast(160.dp)
-                    val calculatorKeyHeight = (calculatorWidth / 4).coerceIn(40.dp, 58.dp)
-                    val backspaceSize = (calculatorKeyHeight * 0.8f).coerceIn(36.dp, 46.dp)
-                    val numberFontSize = (calculatorKeyHeight.value * 0.31f).coerceIn(14f, 18f).sp
-                    val operatorFontSize = (calculatorKeyHeight.value * 0.35f).coerceIn(16f, 20f).sp
-                    val calcRows = listOf(
-                        listOf("+" to "op", "7" to "num", "8" to "num", "9" to "num"),
-                        listOf("-" to "op", "4" to "num", "5" to "num", "6" to "num"),
-                        listOf("×" to "op", "1" to "num", "2" to "num", "3" to "num"),
-                        listOf("÷" to "op", "00" to "num", "0" to "num", "." to "num")
-                    )
-
-                    Column {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.5.dp, amountColor.copy(0.5f)),
-                            color = Color.Transparent,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
-                        ) {
-                            Row(
+                    // A bordered text field built on BasicTextField — NO enforced Material
+                    // min-height either, so it truly shrinks with the proportional layout.
+                    // The label only floats up onto the border when the field is FOCUSED or
+                    // already has content — matching the real Material OutlinedTextField
+                    // behavior used in the Update Transaction dialog — instead of always
+                    // sitting on the border regardless of focus.
+                    @Composable
+                    fun CompactTextField(value: String, onValueChange: (String) -> Unit, placeholder: String, modifier: Modifier, singleLine: Boolean = true, maxLines: Int = 1, showNewBadge: Boolean = false) {
+                        val vAlign = if (singleLine) Alignment.CenterStart else Alignment.TopStart
+                        var isFocused by remember { mutableStateOf(false) }
+                        val floated = isFocused || value.isNotEmpty()
+                        val labelFs = (10f * scale).coerceAtLeast(8f)
+                        val borderAlpha = if (isFocused) 0.9f else 0.4f
+                        Box(modifier = modifier) {
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(calculatorKeyHeight + 14.dp)
-                                    .padding(horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .fillMaxSize()
+                                    .padding(top = if (floated) (labelFs / 2f).dp else 0.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .border(1.dp, c.accent.copy(borderAlpha), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 10.dp, vertical = if (singleLine) 0.dp else 8.dp),
+                                contentAlignment = vAlign
                             ) {
-                                Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                                    if (hasOp) Text(calcExpr, fontSize = 12.sp, color = c.textSecondary, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    var amountFontSize by remember(calcExpr, calcResult) { mutableStateOf(30.sp) }
-                                    Text(text = when { calcResult != null -> "₹ ${formatCalcNum(calcResult)}"; calcExpr.isEmpty() -> "₹ 0"; else -> "₹ $calcExpr" }, fontSize = amountFontSize, fontWeight = FontWeight.Bold, color = amountColor, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, onTextLayout = { result -> if (result.hasVisualOverflow && amountFontSize.value > 14f) amountFontSize = (amountFontSize.value * 0.85f).sp })
+                                // Inline placeholder — only shown while unfocused AND empty,
+                                // i.e. exactly when the label is NOT floated on the border.
+                                if (!floated) {
+                                    Text(placeholder, fontSize = inFsz.sp, color = c.textSecondary.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                Spacer(Modifier.width(10.dp))
-                                Box(modifier = Modifier.size(backspaceSize).clip(RoundedCornerShape(8.dp)).background(c.accent.copy(0.12f)).combinedClickable(onClick = { onCalcKey("⌫") }, onLongClick = { onCalcKey("C") }), contentAlignment = Alignment.Center) {
-                                    Text("⌫", fontSize = operatorFontSize, fontWeight = FontWeight.Bold, color = c.accent)
-                                }
+                                BasicTextField(
+                                    value = value,
+                                    onValueChange = onValueChange,
+                                    singleLine = singleLine,
+                                    maxLines = maxLines,
+                                    textStyle = TextStyle(fontSize = inFsz.sp, color = c.text),
+                                    cursorBrush = SolidColor(c.accent),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .onFocusChanged { isFocused = it.isFocused }
+                                )
                             }
-                        }
-
-                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).background(c.effectiveBg)) {
-                            calcRows.forEach { row ->
-                                Row(modifier = Modifier.fillMaxWidth()) {
-                                    row.forEach { (key, role) ->
-                                        val keyBg = if (role == "op") c.accent.copy(0.09f) else Color.Transparent
-                                        val keyColor = if (role == "op") c.accent else c.text
-                                        val keyBorder = if (role == "op") BorderStroke(0.5.dp, c.accent.copy(0.5f)) else BorderStroke(0.5.dp, c.text.copy(0.22f))
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .height(calculatorKeyHeight)
-                                                .padding(1.5.dp)
-                                                .clip(RoundedCornerShape(4.dp))
-                                                .background(keyBg)
-                                                .border(keyBorder, RoundedCornerShape(4.dp))
-                                                .clickable { onCalcKey(key) },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = key,
-                                                fontSize = if (role == "num") numberFontSize else operatorFontSize,
-                                                fontWeight = if (role == "num") FontWeight.Medium else FontWeight.Bold,
-                                                color = keyColor
-                                            )
+                            // Floating label — only rendered once focused/filled; background
+                            // matches the dialog so it visually "cuts" a gap in the border.
+                            if (floated) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .padding(start = 8.dp)
+                                        .background(c.bg)
+                                        .padding(horizontal = 4.dp)
+                                ) {
+                                    Text(
+                                        placeholder,
+                                        fontSize = labelFs.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (isFocused) c.accent else c.textSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (showNewBadge) {
+                                        Spacer(Modifier.width(4.dp))
+                                        Surface(color = c.income.copy(alpha = 0.15f), shape = RoundedCornerShape(4.dp)) {
+                                            Text("NEW", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = c.income, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            }
-        }
-    }
 
-    // ── Sub-dialogs ────────────────────────────────────────────────────────────
-    if (showWalletPicker) {
-        WalletSelectionDialog(
-            walletOptions = selectablesWallets.map { walletName ->
-                walletName to (accounts.find { it.name == walletName }?.type)
-            },
-            selectedWallet = accountSelection,
-            onSelect = {
-                accountSelection = it
-                showWalletPicker = false
-            },
-            onDismiss = { showWalletPicker = false },
-            addActionLabel = "+ Add New Account",
-            onAddAction = {
-                showWalletPicker = false
-                showQuickAddAccount = true
-            }
-        )
-    }
+                    @Composable
+                    fun TypeToggle(modifier: Modifier) {
+                        Row(modifier = modifier.background(c.text.copy(0.05f), RoundedCornerShape(6.dp)).padding((2.dp * scale).coerceAtLeast(1.dp))) {
+                            listOf("EXPENSE" to "Expense", "INCOME" to "Income").forEach { (type, label) ->
+                                val sel = transactionType == type
+                                Box(
+                                    modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(5.dp)).background(if (sel) (if (type == "EXPENSE") c.expense else c.income) else Color.Transparent).clickable { transactionType = type; categorySelection = if (type == "EXPENSE") "FOOD" else "SALARY" },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    var fs by remember(scale) { mutableStateOf(tgFsz.sp) }
+                                    Text(label, color = if (sel) Color.White else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = fs, style = centeredBtnTextStyle, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, onTextLayout = { r -> if (r.hasVisualOverflow && fs.value > 9f) fs = (fs.value * 0.85f).sp })
+                                }
+                            }
+                        }
+                    }
+
+                    @Composable
+                    fun DateTimeRow(modifier: Modifier) {
+                        Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            CustomOutlinedButton(modifier = Modifier.weight(1f).fillMaxHeight(), borderColor = c.accent.copy(0.5f), shape = RoundedCornerShape(percent = 50), onClick = { val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }; android.app.DatePickerDialog(pickerCtx, { _, y, m, d -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(y, m, d) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH)).show() }) {
+                                ShrinkingSingleLineText(dateLabel, c.text, inFsz, 8f, Modifier.fillMaxWidth(), FontWeight.SemiBold, TextAlign.Center)
+                            }
+                            CustomOutlinedButton(modifier = Modifier.weight(1f).fillMaxHeight(), borderColor = c.accent.copy(0.5f), shape = RoundedCornerShape(percent = 50), onClick = { val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }; android.app.TimePickerDialog(pickerCtx, { _, h, min -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(java.util.Calendar.HOUR_OF_DAY, h); set(java.util.Calendar.MINUTE, min) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), false).show() }) {
+                                ShrinkingSingleLineText(timeLabel, c.text, inFsz, 8f, Modifier.fillMaxWidth(), FontWeight.SemiBold, TextAlign.Center)
+                            }
+                        }
+                    }
+
+                    @Composable
+                    fun AccountCategoryRow(modifier: Modifier) {
+                        // Pure weight-based split — label gets weight(0.32f), button gets
+                        // weight(0.68f) of the SAME Column, using Compose's own weight
+                        // algorithm exactly like every other row in this dialog. This is
+                        // mathematically guaranteed to shrink at the identical rate as
+                        // sibling rows (no custom formula that can silently drift out of
+                        // proportion). The label starts at the SAME font size (`lbFsz`) as
+                        // every other label in this dialog — consistent sizing — and only
+                        // auto-shrinks-on-overflow (like ShrinkingSingleLineText) if it
+                        // genuinely doesn't fit, instead of starting from an arbitrary
+                        // fixed guess that was too small to begin with. The button's share
+                        // was bumped from 0.58f (combined with a bigger weight() at the call
+                        // site) so it renders at roughly the same height as Update
+                        // Transaction's 44dp OutlinedButton pickers instead of looking small.
+                        Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                Box(modifier = Modifier.fillMaxWidth().weight(0.32f), contentAlignment = Alignment.CenterStart) {
+                                    var lfs by remember(scale) { mutableStateOf(lbFsz.sp) }
+                                    Text("Account", fontSize = lfs, color = c.textSecondary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, modifier = Modifier.padding(start = 2.dp), onTextLayout = { r -> if (r.hasVisualOverflow && lfs.value > 7f) lfs = (lfs.value * 0.9f).sp })
+                                }
+                                CustomOutlinedButton(modifier = Modifier.fillMaxWidth().weight(0.68f), borderColor = acctColor, onClick = { showWalletPicker = true }) {
+                                    Icon(acctIcon, null, tint = acctColor, modifier = Modifier.size(icSz))
+                                    Spacer(Modifier.width(6.dp))
+                                    var af by remember(accountSelection, scale) { mutableStateOf(inFsz.sp) }
+                                    Text(accountSelection.ifBlank { "Account" }, fontSize = af, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, fontWeight = FontWeight.SemiBold, color = c.text, style = centeredBtnTextStyle, modifier = Modifier.weight(1f), onTextLayout = { r -> if (r.hasVisualOverflow && af.value > 8f) af = (af.value * 0.85f).sp })
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                Box(modifier = Modifier.fillMaxWidth().weight(0.32f), contentAlignment = Alignment.CenterStart) {
+                                    var lfs by remember(scale) { mutableStateOf(lbFsz.sp) }
+                                    Text("Category", fontSize = lfs, color = c.textSecondary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, modifier = Modifier.padding(start = 2.dp), onTextLayout = { r -> if (r.hasVisualOverflow && lfs.value > 7f) lfs = (lfs.value * 0.9f).sp })
+                                }
+                                CustomOutlinedButton(modifier = Modifier.fillMaxWidth().weight(0.68f), borderColor = catColor, onClick = { showCategoryPicker = true }) {
+                                    Icon(catIcon, null, tint = catColor, modifier = Modifier.size(icSz))
+                                    Spacer(Modifier.width(6.dp))
+                                    var cf by remember(categorySelection, scale) { mutableStateOf(inFsz.sp) }
+                                    Text(selectedCategory?.displayName ?: "Category", fontSize = cf, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, fontWeight = FontWeight.SemiBold, color = c.text, style = centeredBtnTextStyle, modifier = Modifier.weight(1f), onTextLayout = { r -> if (r.hasVisualOverflow && cf.value > 8f) cf = (cf.value * 0.85f).sp })
+                                }
+                            }
+                        }
+                    }
+
+                    // Landscape-only compact row: Account + Category shown icon-only (no
+                    // text label, no "Account"/"Category" captions — just the picker icon)
+                    // sitting side by side, together forming the left half of the row; the
+                    // Notes box forms the other half. All three boxes share the row's full
+                    // height, so they render at identical size.
+                    @Composable
+                    fun AccountCategoryNotesRow(modifier: Modifier) {
+                        Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(modifier = Modifier.weight(1f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                CustomOutlinedButton(modifier = Modifier.weight(1f).fillMaxHeight(), borderColor = acctColor, onClick = { showWalletPicker = true }) {
+                                    Icon(acctIcon, contentDescription = "Account", tint = acctColor, modifier = Modifier.size(icSz))
+                                }
+                                CustomOutlinedButton(modifier = Modifier.weight(1f).fillMaxHeight(), borderColor = catColor, onClick = { showCategoryPicker = true }) {
+                                    Icon(catIcon, contentDescription = "Category", tint = catColor, modifier = Modifier.size(icSz))
+                                }
+                            }
+                            CompactTextField(value = notesStr, onValueChange = { notesStr = it }, placeholder = "Notes", modifier = Modifier.weight(1f).fillMaxHeight(), singleLine = false, maxLines = 3)
+                        }
+                    }
+
+                    @Composable
+                    fun AmountDisplay(modifier: Modifier) {
+                        Surface(shape = RoundedCornerShape(8.dp), border = BorderStroke(1.5.dp, amountColor.copy(0.5f)), color = Color.Transparent, modifier = modifier) {
+                            Row(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                                    if (hasOp) Text(calcExpr, fontSize = (11f * scale).coerceAtLeast(9f).sp, color = c.textSecondary, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    var amtFs by remember(calcExpr, calcResult, scale) { mutableStateOf((24f * scale).coerceAtLeast(14f).sp) }
+                                    Text(when { calcResult != null -> "₹ ${formatCalcNum(calcResult)}"; calcExpr.isEmpty() -> "₹ 0"; else -> "₹ $calcExpr" }, fontSize = amtFs, fontWeight = FontWeight.Bold, color = amountColor, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, onTextLayout = { r -> if (r.hasVisualOverflow && amtFs.value > 12f) amtFs = (amtFs.value * 0.85f).sp })
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Box(modifier = Modifier.size(bsSz).clip(RoundedCornerShape(8.dp)).background(c.accent.copy(0.12f)).combinedClickable(onClick = { onCalcKey("⌫") }, onLongClick = { onCalcKey("C") }), contentAlignment = Alignment.Center) {
+                                    Text("⌫", fontSize = (bsSz.value * 0.44f).sp, fontWeight = FontWeight.Bold, color = c.accent)
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Calculator — gets a guaranteed proportional share of the height,
+                    // exactly like every other row above it (weight-based, never "leftover").
+                    // Key labels auto-shrink on overflow (the same proven pattern used by
+                    // ShrinkingSingleLineText elsewhere) so they ALWAYS fit their cell,
+                    // regardless of any estimation error in the initial font-size guess.
+                    @Composable
+                    fun Calculator(modifier: Modifier) {
+                        BoxWithConstraints(modifier = modifier) {
+                            val kH = maxHeight / 4
+                            val kW = maxWidth / 4
+                            val kNumFsInit = (minOf(kH.value * 0.32f, kW.value * 0.36f)).coerceIn(10f, 22f)
+                            val kOpFsInit  = (minOf(kH.value * 0.36f, kW.value * 0.40f)).coerceIn(11f, 24f)
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                calcRowDef.forEach { row ->
+                                    Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                                        row.forEach { (key, role) ->
+                                            val kBg  = if (role == "op") c.accent.copy(0.09f) else Color.Transparent
+                                            val kClr = if (role == "op") c.accent else c.text
+                                            val kBdr = if (role == "op") BorderStroke(0.5.dp, c.accent.copy(0.5f)) else BorderStroke(0.5.dp, c.text.copy(0.22f))
+                                            Box(modifier = Modifier.weight(1f).fillMaxHeight().padding(1.5.dp).clip(RoundedCornerShape(4.dp)).background(kBg).border(kBdr, RoundedCornerShape(4.dp)).clickable { onCalcKey(key) }, contentAlignment = Alignment.Center) {
+                                                var fs by remember(kH, kW, role) { mutableStateOf((if (role == "num") kNumFsInit else kOpFsInit).sp) }
+                                                Text(key, fontSize = fs, fontWeight = if (role == "num") FontWeight.Medium else FontWeight.Bold, color = kClr, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, onTextLayout = { r -> if (r.hasVisualOverflow && fs.value > 8f) fs = (fs.value * 0.85f).sp })
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Landscape gets its own compact 2-column layout (right: amount +
+                    // calculator, left: everything else) so the calculator doesn't get
+                    // squeezed to an unusable size under short landscape heights. Portrait
+                    // keeps the original single-column proportional layout completely
+                    // untouched below — this flag only decides WHICH branch renders.
+                    val isLandscape = maxWidth > totalH
+
+                    if (isLandscape) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            // Left column — header, type toggle, payee, date/time, and the
+                            // compact icon-only account/category + notes row.
+                            Column(
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                verticalArrangement = Arrangement.spacedBy(gap)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().weight(0.9f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier.fillMaxHeight().aspectRatio(1f).clip(CircleShape).clickable(onClick = onDismiss),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(20.dp))
+                                    }
+                                    Text("Log Cashflow", fontWeight = FontWeight.Bold, fontSize = (16f * scale).coerceAtLeast(12f).sp, color = c.text, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Box(
+                                        modifier = Modifier.fillMaxHeight().clip(RoundedCornerShape(8.dp)).clickable(enabled = resolvedAmount > 0.0) {
+                                            val cleanTitle = if (title.isBlank()) "Merchant Log" else title
+                                            viewModel.saveLastUsedAccount(accountSelection)
+                                            viewModel.saveLastUsedCategory(transactionType, categorySelection)
+                                            onConfirm(cleanTitle, resolvedAmount, categorySelection, transactionType, makeNoteWithAccount(notesStr, accountSelection), selectedTimestamp)
+                                        }.padding(horizontal = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("Save", fontWeight = FontWeight.Bold, color = c.accent, fontSize = (14f * scale).coerceAtLeast(11f).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                                TypeToggle(modifier = Modifier.fillMaxWidth().weight(1.0f))
+                                CompactTextField(value = title, onValueChange = { title = it }, placeholder = "Payee / Merchant", modifier = Modifier.fillMaxWidth().weight(1.18f), showNewBadge = isNewPayee)
+                                DateTimeRow(modifier = Modifier.fillMaxWidth().weight(1.0f))
+                                // Account + Category (icon-only, side by side) form one half
+                                // of this row; Notes forms the other half — all same height.
+                                AccountCategoryNotesRow(modifier = Modifier.fillMaxWidth().weight(2.4f))
+                            }
+                            // Right column — amount display on top, calculator filling the
+                            // rest, exactly the two elements the user wants on this side.
+                            Column(
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                verticalArrangement = Arrangement.spacedBy(gap)
+                            ) {
+                                AmountDisplay(modifier = Modifier.fillMaxWidth().weight(1.6f))
+                                Calculator(modifier = Modifier.fillMaxWidth().weight(4.2f).padding(bottom = 2.dp))
+                            }
+                        }
+                    } else {
+                    // ── Portrait layout — every section below gets a weight() proportional
+                    // to its natural size at full height; as totalH shrinks, ALL sections —
+                    // including the calculator — shrink together in lockstep. Nothing
+                    // scrolls, nothing is ever pushed off-screen, and the calculator's
+                    // bottom row can never be clipped because its slot is guaranteed by the
+                    // same weight system as everything else, not "whatever space happens to
+                    // be left over".
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(gap)
+                    ) {
+                        // Close / Title / Save — now weighted like everything else instead
+                        // of a fixed-height Surface sitting outside the proportional system.
+                        Row(
+                            modifier = Modifier.fillMaxWidth().weight(0.9f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxHeight().aspectRatio(1f).clip(CircleShape).clickable(onClick = onDismiss),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(20.dp))
+                            }
+                            Text("Log Cashflow", fontWeight = FontWeight.Bold, fontSize = (19f * scale).coerceAtLeast(14f).sp, color = c.text, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Box(
+                                modifier = Modifier.fillMaxHeight().clip(RoundedCornerShape(8.dp)).clickable(enabled = resolvedAmount > 0.0) {
+                                    val cleanTitle = if (title.isBlank()) "Merchant Log" else title
+                                    viewModel.saveLastUsedAccount(accountSelection)
+                                    viewModel.saveLastUsedCategory(transactionType, categorySelection)
+                                    onConfirm(cleanTitle, resolvedAmount, categorySelection, transactionType, makeNoteWithAccount(notesStr, accountSelection), selectedTimestamp)
+                                }.padding(horizontal = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Save", fontWeight = FontWeight.Bold, color = c.accent, fontSize = (15f * scale).coerceAtLeast(11f).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                        TypeToggle(modifier = Modifier.fillMaxWidth().weight(1.0f))
+                        // Slightly bigger than before (+1-2dp at reference height).
+                        CompactTextField(value = title, onValueChange = { title = it }, placeholder = "Payee / Merchant", modifier = Modifier.fillMaxWidth().weight(1.18f), showNewBadge = isNewPayee)
+                        // Pill-shaped, matches Update Transaction's date/time boxes; still
+                        // shrinks proportionally since it's weight-based like everything else.
+                        DateTimeRow(modifier = Modifier.fillMaxWidth().weight(1.0f))
+                        // Bumped from 1.5f to 2.0f (together with the internal 0.68f button
+                        // split) so the Account/Category pickers render close to Update
+                        // Transaction's 44dp button height instead of looking small.
+                        AccountCategoryRow(modifier = Modifier.fillMaxWidth().weight(2.0f))
+                        // Notes gets a taller, ~3-row box for multi-line notes.
+                        CompactTextField(value = notesStr, onValueChange = { notesStr = it }, placeholder = "Notes (Optional)", modifier = Modifier.fillMaxWidth().weight(2.3f), singleLine = false, maxLines = 3)
+                        AmountDisplay(modifier = Modifier.fillMaxWidth().weight(1.4f))
+                        // No top padding here — the Column's own spacedBy(gap) already
+                        // supplies the gap above the calculator. The Compose BOM bump to
+                        // 2025.08.00 fixed the Dialog WindowInsets bug (see repo memory),
+                        // so safeDrawingPadding() on the outer Column now correctly clears
+                        // the nav bar — only a tiny 2dp buffer is kept for visual breathing room.
+                        Calculator(modifier = Modifier.fillMaxWidth().weight(7.0f).padding(bottom = 2.dp))
+                    }
+                    }               // end if/else (landscape/portrait)
+                }               // end content BoxWithConstraints
+            }                   // end Column(fillMaxSize) inside Surface
+        }                       // end Surface(fillMaxSize)
+    }                           // end Dialog
+
 
     if (showCategoryPicker) {
         CategorySelectionDialog(
@@ -7988,10 +8290,27 @@ fun AddTransactionDialog(
                 showCategoryPicker = false
             },
             onDismiss = { showCategoryPicker = false },
-            addActionLabel = "+ Add New Category",
+            addActionLabel = "Add New Category",
             onAddAction = {
                 showCategoryPicker = false
                 showQuickAddCategory = true
+            }
+        )
+    }
+
+    if (showWalletPicker) {
+        WalletSelectionDialog(
+            walletOptions = selectablesWallets.map { walletName -> walletName to (accounts.find { it.name == walletName }?.type) },
+            selectedWallet = accountSelection,
+            onSelect = {
+                accountSelection = it
+                showWalletPicker = false
+            },
+            onDismiss = { showWalletPicker = false },
+            addActionLabel = "Add New Account",
+            onAddAction = {
+                showWalletPicker = false
+                showQuickAddAccount = true
             }
         )
     }
@@ -8037,14 +8356,16 @@ private fun FullScreenEditorDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
+        EdgeToEdgeDialogWindowEffect(isDarkBackground = c.isDark)
         Surface(modifier = Modifier.fillMaxSize(), color = c.surface) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Title bar: Close (left) | Title (center, flexible) | action icons (right)
+            // safeDrawingPadding on the column handles ALL insets (status bar, nav bar,
+            // display cutout) in a single modifier, preventing double-counting and
+            // avoiding lateral shifts in landscape mode.
+            Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
                 Surface(shadowElevation = 4.dp, color = c.surface) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .statusBarsPadding()
                             .heightIn(min = 56.dp)
                             .padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -8066,16 +8387,18 @@ private fun FullScreenEditorDialog(
                     }
                 }
                 HorizontalDivider(color = c.divider)
+                // Content column — minimal trailing space (last item visibility only).
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
                         .verticalScroll(rememberScrollState())
-                        .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 24.dp)
-                        .navigationBarsPadding(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    content = content
-                )
+                        .padding(start = 16.dp, end = 16.dp, top = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    content()
+                    Spacer(modifier = Modifier.height(2.dp))
+                }
             }
         }
     }
@@ -8089,22 +8412,64 @@ private fun AdaptiveEditorDialog(
     actions: @Composable () -> Unit
 ) {
     val c = LocalAppColors.current
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text(title, fontWeight = FontWeight.Bold, color = c.text) },
-        text = {
-            Column(
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        EdgeToEdgeDialogWindowEffect(isDarkBackground = c.isDark)
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding(),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 480.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                content = content
-            )
-        },
-        confirmButton = actions,
-        containerColor = c.surface
-    )
+                    .fillMaxWidth(0.94f)
+                    .widthIn(max = 520.dp)
+                    .heightIn(max = maxHeight * 0.90f),
+                color = c.surface,
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column {
+                    // ── Header ──────────────────────────────────
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 4.dp)
+                            .heightIn(min = 52.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = c.text, modifier = Modifier.weight(1f))
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text)
+                        }
+                    }
+                    HorizontalDivider(color = c.divider)
+                    // ── Scrollable fields ────────────────────────
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        content = content
+                    )
+                    HorizontalDivider(color = c.divider)
+                    // ── Action row ───────────────────────────────
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        actions()
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** Dialog to update an existing transaction.
@@ -8154,28 +8519,17 @@ fun EditTransactionDialog(
     val selectedCategory = filteredCats.firstOrNull { it.name == categorySelection }
         ?: allCategories.firstOrNull { it.name == categorySelection }
 
-    var showDeleteConfirmForEdit by remember { mutableStateOf(false) }
-    if (showDeleteConfirmForEdit) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmForEdit = false },
-            title = { Text("Delete Transaction", color = c.text) },
-            text = { Text("Are you absolutely sure you want to delete this transaction?", color = c.text.copy(alpha = 0.7f)) },
-            confirmButton = {
-                TextButton(onClick = { onDelete(); showDeleteConfirmForEdit = false }, colors = ButtonDefaults.textButtonColors(contentColor = c.expense)) {
-                    Text("Delete", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = { TextButton(onClick = { showDeleteConfirmForEdit = false }) { Text("Cancel", color = c.text) } },
-            containerColor = c.surface
-        )
-    }
-
     FullScreenEditorDialog(
         title = "Update Transaction",
         onDismiss = onDismiss,
         actions = {
-            // Delete (trash icon) + Save (text button) in title bar
-            IconButton(onClick = { showDeleteConfirmForEdit = true }) {
+            // Delete (trash icon) + Save (text button) in title bar.
+            // The confirmation prompt for this action lives in the caller (the outer
+            // `selectedTxForEdit?.let` block in MainAppScreen already shows an "Are you
+            // sure?" AlertDialog before calling viewModel.deleteTransaction), so tapping
+            // this icon must invoke onDelete() directly — an extra confirmation dialog
+            // here previously meant the user had to confirm the deletion TWICE.
+            IconButton(onClick = onDelete) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete transaction", tint = c.expense)
             }
             TextButton(
@@ -8212,7 +8566,7 @@ fun EditTransactionDialog(
                 OutlinedTextField(
                     value = amountStr,
                     onValueChange = { amountStr = it },
-                    label = { Text("Amount (₹)", fontWeight = FontWeight.Bold) },
+                    label = { Text("Amount (₹)", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     textStyle = androidx.compose.ui.text.TextStyle(
                         fontSize = 22.sp,
@@ -8222,9 +8576,13 @@ fun EditTransactionDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = amountColor, unfocusedTextColor = amountColor,
                         focusedBorderColor = amountColor, unfocusedBorderColor = amountColor.copy(0.5f),
-                        focusedLabelColor = amountColor, unfocusedLabelColor = amountColor.copy(0.7f),
-                        focusedContainerColor = amountColor.copy(0.08f),
-                        unfocusedContainerColor = amountColor.copy(0.05f)
+                        focusedLabelColor = amountColor, unfocusedLabelColor = amountColor.copy(0.7f)
+                        // NOTE: deliberately no focused/unfocusedContainerColor override — a
+                        // non-transparent container makes Material3 paint the floating
+                        // label's border-cutout backdrop in a fixed default color instead of
+                        // blending with the dialog background, producing a mismatched white
+                        // patch behind "Amount" that the other fields (which stay fully
+                        // transparent) don't have.
                     ),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -8252,7 +8610,7 @@ fun EditTransactionDialog(
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Payee / Merchant") },
+                    label = { Text("Payee / Merchant", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent
@@ -8317,11 +8675,16 @@ fun EditTransactionDialog(
                 OutlinedTextField(
                     value = notesStr,
                     onValueChange = { notesStr = it },
-                    label = { Text("Note (Optional)") },
+                    label = { Text("Note (Optional)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = c.text, focusedBorderColor = c.accent, focusedLabelColor = c.accent,
                         unfocusedTextColor = c.text, unfocusedBorderColor = c.accent.copy(0.35f)
                     ),
+                    // Roughly 3 rows tall by default (instead of 1), and free to grow up to
+                    // 6 rows for longer notes — sized relative to what's actually available
+                    // rather than a fixed single line.
+                    minLines = 3,
+                    maxLines = 6,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -8401,7 +8764,7 @@ fun EditTransactionDialog(
                 showWalletPicker = false
             },
             onDismiss = { showWalletPicker = false },
-            addActionLabel = "+ Add New Account",
+            addActionLabel = "Add New Account",
             onAddAction = {
                 showWalletPicker = false
                 showQuickAddAccount = true
@@ -8431,7 +8794,7 @@ fun EditTransactionDialog(
                 showCategoryPicker = false
             },
             onDismiss = { showCategoryPicker = false },
-            addActionLabel = "+ Add New Category",
+            addActionLabel = "Add New Category",
             onAddAction = {
                 showCategoryPicker = false
                 showQuickAddCategory = true
@@ -8522,7 +8885,7 @@ fun TransactionDateTimePicker(
                 border = BorderStroke(1.dp, c.accent.copy(0.45f)),
                 modifier = Modifier.weight(1f)
             ) {
-                Text(dateLabel)
+                ShrinkingSingleLineText(dateLabel, c.text, 14f, 9f, Modifier, FontWeight.SemiBold)
             }
 
             OutlinedButton(
@@ -8547,7 +8910,7 @@ fun TransactionDateTimePicker(
                 border = BorderStroke(1.dp, c.accent.copy(0.45f)),
                 modifier = Modifier.weight(1f)
             ) {
-                Text(timeLabel)
+                ShrinkingSingleLineText(timeLabel, c.text, 14f, 9f, Modifier, FontWeight.SemiBold)
             }
         }
     }
@@ -8586,6 +8949,89 @@ private fun PickerButton(
 }
 
 @Composable
+private fun ModernDialogFrame(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconColor: Color,
+    onDismiss: () -> Unit,
+    actions: (@Composable RowScope.() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val c = LocalAppColors.current
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        // BoxWithConstraints ties the dialog's max height to the ACTUAL available
+        // screen space (with systemBarsPadding accounted for) instead of a hardcoded
+        // dp cap. This guarantees a consistent margin/bottom-padding around the
+        // dialog on every screen size — taller content (e.g. category icon grid)
+        // no longer risks touching or overflowing the screen edge.
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxSize().systemBarsPadding(),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = c.surface,
+                tonalElevation = 6.dp,
+                shadowElevation = 12.dp,
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .widthIn(max = 460.dp)
+                    .heightIn(max = maxHeight * 0.88f)
+                    .imePadding()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // ── Header: colored icon avatar + title + circular close button ──
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 12.dp, top = 18.dp, bottom = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(shape = CircleShape, color = iconColor.copy(alpha = 0.15f), modifier = Modifier.size(40.dp)) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = c.text, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Surface(
+                            shape = CircleShape,
+                            color = c.text.copy(alpha = 0.06f),
+                            modifier = Modifier.size(32.dp).clickable(onClick = onDismiss)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = c.textSecondary, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                    HorizontalDivider(color = c.divider)
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        content = content
+                    )
+                    if (actions != null) {
+                        HorizontalDivider(color = c.divider)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            content = actions
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun WalletSelectionDialog(
     walletOptions: List<Pair<String, String?>>,
     selectedWallet: String,
@@ -8595,64 +9041,69 @@ private fun WalletSelectionDialog(
     onAddAction: (() -> Unit)? = null
 ) {
     val c = LocalAppColors.current
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Select Wallet", fontWeight = FontWeight.Bold, color = c.text) },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+    ModernDialogFrame(
+        title = "Select Wallet",
+        icon = Icons.Default.AccountBalanceWallet,
+        iconColor = c.accent,
+        onDismiss = onDismiss
+    ) {
+        walletOptions.forEach { (walletName, walletType) ->
+            val active = selectedWallet == walletName
+            val acctColor = when (walletType) {
+                "CASH"        -> c.income
+                "BANK"        -> c.accent
+                "CREDIT_CARD" -> c.expense
+                "WALLET"      -> Color(0xFFFF9800)
+                else          -> c.accent
+            }
+            Surface(
+                color = if (active) acctColor.copy(alpha = 0.15f) else c.text.copy(alpha = 0.04f),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, if (active) acctColor else c.divider),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(walletName) }
             ) {
-                walletOptions.forEach { (walletName, walletType) ->
-                    val active = selectedWallet == walletName
-                    val acctColor = when (walletType) {
-                        "CASH"        -> c.income
-                        "BANK"        -> c.accent
-                        "CREDIT_CARD" -> c.expense
-                        "WALLET"      -> Color(0xFFFF9800)
-                        else          -> c.accent
-                    }
-                    Surface(
-                        color = if (active) acctColor.copy(alpha = 0.15f) else c.divider,
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, if (active) acctColor else c.divider),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(walletName) }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = walletIconFor(walletName, walletType),
-                                contentDescription = walletName,
-                                tint = acctColor,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(walletName, color = if (active) acctColor else c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
-                    }
-                }
-                if (addActionLabel != null && onAddAction != null) {
-                    OutlinedButton(
-                        onClick = onAddAction,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.accent),
-                        border = BorderStroke(1.dp, c.accent.copy(alpha = 0.5f))
-                    ) {
-                        Text(addActionLabel, fontWeight = FontWeight.Bold)
-                    }
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = walletIconFor(walletName, walletType),
+                        contentDescription = walletName,
+                        tint = acctColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(walletName, color = if (active) acctColor else c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    if (active) Icon(Icons.Default.CheckCircle, contentDescription = "Selected", tint = acctColor, modifier = Modifier.size(20.dp))
                 }
             }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close", color = c.text) }
-        },
-        containerColor = c.surface
-    )
+        }
+        if (addActionLabel != null && onAddAction != null) {
+            Surface(
+                onClick = onAddAction,
+                shape = RoundedCornerShape(16.dp),
+                color = c.accent.copy(alpha = 0.10f),
+                border = BorderStroke(1.dp, c.accent.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(shape = CircleShape, color = c.accent.copy(alpha = 0.18f), modifier = Modifier.size(28.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Add, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(addActionLabel, color = c.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
 }
 
 @Composable
@@ -8668,76 +9119,81 @@ private fun CategorySelectionDialog(
     val c = LocalAppColors.current
     val sortedCategories = remember(categories) { categories.sortedBy { it.displayName } }
     val clearDisplayName = categories.firstOrNull { it.name.equals(clearCategoryName, ignoreCase = true) }?.displayName ?: clearCategoryName
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Select Category", fontWeight = FontWeight.Bold, color = c.text) },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+    ModernDialogFrame(
+        title = "Select Category",
+        icon = Icons.Default.Category,
+        iconColor = c.accent,
+        onDismiss = onDismiss
+    ) {
+        // "None / Remove" row — resets to the type-appropriate default category
+        val clearActive = selectedCategoryName.isBlank() || selectedCategoryName.equals(clearCategoryName, ignoreCase = true)
+        Surface(
+            color = if (clearActive) c.textTertiary.copy(alpha = 0.12f) else c.text.copy(alpha = 0.04f),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, if (clearActive) c.textTertiary else c.divider),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onSelect(clearCategoryName) }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // "None / Remove" row — resets to the type-appropriate default category
-                val clearActive = selectedCategoryName.isBlank() || selectedCategoryName.equals(clearCategoryName, ignoreCase = true)
-                Surface(
-                    color = if (clearActive) c.textTertiary.copy(alpha = 0.12f) else c.divider,
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, if (clearActive) c.textTertiary else c.divider),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelect(clearCategoryName) }
+                Icon(Icons.Default.RemoveCircle, contentDescription = "None", tint = c.textTertiary, modifier = Modifier.size(24.dp))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("None / $clearDisplayName", color = c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+        }
+        sortedCategories.forEach { category ->
+            val active = selectedCategoryName == category.name
+            Surface(
+                color = if (active) category.color.copy(alpha = 0.15f) else c.text.copy(alpha = 0.04f),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, if (active) category.color else c.divider),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(category.name) }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.RemoveCircle, contentDescription = "None", tint = c.textTertiary, modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("None / $clearDisplayName", color = c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
-                }
-                sortedCategories.forEach { category ->
-                    val active = selectedCategoryName == category.name
-                    Surface(
-                        color = if (active) category.color.copy(alpha = 0.15f) else c.divider,
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, if (active) category.color else c.divider),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(category.name) }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = category.icon,
-                                contentDescription = category.displayName,
-                                tint = category.color,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(category.displayName, color = c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
-                    }
-                }
-                if (addActionLabel != null && onAddAction != null) {
-                    OutlinedButton(
-                        onClick = onAddAction,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.accent),
-                        border = BorderStroke(1.dp, c.accent.copy(alpha = 0.5f))
-                    ) {
-                        Text(addActionLabel, fontWeight = FontWeight.Bold)
-                    }
+                    Icon(
+                        imageVector = category.icon,
+                        contentDescription = category.displayName,
+                        tint = category.color,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(category.displayName, color = c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    if (active) Icon(Icons.Default.CheckCircle, contentDescription = "Selected", tint = category.color, modifier = Modifier.size(20.dp))
                 }
             }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close", color = c.text) }
-        },
-        containerColor = c.surface
-    )
+        }
+        if (addActionLabel != null && onAddAction != null) {
+            Surface(
+                onClick = onAddAction,
+                shape = RoundedCornerShape(16.dp),
+                color = c.accent.copy(alpha = 0.10f),
+                border = BorderStroke(1.dp, c.accent.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(shape = CircleShape, color = c.accent.copy(alpha = 0.18f), modifier = Modifier.size(28.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Add, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(addActionLabel, color = c.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
 }
 
 private fun walletIconFor(name: String, type: String?): androidx.compose.ui.graphics.vector.ImageVector {
@@ -8761,75 +9217,88 @@ private fun QuickAddAccountDialog(
     var type by remember { mutableStateOf("BANK") }
     var openingBalanceTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
     val types = listOf("CASH", "BANK", "CREDIT_CARD", "WALLET")
+    val typeColor = when (type) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add New Account", color = c.text, fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Account Name (e.g. SBI Bank)") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = c.text,
-                        focusedBorderColor = c.accent,
-                        focusedLabelColor = c.accent
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = { amount = it },
-                    label = { Text("Initial Ledger Balance (₹)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = c.text,
-                        focusedBorderColor = c.accent,
-                        focusedLabelColor = c.accent
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                TransactionDateTimePicker(
-                    selectedTimestamp = openingBalanceTimestamp,
-                    onTimestampChange = { openingBalanceTimestamp = it },
-                    label = "Opening Balance Date & Time"
-                )
-                Column {
-                    Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        types.forEach { option ->
-                            val active = option == type
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .background(if (active) c.accent.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-                                    .border(1.dp, if (active) c.accent else c.text.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
-                                    .clickable { type = option }
-                                    .padding(6.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(option.replace("_", " "), color = if (active) c.accent else c.text, fontWeight = FontWeight.Bold, fontSize = 9.sp)
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
+    ModernDialogFrame(
+        title = "Add New Account",
+        icon = walletIconFor(name, type),
+        iconColor = typeColor,
+        onDismiss = onDismiss,
+        actions = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(percent = 50),
+                border = BorderStroke(1.dp, c.text.copy(alpha = 0.2f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                modifier = Modifier.weight(1f)
+            ) { Text("Cancel", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             Button(
                 onClick = {
                     onAdd(name, amount.toDoubleOrNull() ?: 0.0, type, name.filter { it.isDigit() }.takeLast(4).ifBlank { null }, openingBalanceTimestamp)
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
-            ) {
-                Text("Add Account", fontWeight = FontWeight.Bold)
+                shape = RoundedCornerShape(percent = 50),
+                colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                modifier = Modifier.weight(1f)
+            ) { Text("Add Account", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
+    ) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Account Name (e.g. SBI Bank)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = c.text,
+                focusedBorderColor = c.accent,
+                focusedLabelColor = c.accent
+            ),
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = { Text("Initial Ledger Balance (₹)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = c.text,
+                focusedBorderColor = c.accent,
+                focusedLabelColor = c.accent
+            ),
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        )
+        TransactionDateTimePicker(
+            selectedTimestamp = openingBalanceTimestamp,
+            onTimestampChange = { openingBalanceTimestamp = it },
+            label = "Opening Balance Date & Time"
+        )
+        Column {
+            Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                types.forEach { option ->
+                    val active = option == type
+                    val optColor = when (option) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (active) optColor.copy(alpha = 0.15f) else c.text.copy(alpha = 0.04f))
+                            .border(1.dp, if (active) optColor else c.divider, RoundedCornerShape(10.dp))
+                            .clickable { type = option }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(option.replace("_", " "), color = if (active) optColor else c.textSecondary, fontWeight = FontWeight.Bold, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
             }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = c.text) } },
-        containerColor = c.surface
-    )
+        }
+    }
 }
 
 @Composable
@@ -8845,151 +9314,161 @@ private fun QuickAddCategoryDialog(
     var selectedColorHex by remember { mutableStateOf(if (defaultType == "INCOME") "#4CAF50" else "#607D8B") }
     var selectedColor by remember { mutableStateOf(if (defaultType == "INCOME") Color(0xFF4CAF50) else Color(0xFF607D8B)) }
     var initialBudgetAmt by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add New Category", color = c.text, fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Category Name") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = c.text,
-                        focusedBorderColor = c.accent,
-                        focusedLabelColor = c.accent
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    listOf("EXPENSE", "INCOME").forEach { option ->
-                        val active = option == type
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (active) c.accent.copy(alpha = 0.15f) else Color.Transparent)
-                                .border(1.dp, if (active) c.accent else c.divider, RoundedCornerShape(8.dp))
-                                .clickable {
-                                    type = option
-                                    if (option == "INCOME") {
-                                        selectedIconName = "salary"
-                                        selectedColorHex = "#4CAF50"
-                                        selectedColor = Color(0xFF4CAF50)
-                                    }
-                                }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(option, color = if (active) c.accent else c.text, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+    val selectedIconVec = suitableIconsList.firstOrNull { it.first == selectedIconName }?.second ?: Icons.Default.Category
+
+    ModernDialogFrame(
+        title = "Add New Category",
+        icon = selectedIconVec,
+        iconColor = selectedColor,
+        onDismiss = onDismiss,
+        actions = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(percent = 50),
+                border = BorderStroke(1.dp, c.text.copy(alpha = 0.2f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                modifier = Modifier.weight(1f)
+            ) { Text("Cancel", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            Button(
+                onClick = { onAdd(name, type, selectedIconName, selectedColorHex, initialBudgetAmt.toDoubleOrNull() ?: 0.0) },
+                shape = RoundedCornerShape(percent = 50),
+                colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                modifier = Modifier.weight(1f)
+            ) { Text("Add Category", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
+    ) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Category Name", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = c.text,
+                focusedBorderColor = c.accent,
+                focusedLabelColor = c.accent
+            ),
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            listOf("EXPENSE", "INCOME").forEach { option ->
+                val active = option == type
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (active) c.accent.copy(alpha = 0.15f) else c.text.copy(alpha = 0.04f))
+                        .border(1.dp, if (active) c.accent else c.divider, RoundedCornerShape(10.dp))
+                        .clickable {
+                            type = option
+                            if (option == "INCOME") {
+                                selectedIconName = "salary"
+                                selectedColorHex = "#4CAF50"
+                                selectedColor = Color(0xFF4CAF50)
+                            }
+                        }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(option, color = if (active) c.accent else c.text, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                }
+            }
+        }
+
+        if (type == "EXPENSE") {
+            OutlinedTextField(
+                value = initialBudgetAmt,
+                onValueChange = { initialBudgetAmt = it },
+                label = { Text("Monthly Budget Limit (₹, Optional)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = c.text,
+                    focusedBorderColor = c.accent,
+                    focusedLabelColor = c.accent
+                ),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(58.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
+        ) {
+            items(suitableIconsList) { (iconName, iconVec) ->
+                val isSelected = selectedIconName == iconName
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { selectedIconName = iconName }
+                        .padding(vertical = 4.dp)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
+                        border = BorderStroke(if (isSelected) 2.dp else 0.dp, if (isSelected) selectedColor else Color.Transparent),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = iconVec,
+                                contentDescription = iconName,
+                                tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
+                                modifier = Modifier.size(22.dp)
+                            )
                         }
                     }
-                }
-
-                if (type == "EXPENSE") {
-                    OutlinedTextField(
-                        value = initialBudgetAmt,
-                        onValueChange = { initialBudgetAmt = it },
-                        label = { Text("Monthly Budget Limit (₹, Optional)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = c.text,
-                            focusedBorderColor = c.accent,
-                            focusedLabelColor = c.accent
-                        ),
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = iconLabel(iconName),
+                        fontSize = 7.sp,
+                        color = if (isSelected) selectedColor else c.textTertiary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+            }
+        }
 
-                Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(58.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
+        Text("Select Color", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            items(categoryColorsList) { (hexStr, colorObj) ->
+                val isSelected = selectedColorHex == hexStr
+                Surface(
+                    shape = CircleShape,
+                    color = colorObj,
+                    border = BorderStroke(2.dp, if (isSelected) c.text else Color.Transparent),
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clickable {
+                            selectedColorHex = hexStr
+                            selectedColor = colorObj
+                        }
                 ) {
-                    items(suitableIconsList) { (iconName, iconVec) ->
-                        val isSelected = selectedIconName == iconName
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { selectedIconName = iconName }
-                                .padding(vertical = 4.dp)
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
-                                border = BorderStroke(if (isSelected) 2.dp else 0.dp, if (isSelected) selectedColor else Color.Transparent),
-                                modifier = Modifier.size(44.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = iconVec,
-                                        contentDescription = iconName,
-                                        tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(3.dp))
-                            Text(
-                                text = iconLabel(iconName),
-                                fontSize = 7.sp,
-                                color = if (isSelected) selectedColor else c.textTertiary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
+                    if (isSelected) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Selected",
+                                tint = c.text,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
                 }
-
-                Text("Select Color", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    items(categoryColorsList) { (hexStr, colorObj) ->
-                        val isSelected = selectedColorHex == hexStr
-                        Surface(
-                            shape = CircleShape,
-                            color = colorObj,
-                            border = BorderStroke(2.dp, if (isSelected) c.text else Color.Transparent),
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clickable {
-                                    selectedColorHex = hexStr
-                                    selectedColor = colorObj
-                                }
-                        ) {
-                            if (isSelected) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = "Selected",
-                                        tint = c.text,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onAdd(name, type, selectedIconName, selectedColorHex, initialBudgetAmt.toDoubleOrNull() ?: 0.0)
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
-            ) {
-                Text("Add Category", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = c.text) } },
-        containerColor = c.surface
-    )
+        }
+    }
 }
 
 /** Dialog offering Excel (.xlsx) and PDF export of all transactions. */
@@ -9018,56 +9497,59 @@ fun ExportCsvDialog(
             onDismiss()
         }
     }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Export Financial Records", fontWeight = FontWeight.Bold, color = c.text) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    "Export styled month-wise financial reports as Excel or PDF for external analysis.",
-                    fontSize = 12.sp,
-                    color = c.text.copy(alpha = 0.7f)
-                )
-                Surface(
-                    color = c.text.copy(alpha = 0.05f),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = "Includes month-wise transactions, category color breakdown, carry over balance, monthly total, and grand total.",
-                        fontSize = 10.sp,
-                        color = c.accent,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = {
-                        val fileName = "autoledger-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.xlsx"
-                        excelExporter.launch(fileName)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
-                ) {
-                    Text("Export Excel", fontWeight = FontWeight.Bold)
-                }
-                Button(
-                    onClick = {
-                        val fileName = "autoledger-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.pdf"
-                        pdfExporter.launch(fileName)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = c.income, contentColor = c.text)
-                ) {
-                    Text("Export PDF", fontWeight = FontWeight.Bold)
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Dismiss", color = c.text) }
-        },
-        containerColor = c.surface
-    )
+    ModernDialogFrame(
+        title = "Export Financial Records",
+        icon = Icons.Default.Upload,
+        iconColor = c.accent,
+        onDismiss = onDismiss,
+        actions = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(percent = 50),
+                border = BorderStroke(1.dp, c.text.copy(alpha = 0.2f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                modifier = Modifier.weight(1f)
+            ) { Text("Dismiss", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            Button(
+                onClick = {
+                    val fileName = "autoledger-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.xlsx"
+                    excelExporter.launch(fileName)
+                },
+                shape = RoundedCornerShape(percent = 50),
+                colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                modifier = Modifier.weight(1f)
+            ) { Text("Excel", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            Button(
+                onClick = {
+                    val fileName = "autoledger-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.pdf"
+                    pdfExporter.launch(fileName)
+                },
+                shape = RoundedCornerShape(percent = 50),
+                colors = ButtonDefaults.buttonColors(containerColor = c.income, contentColor = c.text),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                modifier = Modifier.weight(1f)
+            ) { Text("PDF", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
+    ) {
+        Text(
+            "Export styled month-wise financial reports as Excel or PDF for external analysis.",
+            fontSize = 12.sp,
+            color = c.text.copy(alpha = 0.7f)
+        )
+        Surface(
+            color = c.text.copy(alpha = 0.05f),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text(
+                text = "Includes month-wise transactions, category color breakdown, carry over balance, monthly total, and grand total.",
+                fontSize = 10.sp,
+                color = c.accent,
+                modifier = Modifier.padding(12.dp)
+            )
+        }
+    }
 }
 
 /** Backup center — auto-backup frequency, custom folder, restore from list. */
@@ -9215,14 +9697,16 @@ fun BackupDialog(
                                     .clickable { viewModel.setBackupFrequency(value) }
                             ) {
                                 Box(
-                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         label,
                                         fontSize = 12.sp,
                                         fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (active) Color.White else c.text
+                                        color = if (active) Color.White else c.text,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -9417,11 +9901,11 @@ fun BackupDialog(
                                 colors = ButtonDefaults.buttonColors(containerColor = c.income),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1.5f),
-                                contentPadding = PaddingValues(vertical = 10.dp)
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
                             ) {
                                 Icon(Icons.Default.Backup, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Back Up Now", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("Back Up Now", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
 
                             Column(
@@ -9561,47 +10045,49 @@ fun BackupDialog(
 
                 HorizontalDivider(color = c.divider)
 
-                // 5. Manual Backup Actions (Legacy compatibility)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        "MANUAL BACKUP",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = c.textSecondary,
-                        letterSpacing = 0.5.sp
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = {
-                                val date = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date())
-                                createDocLauncher.launch("exported_backup_$date.csv")
-                            },
-                            border = BorderStroke(1.dp, c.border),
-                            shape = RoundedCornerShape(8.dp),
+                // 5. Manual Backup Actions + Close — grouped in their own nested Column so
+                // the gap between them stays small regardless of the outer 16dp section gap.
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "MANUAL BACKUP",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = c.textSecondary,
+                            letterSpacing = 0.5.sp
+                        )
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            contentPadding = PaddingValues(vertical = 6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Export CSV", fontSize = 11.sp, color = c.text)
+                            OutlinedButton(
+                                onClick = {
+                                    val date = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault()).format(java.util.Date())
+                                    createDocLauncher.launch("exported_backup_$date.csv")
+                                },
+                                border = BorderStroke(1.dp, c.border),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Export CSV", fontSize = 11.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                        if (exportedCsv) {
+                            Text("CSV exported successfully!", fontSize = 10.sp, color = c.income, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 2.dp))
                         }
                     }
-                    if (exportedCsv) {
-                        Text("CSV exported successfully!", fontSize = 10.sp, color = c.income, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 2.dp))
-                    }
-                }
 
-                Spacer(Modifier.height(4.dp))
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = c.accent.copy(alpha = 0.15f), contentColor = c.text),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("Close Backup Center", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = c.accent.copy(alpha = 0.15f), contentColor = c.text),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Close Backup Center", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.text)
+                    }
                 }
             }
         },
@@ -9616,51 +10102,20 @@ if (restoreConfirmItem != null) {
         val backupItem = restoreConfirmItem!!
         var cleanRestore by remember { mutableStateOf(false) }
 
-        AlertDialog(
-            onDismissRequest = { restoreConfirmItem = null },
-            title = { Text("Restore Backup", fontWeight = FontWeight.Bold, color = c.text) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        "Restoring backup from ${
-                            java.text.SimpleDateFormat("MMM dd, yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(backupItem.timestamp))
-                        }.",
-                        color = c.text, fontSize = 13.sp
-                    )
-
-                    // Merge info (default behaviour)
-                    Surface(
-                        color = c.accent.copy(alpha = 0.08f),
-                        border = BorderStroke(1.dp, c.accent.copy(alpha = 0.3f)),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            "By default only missing records are added — your existing data is kept intact.",
-                            color = c.accent, fontSize = 11.sp,
-                            modifier = Modifier.padding(10.dp)
-                        )
-                    }
-
-                    // Clean restore toggle
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.clickable { cleanRestore = !cleanRestore }
-                    ) {
-                        Checkbox(
-                            checked = cleanRestore,
-                            onCheckedChange = { cleanRestore = it },
-                            colors = CheckboxDefaults.colors(checkedColor = c.expense)
-                        )
-                        Column {
-                            Text("Clean restore (replace all data)", color = if (cleanRestore) c.expense else c.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            Text("Wipes current records before restoring", color = c.textSecondary, fontSize = 10.sp)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
+        ModernDialogFrame(
+            title = "Restore Backup",
+            icon = Icons.Default.CloudDownload,
+            iconColor = if (cleanRestore) c.expense else c.accent,
+            onDismiss = { restoreConfirmItem = null },
+            actions = {
+                OutlinedButton(
+                    onClick = { restoreConfirmItem = null },
+                    shape = RoundedCornerShape(percent = 50),
+                    border = BorderStroke(1.dp, c.text.copy(alpha = 0.2f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                    modifier = Modifier.weight(1f)
+                ) { Text("Cancel", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 Button(
                     onClick = {
                         val itemToRestore = backupItem
@@ -9679,16 +10134,53 @@ if (restoreConfirmItem != null) {
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = if (cleanRestore) c.expense else c.accent)
+                    shape = RoundedCornerShape(percent = 50),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (cleanRestore) c.expense else c.accent),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(if (cleanRestore) "Replace All Data" else "Merge Restore")
+                    Text(if (cleanRestore) "Replace All" else "Merge Restore", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { restoreConfirmItem = null }) { Text("Cancel", color = c.text) }
-            },
-            containerColor = c.surface
-        )
+            }
+        ) {
+            Text(
+                "Restoring backup from ${
+                    java.text.SimpleDateFormat("MMM dd, yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(backupItem.timestamp))
+                }.",
+                color = c.text, fontSize = 13.sp
+            )
+
+            // Merge info (default behaviour)
+            Surface(
+                color = c.accent.copy(alpha = 0.08f),
+                border = BorderStroke(1.dp, c.accent.copy(alpha = 0.3f)),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "By default only missing records are added — your existing data is kept intact.",
+                    color = c.accent, fontSize = 11.sp,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+
+            // Clean restore toggle
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.clickable { cleanRestore = !cleanRestore }
+            ) {
+                Checkbox(
+                    checked = cleanRestore,
+                    onCheckedChange = { cleanRestore = it },
+                    colors = CheckboxDefaults.colors(checkedColor = c.expense)
+                )
+                Column {
+                    Text("Clean restore (replace all data)", color = if (cleanRestore) c.expense else c.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Wipes current records before restoring", color = c.textSecondary, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
     }
 
     if (isRestoring) {
@@ -10122,7 +10614,7 @@ fun ProUpgradeDialog(
                     OutlinedTextField(
                         value = codeInput,
                         onValueChange = { codeInput = it.uppercase().replace(" ", ""); codeError = false },
-                        label = { Text("Enter activation code") },
+                        label = { Text("Enter activation code", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         isError = codeError,
                         supportingText = if (codeError) {{ Text("Invalid code. Please check and try again.", color = c.expense, fontSize = 11.sp) }} else null,
                         colors = OutlinedTextFieldDefaults.colors(

@@ -2666,13 +2666,15 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
     val filteredOverviewTotal = filteredCategoryTotals.sumOf { it.total }
     val recalcCategoryTotals = if (analyticsCategoryFilter.isEmpty()) filteredCategoryTotals
     else filteredCategoryTotals.map { it.copy(percentage = if (filteredOverviewTotal > 0) it.total / filteredOverviewTotal else 0.0) }
-    // Budgeted-only filter applied on top of category filter
+    // Budgeted-only filter: recalculate percentages relative to budgeted subset
     val budgetedCatNamesForFilter = activeBudgetsForAnalytics.map { it.category.lowercase() }.toSet()
-    val displayCategoryTotals = if (analyticsShowBudgetedOnly)
-        recalcCategoryTotals.filter { it.category.name.lowercase() in budgetedCatNamesForFilter }
-        else recalcCategoryTotals
-    val displayOverviewTotal = if (analyticsShowBudgetedOnly) displayCategoryTotals.sumOf { it.total } else
-        if (analyticsCategoryFilter.isEmpty()) totalOverviewSum else filteredOverviewTotal
+    val displayCategoryTotals = if (analyticsShowBudgetedOnly) {
+        val subset = recalcCategoryTotals.filter { it.category.name.lowercase() in budgetedCatNamesForFilter }
+        val subsetTotal = subset.sumOf { it.total }
+        if (subsetTotal > 0) subset.map { it.copy(percentage = it.total / subsetTotal) } else subset
+    } else recalcCategoryTotals
+    val displayOverviewTotal = if (analyticsShowBudgetedOnly) displayCategoryTotals.sumOf { it.total }
+        else if (analyticsCategoryFilter.isEmpty()) totalOverviewSum else filteredOverviewTotal
     // Category-filtered transactions for flow & account analysis
     val categoryFilteredTxns = if (analyticsCategoryFilter.isEmpty()) filteredTransactions
     else filteredTransactions.filter { it.category in analyticsCategoryFilter }
@@ -3277,8 +3279,10 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                     Surface(shadowElevation = 0.dp, color = c.bg) {
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                                Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, lineHeight = 18.sp)
-                                Text("Period: $periodLabelA", fontSize = 12.sp, color = c.textSecondary, lineHeight = 14.sp)
+                                Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text)
+                                Spacer(Modifier.height(1.dp))
+                                HorizontalDivider(color = c.divider, thickness = 0.5.dp, modifier = Modifier.padding(end = 8.dp))
+                                Text("Period: $periodLabelA", fontSize = 11.sp, color = c.textSecondary)
                             }
                             IconButton(onClick = { categoryDetailItem = null; expandedNotesTxId = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
                                 Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
@@ -3322,13 +3326,13 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                             }
                                         }
                                     }
-                                    // Right half: text centered
-                                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(String.format(Locale.getDefault(), "%.1f%%", cat.percentage * 100), fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = cat.category.color, textAlign = TextAlign.Center)
-                                        Text("of total spending", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                                    // Right half: text left-aligned within the half
+                                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(String.format(Locale.getDefault(), "%.1f%%", cat.percentage * 100), fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = cat.category.color)
+                                        Text("of total spending", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
                                         Spacer(Modifier.height(4.dp))
-                                        Text("₹${decFmtA.format(cat.total)}", fontSize = 14.sp, color = cat.category.color, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                                        Text("out of ${compactCurrency(filteredOverviewTotal)}", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                                        Text("₹${decFmtA.format(cat.total)}", fontSize = 14.sp, color = cat.category.color, fontWeight = FontWeight.Bold)
+                                        Text("out of ${compactCurrency(filteredOverviewTotal)}", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
@@ -5552,8 +5556,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     Surface(shadowElevation = 0.dp, color = c.bg) {
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                                Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, lineHeight = 18.sp)
-                                Text("Period: $monthLabel", fontSize = 12.sp, color = c.textSecondary, lineHeight = 14.sp)
+                                Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text)
+                                Spacer(Modifier.height(1.dp))
+                                HorizontalDivider(color = c.divider, thickness = 0.5.dp, modifier = Modifier.padding(end = 8.dp))
+                                Text("Period: $monthLabel", fontSize = 11.sp, color = c.textSecondary)
                             }
                             IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
                                 Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
@@ -10256,7 +10262,7 @@ fun budgetProgressColor(percent: Double, appColors: com.example.ui.theme.AppColo
         percent > 100.0 -> Color(0xFF991B1B)  // >100%: dark red (over budget)
         percent > 90.0  -> Color(0xFFEF4444)  // >90%: red (critical)
         percent > 75.0  -> Color(0xFFFF6B00)  // >75%: vivid orange
-        percent > 50.0  -> Color(0xFFFFD500)  // >50%: bright yellow
+        percent > 50.0  -> Color(0xFFD97706)  // >50%: amber (visible on light+dark)
         percent > 30.0  -> Color(0xFF16A34A)  // >30%: vibrant green (ok)
         else            -> Color(0xFF86EFAC)  // ≤30%: soft green (safe)
     }

@@ -2953,6 +2953,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
 
             AnalyticsMode.EXPENSE_FLOW -> {
                 item {
+                    val flowCtxExpense = LocalContext.current
                     AnalyticsFlowSection(
                         title = "Expense Flow",
                         points = flowPoints,
@@ -2967,7 +2968,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                 tc.get(java.util.Calendar.DAY_OF_YEAR) == cal.get(java.util.Calendar.DAY_OF_YEAR) &&
                                 tx.type == "EXPENSE"
                             }
-                            flowDayItem = point to dayTxns
+                            if (dayTxns.isEmpty()) Toast.makeText(flowCtxExpense, "No expenses on ${point.fullLabel}", Toast.LENGTH_SHORT).show()
+                            else flowDayItem = point to dayTxns
                         }
                     )
                 }
@@ -2975,6 +2977,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
 
             AnalyticsMode.INCOME_FLOW -> {
                 item {
+                    val flowCtxIncome = LocalContext.current
                     AnalyticsFlowSection(
                         title = "Income Flow",
                         points = flowPoints,
@@ -2989,7 +2992,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                 tc.get(java.util.Calendar.DAY_OF_YEAR) == cal.get(java.util.Calendar.DAY_OF_YEAR) &&
                                 tx.type == "INCOME"
                             }
-                            flowDayItem = point to dayTxns
+                            if (dayTxns.isEmpty()) Toast.makeText(flowCtxIncome, "No income on ${point.fullLabel}", Toast.LENGTH_SHORT).show()
+                            else flowDayItem = point to dayTxns
                         }
                     )
                 }
@@ -5464,9 +5468,11 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         val budgetObj = activeBudgets.firstOrNull { it.category.equals(cat.name, ignoreCase = true) }
         val catSpendDetail = catTxs.sumOf { it.amount }
         val limitDetail = budgetObj?.amountLimit ?: 0.0
-        val ratioDetail = if (limitDetail > 0) (catSpendDetail / limitDetail).toFloat().coerceIn(0f, 1f) else 0f
-        val pct = (ratioDetail * 100)
-        val progColor = budgetProgressColor(pct.toDouble(), c)
+        // actualPct is uncapped — shows >100% when over budget
+        val actualPct = if (limitDetail > 0) (catSpendDetail / limitDetail * 100) else 0.0
+        // barRatio capped at 1f so the visual bar doesn't overflow
+        val barRatio = if (limitDetail > 0) (catSpendDetail / limitDetail).toFloat().coerceIn(0f, 1f) else 0f
+        val progColor = budgetProgressColor(actualPct, c)
         val totalBudgetedSpend = monthExpenses.filter { tx -> activeBudgets.any { it.category.equals(tx.category, ignoreCase = true) } }.sumOf { it.amount }
         val ofTotalPct = if (totalBudgetedSpend > 0) (catSpendDetail / totalBudgetedSpend * 100) else 0.0
         val calDetail = remember { Calendar.getInstance() }
@@ -5475,12 +5481,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         val daysRemaining = (daysInMonth - dayOfMonth).coerceAtLeast(1)
         val avgDailySpend = if (dayOfMonth > 0) catSpendDetail / dayOfMonth else 0.0
         val dailyAllowanceLeft = if (limitDetail > 0) (limitDetail - catSpendDetail) / daysRemaining else 0.0
-        // Month label for header and transactions section
         val monthLabel = remember(rawMonthYear) {
             try { SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(rawMonthYear) ?: Date()) }
             catch (_: Exception) { rawMonthYear }
         }
-        // Notes expand state (mirrors analytics pattern)
         var expandedBudgetNoteIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
         var allBudgetNotesExpanded by remember { mutableStateOf(false) }
         val txsWithNotes = catTxs.filter { userNoteFrom(it.note).isNotBlank() }
@@ -5493,24 +5497,27 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                 Column(modifier = Modifier.fillMaxSize()) {
                     // ── Top bar ──────────────────────────────────────────────
                     Surface(shadowElevation = 0.dp, color = c.bg) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
-                                    Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(20.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
+                            }
+                            Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                                Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(monthLabel, fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
+                            }
+                            var showTopKebab by remember { mutableStateOf(false) }
+                            Box {
+                                IconButton(onClick = { showTopKebab = true }, modifier = Modifier.size(36.dp)) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = c.textSecondary, modifier = Modifier.size(18.dp))
                                 }
-                                Text("Category Details", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.text, modifier = Modifier.weight(1f).padding(start = 8.dp))
-                                var showTopKebab by remember { mutableStateOf(false) }
-                                Box {
-                                    IconButton(onClick = { showTopKebab = true }, modifier = Modifier.size(40.dp)) {
-                                        Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = c.textSecondary, modifier = Modifier.size(20.dp))
-                                    }
-                                    DropdownMenu(expanded = showTopKebab, onDismissRequest = { showTopKebab = false }, containerColor = c.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
-                                        DropdownMenuItem(text = { Text("Edit Budget", color = c.text, fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = c.accent, modifier = Modifier.size(16.dp)) }, onClick = { showTopKebab = false; showBudgetCategoryDetailFor = null; showBudgetAmountDialog = cat })
-                                        DropdownMenuItem(text = { Text("Edit Category", color = c.text, fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Category, null, tint = c.accent, modifier = Modifier.size(16.dp)) }, onClick = { showTopKebab = false; showBudgetCategoryDetailFor = null; showEditCategoryDialog = cat })
-                                    }
+                                DropdownMenu(expanded = showTopKebab, onDismissRequest = { showTopKebab = false }, containerColor = c.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
+                                    DropdownMenuItem(text = { Text("Edit Budget", color = c.text, fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = c.accent, modifier = Modifier.size(16.dp)) }, onClick = { showTopKebab = false; showBudgetCategoryDetailFor = null; showBudgetAmountDialog = cat })
+                                    DropdownMenuItem(text = { Text("Edit Category", color = c.text, fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Category, null, tint = c.accent, modifier = Modifier.size(16.dp)) }, onClick = { showTopKebab = false; showBudgetCategoryDetailFor = null; showEditCategoryDialog = cat })
                                 }
                             }
-                            Text(monthLabel, fontSize = 13.sp, color = c.textSecondary, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 48.dp))
                         }
                     }
                     HorizontalDivider(color = c.divider)
@@ -5534,24 +5541,29 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 }
                             }
                         }
+                        if (c.isBorderless) HorizontalDivider(color = c.flatDivider)
 
                         // ── Progress ─────────────────────────────────────────
                         if (limitDetail > 0) {
-                            Surface(color = c.cardBg, shape = RoundedCornerShape(14.dp), border = if (!c.isBorderless) BorderStroke(1.dp, c.border) else null, modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Surface(color = if (c.isBorderless) Color.Transparent else c.cardBg, shape = RoundedCornerShape(14.dp), border = if (!c.isBorderless) BorderStroke(1.dp, c.border) else null, modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(if (c.isBorderless) PaddingValues(vertical = 8.dp) else PaddingValues(16.dp)), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text(String.format(Locale.getDefault(), "%.1f%%", pct) + " of budget used", fontSize = 14.sp, color = progColor, fontWeight = FontWeight.Bold)
+                                        Text(String.format(Locale.getDefault(), "%.1f%%", actualPct) + " of budget used", fontSize = 14.sp, color = progColor, fontWeight = FontWeight.Bold)
                                         if (totalBudgetedSpend > 0) Text(String.format(Locale.getDefault(), "%.1f%%", ofTotalPct) + " of total", fontSize = 13.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
                                     }
-                                    LinearProgressIndicator(progress = { ratioDetail }, color = progColor, trackColor = c.text.copy(alpha = 0.08f), modifier = Modifier.fillMaxWidth().height(14.dp))
+                                    // Square custom progress bar
+                                    Box(modifier = Modifier.fillMaxWidth().height(14.dp).background(c.text.copy(alpha = 0.08f))) {
+                                        Box(modifier = Modifier.fillMaxWidth(barRatio).fillMaxHeight().background(progColor))
+                                    }
                                 }
                             }
                         }
+                        if (c.isBorderless && limitDetail > 0) HorizontalDivider(color = c.flatDivider)
 
                         // ── Daily breakdown ──────────────────────────────────
                         if (limitDetail > 0) {
-                            Surface(color = c.cardBg, shape = RoundedCornerShape(14.dp), border = if (!c.isBorderless) BorderStroke(1.dp, c.border) else null, modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Surface(color = if (c.isBorderless) Color.Transparent else c.cardBg, shape = RoundedCornerShape(14.dp), border = if (!c.isBorderless) BorderStroke(1.dp, c.border) else null, modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(if (c.isBorderless) PaddingValues(vertical = 8.dp) else PaddingValues(16.dp)), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Icon(Icons.Default.CalendarToday, null, tint = c.accent, modifier = Modifier.size(14.dp))
                                         Text("Daily Breakdown (Day $dayOfMonth of $daysInMonth)", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
@@ -5559,17 +5571,18 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                     HorizontalDivider(color = c.divider)
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                         Column {
-                                            Text("₹${compactCurrency(avgDailySpend)}/day", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = c.text)
+                                            Text("${compactCurrency(avgDailySpend)}/day", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = c.text)
                                             Text("avg spent so far", fontSize = 12.sp, color = c.textSecondary)
                                         }
                                         Column(horizontalAlignment = Alignment.End) {
-                                            Text("₹${compactCurrency(dailyAllowanceLeft.coerceAtLeast(0.0))}/day", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = if (dailyAllowanceLeft < 0) c.expense else c.income)
+                                            Text("${compactCurrency(dailyAllowanceLeft.coerceAtLeast(0.0))}/day", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = if (dailyAllowanceLeft < 0) c.expense else c.income)
                                             Text(if (dailyAllowanceLeft < 0) "over budget" else "left per day", fontSize = 12.sp, color = c.textSecondary)
                                         }
                                     }
                                 }
                             }
                         }
+                        if (c.isBorderless && limitDetail > 0) HorizontalDivider(color = c.flatDivider)
 
                         // ── Transactions ─────────────────────────────────────
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -5582,15 +5595,15 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             }
                         }
                         if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
-                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(if (c.isBorderless) 0.dp else 2.dp)) {
                         catTxs.forEachIndexed { idx, tx ->
                             val hasNote = userNoteFrom(tx.note).isNotBlank()
                             val isNoteExpanded = allBudgetNotesExpanded || tx.id in expandedBudgetNoteIds
                             if (c.isBorderless && idx > 0) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
                             Surface(
-                                color = if (isNoteExpanded && hasNote) c.accent.copy(alpha = 0.06f) else c.divider,
-                                shape = RoundedCornerShape(10.dp),
-                                border = if (isNoteExpanded && hasNote) BorderStroke(1.dp, c.accent.copy(alpha = 0.3f)) else null,
+                                color = if (c.isBorderless) Color.Transparent else if (isNoteExpanded && hasNote) c.accent.copy(alpha = 0.06f) else c.divider,
+                                shape = RoundedCornerShape(if (c.isBorderless) 0.dp else 10.dp),
+                                border = if (!c.isBorderless && isNoteExpanded && hasNote) BorderStroke(1.dp, c.accent.copy(alpha = 0.3f)) else null,
                                 modifier = Modifier.fillMaxWidth().then(if (hasNote) Modifier.clickable { expandedBudgetNoteIds = if (tx.id in expandedBudgetNoteIds) expandedBudgetNoteIds - tx.id else expandedBudgetNoteIds + tx.id } else Modifier)
                             ) {
                                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -10170,11 +10183,11 @@ fun shiftMonthYear(monthYear: String, amount: Int): String {
 
 fun budgetProgressColor(percent: Double, appColors: com.example.ui.theme.AppColors): Color {
     return when {
-        percent > 100.0 -> appColors.expense
-        percent > 90.0 -> Color(0xFFFB923C)
-        percent >= 60.0 -> Color(0xFFFACC15)
-        percent >= 30.0 -> Color(0xFF4ADE80)
-        else -> appColors.income
+        percent > 90.0 -> Color(0xFFEF4444)   // >90%: red (critical)
+        percent > 75.0 -> Color(0xFFFB923C)   // >75%: orange (warning)
+        percent > 50.0 -> Color(0xFFFACC15)   // >50%: yellow (caution)
+        percent > 30.0 -> Color(0xFF86EFAC)   // >30%: light green (ok)
+        else           -> Color(0xFF22C55E)   // ≤30%: bright green (safe)
     }
 }
 

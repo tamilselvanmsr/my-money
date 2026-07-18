@@ -3234,7 +3234,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
         val txsWithNotesCat = txList.filter { userNoteFrom(it.note).isNotBlank() }
         AlertDialog(
             onDismissRequest = { categoryDetailItem = null; expandedNotesTxId = null },
-            containerColor = c.surface,
+            containerColor = c.cardBg,
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(shape = CircleShape, color = cat.category.color.copy(alpha = 0.15f), modifier = Modifier.size(40.dp)) {
@@ -4541,6 +4541,9 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     var showBudgetAmountDialog by remember { mutableStateOf<DisplayCategory?>(null) }
     var showCategoryMenuFor by remember { mutableStateOf<String?>(null) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var showBudgetCategoryDetailFor by remember { mutableStateOf<DisplayCategory?>(null) }
+    var showBudgetKebabFor by remember { mutableStateOf<String?>(null) }
+    val budgetScreenCtx = LocalContext.current
     val showBudgetedOnly by viewModel.budgetShowBudgetedOnly.collectAsStateWithLifecycle()
     val activeCategoryTypeTab by viewModel.budgetCategoryTab.collectAsStateWithLifecycle()
     var categoryOrderKeys by remember(activeCategoryTypeTab) { mutableStateOf<List<String>>(emptyList()) }
@@ -5000,7 +5003,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             .fillMaxWidth()
                             .offset(y = if (isDragging) dragOffsetDp else 0.dp)
                             .scale(if (isDragging) 1.02f else 1f)
-                            .clickable { showBudgetAmountDialog = cat }
+                            .clickable {
+                                val catTxs = if (activeCategoryTypeTab == "EXPENSE") { monthExpenses.filter { it.category.equals(cat.name, ignoreCase = true) } } else { txs.filter { tx -> sdfMonth.format(Date(tx.timestamp)) == rawMonthYear && tx.type == "INCOME" && tx.category.equals(cat.name, ignoreCase = true) } }
+                                if (catTxs.isEmpty()) { Toast.makeText(budgetScreenCtx, "No transactions for ${cat.displayName} this period.", Toast.LENGTH_SHORT).show() } else { showBudgetCategoryDetailFor = cat }
+                            }
                             .pointerInput(cat.name) {
                             detectDragGesturesAfterLongPress(
                                 onDragStart = { _ -> draggingItemKey = cat.name; draggingItemOffsetY = 0f },
@@ -5432,6 +5438,78 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             dismissButton = {
                 TextButton(onClick = { showBudgetAmountDialog = null }) { Text("Cancel", color = c.textSecondary) }
             }
+        )
+    }
+
+    // ── Budget category detail popup ─────────────────────────────────────────
+    showBudgetCategoryDetailFor?.let { cat ->
+        val decFmt = remember { DecimalFormat("₹#,##0.00") }
+        val sdf = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
+        val catTxs = remember(cat.name, rawMonthYear, activeCategoryTypeTab) {
+            if (activeCategoryTypeTab == "EXPENSE") {
+                monthExpenses.filter { it.category.equals(cat.name, ignoreCase = true) }.sortedByDescending { it.timestamp }
+            } else {
+                txs.filter { tx ->
+                    sdfMonth.format(Date(tx.timestamp)) == rawMonthYear && tx.type == "INCOME" && tx.category.equals(cat.name, ignoreCase = true)
+                }.sortedByDescending { it.timestamp }
+            }
+        }
+        val budgetObj = activeBudgets.firstOrNull { it.category.equals(cat.name, ignoreCase = true) }
+        val catSpendDetail = catTxs.sumOf { it.amount }
+        val limitDetail = budgetObj?.amountLimit ?: 0.0
+        val ratioDetail = if (limitDetail > 0) (catSpendDetail / limitDetail).toFloat().coerceIn(0f, 1f) else 0f
+        val percentDetail = ratioDetail * 100
+        val progressColorDetail = budgetProgressColor(percentDetail.toDouble(), c)
+        val totalBudgetedSpend = monthExpenses.filter { tx -> activeBudgets.any { it.category.equals(tx.category, ignoreCase = true) } }.sumOf { it.amount }
+        val ofTotalPct = if (totalBudgetedSpend > 0) (catSpendDetail / totalBudgetedSpend * 100) else 0.0
+        AlertDialog(
+            onDismissRequest = { showBudgetCategoryDetailFor = null },
+            containerColor = c.cardBg,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(shape = CircleShape, color = cat.color.copy(alpha = 0.15f), modifier = Modifier.size(44.dp)) {
+                        Box(contentAlignment = Alignment.Center) { Icon(cat.icon, null, tint = cat.color, modifier = Modifier.size(24.dp)) }
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text)
+                        if (limitDetail > 0) Text("${decFmt.format(catSpendDetail)} / ${decFmt.format(limitDetail)}", fontSize = 12.sp, color = progressColorDetail, fontWeight = FontWeight.SemiBold)
+                        else Text(decFmt.format(catSpendDetail), fontSize = 12.sp, color = cat.color, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Progress section
+                    if (limitDetail > 0) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(String.format(Locale.getDefault(), "%.1f%%", percentDetail) + " of limit", fontSize = 12.sp, color = progressColorDetail, fontWeight = FontWeight.Bold)
+                                if (totalBudgetedSpend > 0) Text(String.format(Locale.getDefault(), "%.1f%%", ofTotalPct) + " of total budgeted", fontSize = 11.sp, color = c.textSecondary)
+                            }
+                            LinearProgressIndicator(progress = { ratioDetail }, color = progressColorDetail, trackColor = c.text.copy(alpha = 0.05f), modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)))
+                        }
+                    }
+                    if (c.isBorderless) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
+                    // Transaction list
+                    catTxs.forEachIndexed { idx, tx ->
+                        if (c.isBorderless && idx > 0) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
+                        Surface(color = if (c.isBorderless) Color.Transparent else c.divider, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Text(tx.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(tx.getAccountName(), fontSize = 10.sp, color = c.textSecondary, maxLines = 1)
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(decFmt.format(tx.amount), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = cat.color)
+                                    Text(sdf.format(Date(tx.timestamp)), fontSize = 10.sp, color = c.textSecondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showBudgetCategoryDetailFor = null }) { Text("Close", color = c.accent) } }
         )
     }
 

@@ -2603,6 +2603,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
     // Per-mode category filters — each overview keeps its own independent selection
     val analyticsExpenseCatFilter by viewModel.analyticsExpenseCatFilter.collectAsStateWithLifecycle()
     val analyticsIncomeCatFilter  by viewModel.analyticsIncomeCatFilter.collectAsStateWithLifecycle()
+    val activeBudgetsForAnalytics by viewModel.monthlyBudgets.collectAsStateWithLifecycle()
+    var analyticsShowBudgetedOnly by remember { mutableStateOf(false) }
     val analyticsCategoryFilter = when (selectedMode) {
         AnalyticsMode.EXPENSE_OVERVIEW, AnalyticsMode.EXPENSE_FLOW -> analyticsExpenseCatFilter
         AnalyticsMode.INCOME_OVERVIEW,  AnalyticsMode.INCOME_FLOW  -> analyticsIncomeCatFilter
@@ -2664,6 +2666,13 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
     val filteredOverviewTotal = filteredCategoryTotals.sumOf { it.total }
     val recalcCategoryTotals = if (analyticsCategoryFilter.isEmpty()) filteredCategoryTotals
     else filteredCategoryTotals.map { it.copy(percentage = if (filteredOverviewTotal > 0) it.total / filteredOverviewTotal else 0.0) }
+    // Budgeted-only filter applied on top of category filter
+    val budgetedCatNamesForFilter = activeBudgetsForAnalytics.map { it.category.lowercase() }.toSet()
+    val displayCategoryTotals = if (analyticsShowBudgetedOnly)
+        recalcCategoryTotals.filter { it.category.name.lowercase() in budgetedCatNamesForFilter }
+        else recalcCategoryTotals
+    val displayOverviewTotal = if (analyticsShowBudgetedOnly) displayCategoryTotals.sumOf { it.total } else
+        if (analyticsCategoryFilter.isEmpty()) totalOverviewSum else filteredOverviewTotal
     // Category-filtered transactions for flow & account analysis
     val categoryFilteredTxns = if (analyticsCategoryFilter.isEmpty()) filteredTransactions
     else filteredTransactions.filter { it.category in analyticsCategoryFilter }
@@ -2813,13 +2822,34 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                 DropdownMenuItem(
                                     text = {
                                         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                                            Text("All Categories", fontSize = 13.sp, color = if (analyticsCategoryFilter.isEmpty()) c.accent else c.text,
-                                                fontWeight = if (analyticsCategoryFilter.isEmpty()) FontWeight.Bold else FontWeight.Normal)
-                                            if (analyticsCategoryFilter.isEmpty()) Icon(Icons.Default.Check, null, tint = c.accent, modifier = Modifier.size(14.dp))
+                                            Text("All Categories", fontSize = 13.sp, color = if (analyticsCategoryFilter.isEmpty() && !analyticsShowBudgetedOnly) c.accent else c.text,
+                                                fontWeight = if (analyticsCategoryFilter.isEmpty() && !analyticsShowBudgetedOnly) FontWeight.Bold else FontWeight.Normal)
+                                            if (analyticsCategoryFilter.isEmpty() && !analyticsShowBudgetedOnly) Icon(Icons.Default.Check, null, tint = c.accent, modifier = Modifier.size(14.dp))
                                         }
                                     },
                                     onClick = { 
+                                        analyticsShowBudgetedOnly = false
                                         when (selectedMode) {
+                                            AnalyticsMode.EXPENSE_OVERVIEW, AnalyticsMode.EXPENSE_FLOW -> viewModel.setAnalyticsExpenseCatFilter(emptySet())
+                                            AnalyticsMode.INCOME_OVERVIEW,  AnalyticsMode.INCOME_FLOW  -> viewModel.setAnalyticsIncomeCatFilter(emptySet())
+                                            else -> {}
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Icon(Icons.Default.Calculate, null, tint = if (analyticsShowBudgetedOnly) c.accent else c.textSecondary, modifier = Modifier.size(15.dp))
+                                                Text("Budgeted Only", fontSize = 13.sp, color = if (analyticsShowBudgetedOnly) c.accent else c.text, fontWeight = if (analyticsShowBudgetedOnly) FontWeight.Bold else FontWeight.Normal)
+                                            }
+                                            if (analyticsShowBudgetedOnly) Icon(Icons.Default.Check, null, tint = c.accent, modifier = Modifier.size(14.dp))
+                                        }
+                                    },
+                                    onClick = {
+                                        analyticsShowBudgetedOnly = !analyticsShowBudgetedOnly
+                                        // Clear individual cat filter when switching to budgeted-only
+                                        if (analyticsShowBudgetedOnly) when (selectedMode) {
                                             AnalyticsMode.EXPENSE_OVERVIEW, AnalyticsMode.EXPENSE_FLOW -> viewModel.setAnalyticsExpenseCatFilter(emptySet())
                                             AnalyticsMode.INCOME_OVERVIEW,  AnalyticsMode.INCOME_FLOW  -> viewModel.setAnalyticsIncomeCatFilter(emptySet())
                                             else -> {}
@@ -2920,8 +2950,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
             AnalyticsMode.EXPENSE_OVERVIEW -> {
                 item {
                     AnalyticsOverviewSection(
-                        categoryTotals = recalcCategoryTotals,
-                        totalAmount = if (analyticsCategoryFilter.isEmpty()) totalOverviewSum else filteredOverviewTotal,
+                        categoryTotals = displayCategoryTotals,
+                        totalAmount = displayOverviewTotal,
                         totalLabel = "Total Spent",
                         breakdownLabel = "CATEGORY WISE BREAKDOWN",
                         percentSuffix = "of expenses",
@@ -2937,8 +2967,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
             AnalyticsMode.INCOME_OVERVIEW -> {
                 item {
                     AnalyticsOverviewSection(
-                        categoryTotals = recalcCategoryTotals,
-                        totalAmount = if (analyticsCategoryFilter.isEmpty()) totalOverviewSum else filteredOverviewTotal,
+                        categoryTotals = displayCategoryTotals,
+                        totalAmount = displayOverviewTotal,
                         totalLabel = "Total Received",
                         breakdownLabel = "INCOME BREAKDOWN",
                         percentSuffix = "of income",
@@ -3248,7 +3278,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
                                 Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, lineHeight = 18.sp)
-                                Text(periodLabelA, fontSize = 12.sp, color = c.textSecondary, lineHeight = 14.sp)
+                                Text("Period: $periodLabelA", fontSize = 12.sp, color = c.textSecondary, lineHeight = 14.sp)
                             }
                             IconButton(onClick = { categoryDetailItem = null; expandedNotesTxId = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
                                 Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
@@ -3266,7 +3296,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(cat.category.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Spacer(Modifier.height(4.dp))
-                                Text("₹${decFmtA.format(cat.total)}", fontSize = 15.sp, color = cat.category.color, fontWeight = FontWeight.SemiBold)
+                                val catTypeLabel = if (cat.category.type == "INCOME") "Income Category" else "Expense Category"
+                                Text(catTypeLabel, fontSize = 13.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
                             }
                         }
                         if (c.isBorderless) HorizontalDivider(color = c.flatDivider)
@@ -3274,26 +3305,30 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         Surface(color = if (c.isBorderless) Color.Transparent else c.cardBg, shape = RoundedCornerShape(14.dp), border = if (!c.isBorderless) BorderStroke(1.dp, c.border) else null, modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("SHARE OF TOTAL", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp, color = c.textSecondary)
-                                // Filled pie + percentage info
-                                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    Box(modifier = Modifier.size(100.dp)) {
-                                        Canvas(modifier = Modifier.fillMaxSize()) {
-                                            val d = size.minDimension
-                                            val rect = androidx.compose.ui.geometry.Size(d, d)
-                                            val tl = androidx.compose.ui.geometry.Offset(0f, 0f)
-                                            val catSweep = (cat.percentage * 360.0).toFloat().coerceIn(1f, 359f)
-                                            val restSweep = 360f - catSweep
-                                            if (restSweep > 0.5f) drawArc(color = cat.category.color.copy(alpha = 0.14f), startAngle = -90f + catSweep, sweepAngle = restSweep, useCenter = true, size = rect, topLeft = tl)
-                                            drawArc(color = cat.category.color, startAngle = -90f, sweepAngle = catSweep, useCenter = true, size = rect, topLeft = tl)
-                                            drawCircle(color = Color.White.copy(alpha = 0.25f), radius = d / 2f, center = center, style = Stroke(width = 1.5.dp.toPx()))
+                                // Pie (left half) + percentage info (right half), equal halves
+                                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    // Left half: pie centered
+                                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                        Box(modifier = Modifier.size(120.dp)) {
+                                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                                val d = size.minDimension
+                                                val rect = androidx.compose.ui.geometry.Size(d, d)
+                                                val tl = androidx.compose.ui.geometry.Offset(0f, 0f)
+                                                val catSweep = (cat.percentage * 360.0).toFloat().coerceIn(1f, 359f)
+                                                val restSweep = 360f - catSweep
+                                                if (restSweep > 0.5f) drawArc(color = cat.category.color.copy(alpha = 0.14f), startAngle = -90f + catSweep, sweepAngle = restSweep, useCenter = true, size = rect, topLeft = tl)
+                                                drawArc(color = cat.category.color, startAngle = -90f, sweepAngle = catSweep, useCenter = true, size = rect, topLeft = tl)
+                                                drawCircle(color = Color.White.copy(alpha = 0.25f), radius = d / 2f, center = center, style = Stroke(width = 1.5.dp.toPx()))
+                                            }
                                         }
                                     }
-                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                        Text(String.format(Locale.getDefault(), "%.1f%%", cat.percentage * 100), fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = cat.category.color)
-                                        Text("of spending", fontSize = 12.sp, color = c.textSecondary)
-                                        Spacer(Modifier.height(6.dp))
-                                        Text("₹${decFmtA.format(cat.total)}", fontSize = 14.sp, color = cat.category.color, fontWeight = FontWeight.SemiBold)
-                                        Text("out of ₹${decFmtA.format(filteredOverviewTotal)}", fontSize = 11.sp, color = c.textSecondary)
+                                    // Right half: text centered
+                                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(String.format(Locale.getDefault(), "%.1f%%", cat.percentage * 100), fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = cat.category.color, textAlign = TextAlign.Center)
+                                        Text("of total spending", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                                        Spacer(Modifier.height(4.dp))
+                                        Text("₹${decFmtA.format(cat.total)}", fontSize = 14.sp, color = cat.category.color, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                                        Text("out of ${compactCurrency(filteredOverviewTotal)}", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
                                     }
                                 }
                             }
@@ -3348,7 +3383,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                 }
                             }
                         }
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(32.dp))
                     }
                 }
             }
@@ -5518,7 +5553,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
                                 Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, lineHeight = 18.sp)
-                                Text(monthLabel, fontSize = 12.sp, color = c.textSecondary, lineHeight = 14.sp)
+                                Text("Period: $monthLabel", fontSize = 12.sp, color = c.textSecondary, lineHeight = 14.sp)
                             }
                             IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
                                 Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
@@ -5667,7 +5702,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             }
                         }
                         }
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(32.dp))
                     }
                 }
             }
@@ -7620,7 +7655,7 @@ fun AddTransactionDialog(
                     val catColor = selectedCategory?.color ?: c.accent
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Account", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
+                            Text("Account", fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
                             OutlinedButton(
                                 onClick = { showWalletPicker = true },
                                 shape = RoundedCornerShape(8.dp),
@@ -7648,7 +7683,7 @@ fun AddTransactionDialog(
                             }
                         }
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Category", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
+                            Text("Category", fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
                             OutlinedButton(
                                 onClick = { showCategoryPicker = true },
                                 shape = RoundedCornerShape(8.dp),
@@ -7960,14 +7995,14 @@ fun EditTransactionDialog(
                     !isNoCategoryType -> {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Account", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
+                                Text("Account", fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
                                 OutlinedButton(onClick = { showWalletPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, editAccColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
                                     Icon(walletIconFor(accountSelection, editAccType), null, tint = editAccColor, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp))
                                     Text(accountSelection.ifBlank { "Account" }, fontSize = editAccFontSize, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, fontWeight = FontWeight.SemiBold, color = c.text, modifier = Modifier.weight(1f), onTextLayout = { r -> if (r.hasVisualOverflow && editAccFontSize.value > 8f) editAccFontSize = (editAccFontSize.value * 0.85f).sp })
                                 }
                             }
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Category", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
+                                Text("Category", fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
                                 val catColor = selectedCategory?.color ?: c.accent
                                 val catIcon = selectedCategory?.icon ?: Icons.Default.Category
                                 OutlinedButton(onClick = { showCategoryPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, catColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
@@ -8059,10 +8094,9 @@ fun EditTransactionDialog(
         },
         confirmButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
+                Button(
                     onClick = onDelete,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = c.expense),
-                    border = BorderStroke(1.dp, c.expense.copy(0.5f))
+                    colors = ButtonDefaults.buttonColors(containerColor = c.expense.copy(0.13f), contentColor = c.expense)
                 ) {
                     Text("Delete", fontWeight = FontWeight.Bold)
                 }
@@ -8097,7 +8131,7 @@ fun EditTransactionDialog(
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss, border = BorderStroke(1.dp, c.divider), colors = ButtonDefaults.outlinedButtonColors(contentColor = c.textSecondary)) { Text("Cancel", fontWeight = FontWeight.Medium) }
+            Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = c.text.copy(0.08f), contentColor = c.text)) { Text("Cancel", fontWeight = FontWeight.SemiBold) }
         },
         containerColor = c.surface
     )

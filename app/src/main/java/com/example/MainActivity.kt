@@ -3237,16 +3237,6 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
         val sdfA = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
         val txsWithNotesCat = txList.filter { userNoteFrom(it.note).isNotBlank() }
         val periodLabelA = formatAnalyticsPeriodLabel(rawMonthYear, timeFilter, anchorTime)
-        val dailyKeyFmtA = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
-        val dailySpendDataA = remember(txList) {
-            txList.groupBy { dailyKeyFmtA.format(java.util.Date(it.timestamp)) }
-                .entries.sortedBy { it.key }
-                .map { it.key to it.value.sumOf { tx -> tx.amount } }
-        }
-        val dailyMaxA = dailySpendDataA.maxOfOrNull { it.second }?.coerceAtLeast(1.0) ?: 1.0
-        val activeDaysA = dailySpendDataA.size
-        val dailyAvgA = if (activeDaysA > 0) cat.total / activeDaysA else 0.0
-        val peakDayA = dailySpendDataA.maxByOrNull { it.second }
 
         Dialog(
             onDismissRequest = { categoryDetailItem = null; expandedNotesTxId = null },
@@ -3294,14 +3284,17 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                     // Donut
                                     Box(modifier = Modifier.size(110.dp), contentAlignment = Alignment.Center) {
                                         Canvas(modifier = Modifier.fillMaxSize()) {
-                                            val strokeW = size.minDimension * 0.18f
-                                            val arcSz = androidx.compose.ui.geometry.Size(size.minDimension - strokeW, size.minDimension - strokeW)
-                                            val tl = androidx.compose.ui.geometry.Offset(strokeW / 2f, strokeW / 2f)
-                                            // Dimmed background ring (rest of expenses)
-                                            drawArc(color = cat.category.color.copy(alpha = 0.13f), startAngle = -90f, sweepAngle = 360f, useCenter = false, style = Stroke(width = strokeW, cap = StrokeCap.Round), size = arcSz, topLeft = tl)
-                                            // Category arc
-                                            val sweep = (cat.percentage * 360.0).toFloat().coerceIn(2f, 360f)
-                                            drawArc(color = cat.category.color, startAngle = -90f, sweepAngle = sweep, useCenter = false, style = Stroke(width = strokeW * 1.1f, cap = StrokeCap.Round), size = arcSz, topLeft = tl)
+                                            val d = size.minDimension
+                                            val tl = androidx.compose.ui.geometry.Offset((size.width - d) / 2f, (size.height - d) / 2f)
+                                            val rect = androidx.compose.ui.geometry.Size(d, d)
+                                            val catSweep = (cat.percentage * 360.0).toFloat().coerceIn(1f, 359f)
+                                            val restSweep = 360f - catSweep
+                                            // Rest segment (dim background fill)
+                                            if (restSweep > 0.5f) drawArc(color = cat.category.color.copy(alpha = 0.14f), startAngle = -90f + catSweep, sweepAngle = restSweep, useCenter = true, size = rect, topLeft = tl)
+                                            // Category segment (filled pie slice)
+                                            drawArc(color = cat.category.color, startAngle = -90f, sweepAngle = catSweep, useCenter = true, size = rect, topLeft = tl)
+                                            // Thin separator circle
+                                            drawCircle(color = Color.White.copy(alpha = 0.25f), radius = d / 2f, center = center, style = Stroke(width = 1.5.dp.toPx()))
                                         }
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                             Text(String.format(Locale.getDefault(), "%.1f%%", cat.percentage * 100), fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = cat.category.color, textAlign = TextAlign.Center)
@@ -3328,47 +3321,6 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                             Text("Total", fontSize = 11.sp, color = c.textSecondary)
                                             Text("₹${decFmtA.format(filteredOverviewTotal)}", fontSize = 12.sp, color = c.text, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if (c.isBorderless) HorizontalDivider(color = c.flatDivider)
-                        // ── Daily spend bar chart ─────────────────────────────
-                        if (dailySpendDataA.size >= 2) {
-                            Surface(color = if (c.isBorderless) Color.Transparent else c.cardBg, shape = RoundedCornerShape(14.dp), border = if (!c.isBorderless) BorderStroke(1.dp, c.border) else null, modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Text("DAILY SPENDING", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp, color = c.textSecondary)
-                                    Row(modifier = Modifier.fillMaxWidth()) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                                            Text("₹${decFmtA.format(dailyAvgA)}", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = c.text, textAlign = TextAlign.Center)
-                                            Text("avg/day", fontSize = 10.sp, color = c.textSecondary, textAlign = TextAlign.Center)
-                                        }
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                                            Text("$activeDaysA", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = c.accent, textAlign = TextAlign.Center)
-                                            Text("active days", fontSize = 10.sp, color = c.textSecondary, textAlign = TextAlign.Center)
-                                        }
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                                            Text("₹${decFmtA.format(dailyMaxA)}", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = cat.category.color, textAlign = TextAlign.Center)
-                                            Text("peak day", fontSize = 10.sp, color = c.textSecondary, textAlign = TextAlign.Center)
-                                        }
-                                    }
-                                    Canvas(modifier = Modifier.fillMaxWidth().height(80.dp)) {
-                                        val topPad = 6.dp.toPx(); val chartH = size.height - topPad
-                                        val slotW = size.width / dailySpendDataA.size
-                                        val barW = (slotW * 0.6f).coerceAtLeast(4.dp.toPx())
-                                        dailySpendDataA.forEachIndexed { idx, (_, amt) ->
-                                            val cx = slotW * idx + slotW / 2f
-                                            val barH = ((amt / dailyMaxA) * chartH).toFloat().coerceAtLeast(3.dp.toPx())
-                                            drawRoundRect(color = cat.category.color.copy(alpha = if (peakDayA?.second == amt) 1f else 0.55f), topLeft = androidx.compose.ui.geometry.Offset(cx - barW / 2f, topPad + chartH - barH), size = androidx.compose.ui.geometry.Size(barW, barH), cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()))
-                                        }
-                                    }
-                                    val xIdxA = if (dailySpendDataA.size <= 7) dailySpendDataA.indices.toList() else listOf(0, dailySpendDataA.size / 4, dailySpendDataA.size / 2, (dailySpendDataA.size * 3) / 4, dailySpendDataA.lastIndex).distinct()
-                                    Row(modifier = Modifier.fillMaxWidth()) {
-                                        dailySpendDataA.forEachIndexed { idx, (dateKey, _) ->
-                                            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                                                if (idx in xIdxA) Text(dateKey.takeLast(2).trimStart('0'), fontSize = 8.sp, color = c.textSecondary, textAlign = TextAlign.Center)
-                                            }
                                         }
                                     }
                                 }
@@ -5657,9 +5609,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                         Text(String.format(Locale.getDefault(), "%.1f%%", actualPct) + " of budget used", fontSize = 14.sp, color = progColor, fontWeight = FontWeight.Bold)
                                         if (totalBudgetedSpend > 0) Text(String.format(Locale.getDefault(), "%.1f%%", ofTotalPct) + " of total", fontSize = 13.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
                                     }
-                                    // Square custom progress bar
-                                    Box(modifier = Modifier.fillMaxWidth().height(14.dp).background(c.text.copy(alpha = 0.08f))) {
-                                        Box(modifier = Modifier.fillMaxWidth(barRatio).fillMaxHeight().background(progColor))
+                                    // Fill bar with border (text is above, always visible)
+                                    Box(modifier = Modifier.fillMaxWidth().height(44.dp).border(1.5.dp, progColor.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp))) {
+                                        Box(modifier = Modifier.fillMaxSize().background(progColor.copy(alpha = 0.07f)))
+                                        Box(modifier = Modifier.fillMaxWidth(barRatio).fillMaxHeight().background(progColor.copy(alpha = 0.65f)))
                                     }
                                 }
                             }

@@ -41,3 +41,32 @@ Skip steps 2–3 only for trivial single-line fixes or when the user explicitly 
 - Never create a new version or a new commit solely for a build-error fix.
 - Always include `--no-verify` in commit or amend commands so local verification hooks do not run.
 - Never run local Gradle compilation, build, assemble, lint, or test commands. Do not invoke `./gradlew` locally; use editor diagnostics and whitespace checks instead.
+
+## 6. Kotlin / Compose code formatting rules
+
+Apply these rules to every file touched in this workspace.
+
+### Indentation and spacing
+- **4 spaces** per indent level. No tabs anywhere.
+- Opening braces `{` always on the same line as the statement (K&R style).
+- Closing braces `}` on their own line, aligned with the opening statement.
+- One space before `{`, one space after `:` in type annotations, one space around binary operators (`+`, `-`, `=`, `->`, etc.).
+- One space after every comma in argument lists; no space before commas.
+- No trailing whitespace on any line. Blank lines must contain zero characters.
+- No whitespace-only blank lines (lines that contain only spaces or tabs).
+
+### Line width
+- **Soft limit: 160 characters.** Lines should stay at or below this.
+- **Hard limit: 200 characters.** No line may exceed this.
+- Break long Compose modifier chains by placing each `.modifier()` call on its own line, indented 4 spaces past the base expression.
+- Break long lambda argument lists so each named argument starts on its own line at +8 from the function call.
+
+### Blank lines
+- One blank line between adjacent top-level function declarations.
+- One blank line between logically distinct blocks inside a composable (e.g., state declarations vs UI tree).
+- No more than **two consecutive blank lines** anywhere in the file.
+
+### Formatting-only commits
+- A formatting-only change must not alter any logic, argument order, import set, or composable parameter name.
+- After formatting, run editor diagnostics and a `git diff --check` (whitespace check) before committing.
+- Do not mix formatting changes with behavior or UI changes in the same commit.

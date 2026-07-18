@@ -409,7 +409,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
         animationSpec = tween(durationMillis = 250),
         label = "FabAlpha"
     )
-    
+
     // Bottom Sheet & Dialog control states
     var showAddDialog by remember { mutableStateOf(false) }
     var showCsvDialog by remember { mutableStateOf(false) }
@@ -419,7 +419,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     var showRestoreDialog by remember { mutableStateOf(false) }
     var showNotificationsPanel by remember { mutableStateOf(false) }
     var selectedNotification by remember { mutableStateOf<com.example.viewmodel.AppNotification?>(null) }
-    
+
     val toastMessage = viewModel.toastMessage
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -553,158 +553,158 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                     tint = c.accent
                                 )
                             }
-                        DropdownMenu(
-                            expanded = showAppMenu,
-                            onDismissRequest = { showAppMenu = false },
-                            shape = RoundedCornerShape(16.dp),
-                            containerColor = c.surface,
-                            shadowElevation = 10.dp,
-                            modifier = Modifier.widthIn(min = 180.dp, max = 220.dp)
-                        ) {
-                            // ── Pro Status entry ──────────────────────────
-                            val proLabel = when {
-                                isPaidMain && proExpiresAt > 0L -> {
-                                    val days = ((proExpiresAt - System.currentTimeMillis()) / 86_400_000L).coerceAtLeast(0L)
-                                    "✦ Pro Trial — ${days}d left"
-                                }
-                                isPaidMain -> "✦ AutoLedger Pro"
-                                else -> "Upgrade to Pro"
-                            }
-                            val proColor = if (isPaidMain) Color(0xFFFFA000) else c.accent
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            if (isPaidMain) Icons.Default.AutoAwesome else Icons.Default.Lock,
-                                            contentDescription = null,
-                                            tint = proColor,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Text(proLabel, color = proColor, fontWeight = FontWeight.Bold)
+                            DropdownMenu(
+                                expanded = showAppMenu,
+                                onDismissRequest = { showAppMenu = false },
+                                shape = RoundedCornerShape(16.dp),
+                                containerColor = c.surface,
+                                shadowElevation = 10.dp,
+                                modifier = Modifier.widthIn(min = 180.dp, max = 220.dp)
+                            ) {
+                                // ── Pro Status entry ──────────────────────────
+                                val proLabel = when {
+                                    isPaidMain && proExpiresAt > 0L -> {
+                                        val days = ((proExpiresAt - System.currentTimeMillis()) / 86_400_000L).coerceAtLeast(0L)
+                                        "✦ Pro Trial — ${days}d left"
                                     }
-                                },
-                                onClick = { showAppMenu = false; showProUpgradeDialog = true }
-                            )
-                            HorizontalDivider(color = c.divider)
-                            // ── Theme toggle ─────────────────────────────
-                            DropdownMenuItem(
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                                text = {
-                                    Column(modifier = Modifier.fillMaxWidth()) {
-                                        Text(
-                                            "Theme",
-                                            fontSize = 11.sp,
-                                            color = c.textSecondary,
-                                            modifier = Modifier.padding(bottom = 6.dp)
-                                        )
-                                        // Row 1: Device / Dark
+                                    isPaidMain -> "✦ AutoLedger Pro"
+                                    else -> "Upgrade to Pro"
+                                }
+                                val proColor = if (isPaidMain) Color(0xFFFFA000) else c.accent
+                                DropdownMenuItem(
+                                    text = {
                                         Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            listOf(
-                                                Triple("Device", Icons.Default.SettingsBrightness, "system"),
-                                                Triple("Dark",   Icons.Default.DarkMode,            "dark")
-                                            ).forEach { (label, icon, mode) ->
-                                                val selected = themeMode == mode
-                                                Surface(
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    color = if (selected) c.accent else c.surface,
-                                                    border = BorderStroke(1.dp, if (selected) c.accent else c.divider),
-                                                    modifier = Modifier.weight(1f).clickable { viewModel.setThemeMode(mode); viewModel.setDarkTheme(mode == "dark") }
-                                                ) {
-                                                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                                                        Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(15.dp))
-                                                        Spacer(Modifier.height(3.dp))
-                                                        Text(label, fontSize = 9.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                            Icon(
+                                                if (isPaidMain) Icons.Default.AutoAwesome else Icons.Default.Lock,
+                                                contentDescription = null,
+                                                tint = proColor,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Text(proLabel, color = proColor, fontWeight = FontWeight.Bold)
+                                        }
+                                    },
+                                    onClick = { showAppMenu = false; showProUpgradeDialog = true }
+                                )
+                                HorizontalDivider(color = c.divider)
+                                // ── Theme toggle ─────────────────────────────
+                                DropdownMenuItem(
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                    text = {
+                                        Column(modifier = Modifier.fillMaxWidth()) {
+                                            Text(
+                                                "Theme",
+                                                fontSize = 11.sp,
+                                                color = c.textSecondary,
+                                                modifier = Modifier.padding(bottom = 6.dp)
+                                            )
+                                            // Row 1: Device / Dark
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                listOf(
+                                                    Triple("Device", Icons.Default.SettingsBrightness, "system"),
+                                                    Triple("Dark",   Icons.Default.DarkMode,            "dark")
+                                                ).forEach { (label, icon, mode) ->
+                                                    val selected = themeMode == mode
+                                                    Surface(
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        color = if (selected) c.accent else c.surface,
+                                                        border = BorderStroke(1.dp, if (selected) c.accent else c.divider),
+                                                        modifier = Modifier.weight(1f).clickable { viewModel.setThemeMode(mode); viewModel.setDarkTheme(mode == "dark") }
+                                                    ) {
+                                                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                                                            Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(15.dp))
+                                                            Spacer(Modifier.height(3.dp))
+                                                            Text(label, fontSize = 9.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Spacer(Modifier.height(6.dp))
+                                            Text("Light themes", fontSize = 9.sp, color = c.textSecondary, modifier = Modifier.padding(bottom = 4.dp))
+                                            // Row 2: Light / Gold / Jade / Sand
+                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                listOf(Triple("Light", Icons.Default.LightMode, "light"), Triple("Gold", Icons.Default.Star, "gold"), Triple("Jade", Icons.Default.Spa, "jade"), Triple("Sand", Icons.Default.WbCloudy, "sand")).forEach { (label, icon, mode) ->
+                                                    val selected = themeMode == mode
+                                                    Surface(shape = RoundedCornerShape(8.dp), color = if (selected) c.accent else c.surface, border = BorderStroke(1.dp, if (selected) c.accent else c.divider), modifier = Modifier.weight(1f).clickable { viewModel.setThemeMode(mode); viewModel.setDarkTheme(false) }) {
+                                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)) { Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(12.dp)); Spacer(Modifier.height(2.dp)); Text(label, fontSize = 7.5.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
                                                     }
                                                 }
                                             }
                                         }
-                                        Spacer(Modifier.height(6.dp))
-                                        Text("Light themes", fontSize = 9.sp, color = c.textSecondary, modifier = Modifier.padding(bottom = 4.dp))
-                                        // Row 2: Light / Gold / Jade / Sand
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            listOf(Triple("Light", Icons.Default.LightMode, "light"), Triple("Gold", Icons.Default.Star, "gold"), Triple("Jade", Icons.Default.Spa, "jade"), Triple("Sand", Icons.Default.WbCloudy, "sand")).forEach { (label, icon, mode) ->
-                                                val selected = themeMode == mode
-                                                Surface(shape = RoundedCornerShape(8.dp), color = if (selected) c.accent else c.surface, border = BorderStroke(1.dp, if (selected) c.accent else c.divider), modifier = Modifier.weight(1f).clickable { viewModel.setThemeMode(mode); viewModel.setDarkTheme(false) }) {
-                                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)) { Icon(icon, null, tint = if (selected) c.bg else c.textSecondary, modifier = Modifier.size(12.dp)); Spacer(Modifier.height(2.dp)); Text(label, fontSize = 7.5.sp, color = if (selected) c.bg else c.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
-                                                }
+                                    },
+                                    onClick = {}
+                                )
+                                // Flat style toggle
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Icon(Icons.Default.ViewStream, contentDescription = null, tint = if (isFlatStyleMain) c.accent else c.textSecondary, modifier = Modifier.size(16.dp))
+                                                Text("Flat Style", color = c.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                             }
+                                            Switch(
+                                                checked = isFlatStyleMain,
+                                                onCheckedChange = { viewModel.setFlatStyle(it) },
+                                                colors = SwitchDefaults.colors(checkedThumbColor = c.accent, checkedTrackColor = c.accent.copy(0.4f)),
+                                                modifier = Modifier.scale(0.8f)
+                                            )
                                         }
-                                    }
-                                },
-                                onClick = {}
-                            )
-                            // Flat style toggle
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Icon(Icons.Default.ViewStream, contentDescription = null, tint = if (isFlatStyleMain) c.accent else c.textSecondary, modifier = Modifier.size(16.dp))
-                                            Text("Flat Style", color = c.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    onClick = { viewModel.setFlatStyle(!isFlatStyleMain) }
+                                )
+                                HorizontalDivider(color = c.divider)
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Share, contentDescription = "Export", tint = c.accent)
+                                            Text("Export", color = c.text)
                                         }
-                                        Switch(
-                                            checked = isFlatStyleMain,
-                                            onCheckedChange = { viewModel.setFlatStyle(it) },
-                                            colors = SwitchDefaults.colors(checkedThumbColor = c.accent, checkedTrackColor = c.accent.copy(0.4f)),
-                                            modifier = Modifier.scale(0.8f)
+                                    },
+                                    onClick = { showAppMenu = false; showCsvDialog = true }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Backup, contentDescription = "Backup", tint = c.income)
+                                            Text("Backup", color = c.text)
+                                        }
+                                    },
+                                    onClick = { showAppMenu = false; showBackupDialog = true }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Restore, contentDescription = "Restore", tint = Color(0xFFFFC107))
+                                            Text("Restore", color = c.text)
+                                        }
+                                    },
+                                    onClick = { showAppMenu = false; showRestoreDialog = true }
+                                )
+                                HorizontalDivider(color = c.divider)
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            "Ver: ${BuildConfig.VERSION_NAME}",
+                                            fontSize = 11.sp,
+                                            color = c.textSecondary,
+                                            modifier = Modifier.fillMaxWidth()
                                         )
-                                    }
-                                },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                onClick = { viewModel.setFlatStyle(!isFlatStyleMain) }
-                            )
-                            HorizontalDivider(color = c.divider)
-                            DropdownMenuItem(
-                                text = {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Share, contentDescription = "Export", tint = c.accent)
-                                        Text("Export", color = c.text)
-                                    }
-                                },
-                                onClick = { showAppMenu = false; showCsvDialog = true }
-                            )
-                            DropdownMenuItem(
-                                text = {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Backup, contentDescription = "Backup", tint = c.income)
-                                        Text("Backup", color = c.text)
-                                    }
-                                },
-                                onClick = { showAppMenu = false; showBackupDialog = true }
-                            )
-                            DropdownMenuItem(
-                                text = {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Restore, contentDescription = "Restore", tint = Color(0xFFFFC107))
-                                        Text("Restore", color = c.text)
-                                    }
-                                },
-                                onClick = { showAppMenu = false; showRestoreDialog = true }
-                            )
-                            HorizontalDivider(color = c.divider)
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        "Ver: ${BuildConfig.VERSION_NAME}",
-                                        fontSize = 11.sp,
-                                        color = c.textSecondary,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                },
-                                onClick = {},
-                                enabled = false,
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
-                            )
-                        }
+                                    },
+                                    onClick = {},
+                                    enabled = false,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                                )
+                            }
                     }
                     } // end Row
                 } // end Column
@@ -1134,7 +1134,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     val showRunningBalance by viewModel.showRunningBalance.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val decFormat = DecimalFormat("₹#,##0.00")
-    
+
     var selectedWallet by remember { mutableStateOf("All") }
     var selectedTxForEdit by remember { mutableStateOf<TransactionEntry?>(null) }
     var searchQuery by remember { mutableStateOf("") }
@@ -1168,11 +1168,11 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     var showNetAssetInfo by remember { mutableStateOf(false) }
 
     val (periodStart, periodEnd) = getPeriodRange(activeMode, anchorTime)
-    
+
     val periodTransactions = txs.filter { tx ->
         tx.timestamp in periodStart..periodEnd
     }
-    
+
     val walletsBalances = if (carryOverPreviousAmount) {
         val historicalTxs = txs.filter { it.timestamp <= periodEnd }
         computeWalletBalances(historicalTxs, accounts, carryOverPreviousAmount = true, consolidate = consolidateAccounts)
@@ -1268,7 +1268,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
         val accMatch  = filterAccounts.isEmpty() || filterAccounts.any { it.equals(tx.getAccountName(consolidateAccounts), ignoreCase = true) }
         textMatch && typeMatch && catMatch && accMatch
     }
-    
+
     // Monthly aggregates (specific to selected wallet)
     val totalIncome = monthTransactions.filter { it.type == "INCOME" }.sumOf { it.amount }
     val totalExpense = monthTransactions.filter { it.type == "EXPENSE" }.sumOf { it.amount }
@@ -1441,9 +1441,9 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 }
                             }
                         }
-                        
+
                         HorizontalDivider(color = c.divider, thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
-                        
+
                         DropdownMenuItem(
                             text = {
                                 Row(
@@ -1497,7 +1497,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 viewModel.setShowRunningBalance(!showRunningBalance)
                             }
                         )
-                        
+
                         HorizontalDivider(color = c.divider, thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
                         DropdownMenuItem(
                             text = {
@@ -1518,266 +1518,266 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
         }
 
         if (!isFilterPanelOpen) {
-        // Net Balance Glow Card
-        item {
-            Surface(
-                color = c.cardBg,
-                shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
-                border = if (c.isBorderless) null else BorderStroke(1.2.dp, c.accent.copy(alpha = 0.5f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("net_wealth_glowing_card")
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (selectedWallet == "All") "NET WALLET ASSETS" else "${selectedWallet.uppercase()}",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            letterSpacing = 1.sp,
-                            color = c.textSecondary
-                        )
-                        if (selectedWallet == "All") {
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = "What is Net Wallet Assets?",
-                                tint = c.textSecondary.copy(alpha = 0.6f),
-                                modifier = Modifier
-                                    .size(13.dp)
-                                    .clickable { showNetAssetInfo = true }
-                            )
-                        }
-                    }
-                    if (showNetAssetInfo) {
-                        AlertDialog(
-                            onDismissRequest = { showNetAssetInfo = false },
-                            title = { Text("Net Wallet Assets", fontWeight = FontWeight.Bold, color = c.text) },
-                            text = {
-                                Text(
-                                    "This is the actual running balance across all your wallets — the real money present in each account right now.\n\n" +
-                                    "It is computed from your recorded income and expense transactions, anchored by any manual balance adjustments you've set. " +
-                                    "It reflects how much money you truly have, regardless of how much flowed in or out during this period.\n\n" +
-                                    "If you select a specific wallet instead of 'All', this shows that wallet's individual balance.",
-                                    color = c.text, fontSize = 13.sp
-                                )
-                            },
-                            confirmButton = {
-                                TextButton(onClick = { showNetAssetInfo = false }) {
-                                    Text("Got it", color = c.accent, fontWeight = FontWeight.Bold)
-                                }
-                            },
-                            containerColor = c.surface
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (showTotal) {
-                            decFormat.format(if (selectedWallet == "All") totalWealth else (walletsBalances[selectedWallet] ?: 0.0))
-                        } else {
-                            "₹ ••••"
-                        },
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 32.sp,
-                        color = c.accent
-                    )
-                    
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(c.divider)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        // Monthly Income Tracker
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Surface(
-                                shape = CircleShape,
-                                color = c.income.copy(alpha = 0.15f),
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowUpward,
-                                        contentDescription = "Income Flow",
-                                        tint = c.income,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text("Inflow", fontSize = 11.sp, color = c.textSecondary)
-                                Text(
-                                    decFormat.format(totalIncome),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = c.income
-                                )
-                            }
-                        }
-
-                        // Monthly Expense Tracker
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End, modifier = Modifier.weight(1f)) {
-                            Surface(
-                                shape = CircleShape,
-                                color = c.expense.copy(alpha = 0.15f),
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowDownward,
-                                        contentDescription = "Expense Outflow",
-                                        tint = c.expense,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text("Outflow", fontSize = 11.sp, color = c.textSecondary)
-                                Text(
-                                    decFormat.format(totalExpense),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = c.expense
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Horizontal Wallet microcards mimicking AutoLedger custom wallets selector
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "MY WALLETS",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    letterSpacing = 1.sp,
-                    color = c.textSecondary
-                )
-                
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    val walletList = listOf("All") + accounts.map { it.name }
-                    items(walletList) { name ->
-                        val isSelected = selectedWallet == name
-                        
-                        val balance = if (name == "All") {
-                            totalWealth
-                        } else {
-                            walletsBalances[name] ?: 0.0
-                        }
-
-                        val cardBorderColor = if (isSelected) c.accent else c.border
-                        val cardBg = if (isSelected) c.accentDim else if (c.isBorderless) c.surfaceVariant else c.surface
-                        val walletAccType = if (name == "All") "ALL" else accounts.find { it.name == name }?.type ?: ""
-                        val walletTypeColor = when (walletAccType) {
-                            "CASH"        -> c.income
-                            "BANK"        -> Color(0xFF3B82F6)
-                            "CREDIT_CARD" -> c.expense
-                            "WALLET"      -> Color(0xFFFF9800)
-                            else          -> c.accent
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = cardBg,
-                            border = BorderStroke(1.2.dp, cardBorderColor),
-                            modifier = Modifier
-                                .width(140.dp)
-                                .clickable { selectedWallet = name }
-                                .testTag("wallet_selector_$name")
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Icon(
-                                    imageVector = when {
-                                        name == "Cash Wallet" -> Icons.Default.Money
-                                        name == "Bank Account" -> Icons.Default.AccountBalance
-                                        name == "Credit Card" -> Icons.Default.CreditCard
-                                        name == "Digital Wallet" -> Icons.Default.AccountBalanceWallet
-                                        else -> {
-                                            val acType = accounts.find { it.name == name }?.type ?: ""
-                                            when(acType) {
-                                                "CASH" -> Icons.Default.Money
-                                                "BANK" -> Icons.Default.AccountBalance
-                                                "CREDIT_CARD" -> Icons.Default.CreditCard
-                                                "WALLET" -> Icons.Default.AccountBalanceWallet
-                                                else -> Icons.Default.AllInclusive
-                                            }
-                                        }
-                                    },
-                                    contentDescription = name,
-                                    tint = walletTypeColor,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Text(
-                                    text = name,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = c.text,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = decFormat.format(balance),
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (balance >= 0) c.income else c.expense,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        } // end if (!isFilterPanelOpen)
-
-        // ── Pro savings banner (free users, when SMS transactions exist this month) ─
-        if (!isPaid && autoTrackedCount > 0) {
+            // Net Balance Glow Card
             item {
                 Surface(
-                    color = c.accent.copy(0.07f),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, c.accent.copy(0.2f)),
-                    modifier = Modifier.fillMaxWidth()
+                    color = c.cardBg,
+                    shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),
+                    border = if (c.isBorderless) null else BorderStroke(1.2.dp, c.accent.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("net_wealth_glowing_card")
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = c.accent, modifier = Modifier.size(20.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("$autoTrackedCount transactions auto-tracked this month",
-                                fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = c.text)
-                            Text("Upgrade Pro to keep automation running →",
-                                fontSize = 11.sp, color = c.accent)
+                        Row(
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (selectedWallet == "All") "NET WALLET ASSETS" else "${selectedWallet.uppercase()}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                letterSpacing = 1.sp,
+                                color = c.textSecondary
+                            )
+                            if (selectedWallet == "All") {
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = "What is Net Wallet Assets?",
+                                    tint = c.textSecondary.copy(alpha = 0.6f),
+                                    modifier = Modifier
+                                        .size(13.dp)
+                                        .clickable { showNetAssetInfo = true }
+                                )
+                            }
+                        }
+                        if (showNetAssetInfo) {
+                            AlertDialog(
+                                onDismissRequest = { showNetAssetInfo = false },
+                                title = { Text("Net Wallet Assets", fontWeight = FontWeight.Bold, color = c.text) },
+                                text = {
+                                    Text(
+                                        "This is the actual running balance across all your wallets — the real money present in each account right now.\n\n" +
+                                        "It is computed from your recorded income and expense transactions, anchored by any manual balance adjustments you've set. " +
+                                        "It reflects how much money you truly have, regardless of how much flowed in or out during this period.\n\n" +
+                                        "If you select a specific wallet instead of 'All', this shows that wallet's individual balance.",
+                                        color = c.text, fontSize = 13.sp
+                                    )
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = { showNetAssetInfo = false }) {
+                                        Text("Got it", color = c.accent, fontWeight = FontWeight.Bold)
+                                    }
+                                },
+                                containerColor = c.surface
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (showTotal) {
+                                decFormat.format(if (selectedWallet == "All") totalWealth else (walletsBalances[selectedWallet] ?: 0.0))
+                            } else {
+                                "₹ ••••"
+                            },
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 32.sp,
+                            color = c.accent
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(c.divider)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // Monthly Income Tracker
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = c.income.copy(alpha = 0.15f),
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowUpward,
+                                            contentDescription = "Income Flow",
+                                            tint = c.income,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text("Inflow", fontSize = 11.sp, color = c.textSecondary)
+                                    Text(
+                                        decFormat.format(totalIncome),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = c.income
+                                    )
+                                }
+                            }
+
+                            // Monthly Expense Tracker
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End, modifier = Modifier.weight(1f)) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = c.expense.copy(alpha = 0.15f),
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDownward,
+                                            contentDescription = "Expense Outflow",
+                                            tint = c.expense,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text("Outflow", fontSize = 11.sp, color = c.textSecondary)
+                                    Text(
+                                        decFormat.format(totalExpense),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = c.expense
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
+
+            // Horizontal Wallet microcards mimicking AutoLedger custom wallets selector
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "MY WALLETS",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        letterSpacing = 1.sp,
+                        color = c.textSecondary
+                    )
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val walletList = listOf("All") + accounts.map { it.name }
+                        items(walletList) { name ->
+                            val isSelected = selectedWallet == name
+
+                            val balance = if (name == "All") {
+                                totalWealth
+                            } else {
+                                walletsBalances[name] ?: 0.0
+                            }
+
+                            val cardBorderColor = if (isSelected) c.accent else c.border
+                            val cardBg = if (isSelected) c.accentDim else if (c.isBorderless) c.surfaceVariant else c.surface
+                            val walletAccType = if (name == "All") "ALL" else accounts.find { it.name == name }?.type ?: ""
+                            val walletTypeColor = when (walletAccType) {
+                                "CASH"        -> c.income
+                                "BANK"        -> Color(0xFF3B82F6)
+                                "CREDIT_CARD" -> c.expense
+                                "WALLET"      -> Color(0xFFFF9800)
+                                else          -> c.accent
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = cardBg,
+                                border = BorderStroke(1.2.dp, cardBorderColor),
+                                modifier = Modifier
+                                    .width(140.dp)
+                                    .clickable { selectedWallet = name }
+                                    .testTag("wallet_selector_$name")
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Icon(
+                                        imageVector = when {
+                                            name == "Cash Wallet" -> Icons.Default.Money
+                                            name == "Bank Account" -> Icons.Default.AccountBalance
+                                            name == "Credit Card" -> Icons.Default.CreditCard
+                                            name == "Digital Wallet" -> Icons.Default.AccountBalanceWallet
+                                            else -> {
+                                                val acType = accounts.find { it.name == name }?.type ?: ""
+                                                when(acType) {
+                                                    "CASH" -> Icons.Default.Money
+                                                    "BANK" -> Icons.Default.AccountBalance
+                                                    "CREDIT_CARD" -> Icons.Default.CreditCard
+                                                    "WALLET" -> Icons.Default.AccountBalanceWallet
+                                                    else -> Icons.Default.AllInclusive
+                                                }
+                                            }
+                                        },
+                                        contentDescription = name,
+                                        tint = walletTypeColor,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        text = name,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = c.text,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = decFormat.format(balance),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (balance >= 0) c.income else c.expense,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            } // end if (!isFilterPanelOpen)
+
+            // ── Pro savings banner (free users, when SMS transactions exist this month) ─
+            if (!isPaid && autoTrackedCount > 0) {
+                item {
+                    Surface(
+                        color = c.accent.copy(0.07f),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, c.accent.copy(0.2f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = c.accent, modifier = Modifier.size(20.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("$autoTrackedCount transactions auto-tracked this month",
+                                    fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = c.text)
+                                Text("Upgrade Pro to keep automation running →",
+                                    fontSize = 11.sp, color = c.accent)
+                            }
+                        }
+                    }
+                }
         }
 
         // ── Combined Search + Filter panel ──────────────────────────────────
@@ -2082,7 +2082,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                 val cal = Calendar.getInstance().apply { timeInMillis = it.timestamp }
                 val today = Calendar.getInstance()
                 val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-                
+
                 if (cal.get(Calendar.YEAR) == today.get(Calendar.YEAR) &&
                     cal.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR)) {
                     "Today"
@@ -2111,7 +2111,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             letterSpacing = 1.2.sp,
                             color = c.textSecondary
                         )
-                        
+
                         val dateNet = txList.sumOf { tx ->
                             when {
                                 tx.type == "DUPLICATE" || tx.type == "BALANCE_UPDATE" -> 0.0
@@ -2897,7 +2897,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                             if (analyticsCategoryFilter.isEmpty() && !analyticsShowBudgetedOnly) Icon(Icons.Default.Check, null, tint = c.accent, modifier = Modifier.size(14.dp))
                                         }
                                     },
-                                    onClick = { 
+                                    onClick = {
                                         viewModel.setAnalyticsShowBudgetedOnly(false)
                                         when (selectedMode) {
                                             AnalyticsMode.EXPENSE_OVERVIEW, AnalyticsMode.EXPENSE_FLOW -> viewModel.setAnalyticsExpenseCatFilter(emptySet())
@@ -4667,7 +4667,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     val rawMonthYear by viewModel.selectedMonthYear.collectAsStateWithLifecycle()
     val activeBudgets by viewModel.monthlyBudgets.collectAsStateWithLifecycle()
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
-    
+
     // Dialog setups
     var showEditCategoryDialog by remember { mutableStateOf<DisplayCategory?>(null) }
     var showBudgetAmountDialog by remember { mutableStateOf<DisplayCategory?>(null) }
@@ -4681,7 +4681,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     var categoryOrderKeys by remember(activeCategoryTypeTab) { mutableStateOf<List<String>>(emptyList()) }
     var draggingItemKey by remember { mutableStateOf<String?>(null) }
     var draggingItemOffsetY by remember { mutableStateOf(0f) }
-    
+
     val sdfMonth = SimpleDateFormat("yyyy-MM", Locale.getDefault())
     val formatDisplay = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
     val currentMonthDate = try { sdfMonth.parse(rawMonthYear) ?: Date() } catch (e: Exception) { Date() }
@@ -4872,7 +4872,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         } else {
             monthExpenses.sumOf { it.amount }
         }
-        
+
         if (activeCategoryTypeTab == "EXPENSE" && globalBudgetLimit > 0) {
             item {
                 val percent = if (globalBudgetLimit > 0) (globalBudgetSpend / globalBudgetLimit * 100) else 0.0
@@ -5070,9 +5070,9 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         }
 
         // List of configured or unconfigured limits
-         item {
+        item {
             Text(
-               text = "MANAGE LIMITS",
+                text = "MANAGE LIMITS",
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,
                 letterSpacing = 1.sp,
@@ -5670,7 +5670,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                     Spacer(Modifier.height(4.dp))
                                     val overBudget = remaining < 0
                                     val badgeColor = if (overBudget) c.expense else c.income
-                                    Surface(color = badgeColor.copy(alpha = 0.12f), shape = RoundedCornerShape(5.dp)) {
+                                    Surface(color = badgeColor.copy(alpha = 0.12f), shape = RoundedCornerShape(5.dp), modifier = Modifier.wrapContentWidth()) {
                                         Text(
                                             if (overBudget) "↑ ₹${amtFmt.format(-remaining)} over" else "↓ ₹${amtFmt.format(remaining)} left",
                                             fontSize = 10.sp, color = badgeColor, fontWeight = FontWeight.Bold,
@@ -6388,7 +6388,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Text("Move funds between your accounts. Creates a single Transfer entry.", fontSize = 11.sp, color = c.textSecondary)
-                    
+
                     OutlinedTextField(
                         value = trAmount,
                         onValueChange = { trAmount = it },
@@ -7057,13 +7057,18 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                         if (isWalletPfScanning) {
                             CircularProgressIndicator(modifier = Modifier.size(14.dp), color = c.accent, strokeWidth = 2.dp)
                             Spacer(Modifier.width(6.dp))
-                            Text("Scanning…", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            ShrinkingSingleLineText("Scanning…", c.accent, 14f, 9f, Modifier.weight(1f), FontWeight.SemiBold, TextAlign.Center)
                         } else {
                             Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(
-                                if (hasReadSmsPermission) "Scan Wallets" else "Enable Auto-Import",
-                                fontWeight = FontWeight.SemiBold, fontSize = 14.sp
+                            ShrinkingSingleLineText(
+                                text = if (hasReadSmsPermission) "Scan Wallets" else "Enable Auto-Import",
+                                color = c.accent,
+                                initialFontSize = 14f,
+                                minFontSize = 9f,
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center
                             )
                         }
                     }
@@ -7791,11 +7796,15 @@ fun AddTransactionDialog(
                         OutlinedButton(onClick = {
                             val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
                             android.app.DatePickerDialog(pickerCtx, { _, y, m, d -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(y, m, d) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH)).show()
-                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.accent.copy(0.5f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(dateLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
+                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.accent.copy(0.5f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) {
+                            ShrinkingSingleLineText(dateLabel, c.text, 14f, 9f, Modifier, FontWeight.Medium)
+                        }
                         OutlinedButton(onClick = {
                             val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }
                             android.app.TimePickerDialog(pickerCtx, { _, h, min -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(java.util.Calendar.HOUR_OF_DAY, h); set(java.util.Calendar.MINUTE, min) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), false).show()
-                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.accent.copy(0.5f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) { Text(timeLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
+                        }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, c.accent.copy(0.5f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) {
+                            ShrinkingSingleLineText(timeLabel, c.text, 14f, 9f, Modifier, FontWeight.Medium)
+                        }
                     }
 
                     // Account | Category — title label above + icon and name inline
@@ -7875,8 +7884,8 @@ fun AddTransactionDialog(
                     )
                 }
 
-                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                    val calculatorWidth = (maxWidth - 24.dp).coerceAtLeast(160.dp)
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp)) {
+                    val calculatorWidth = maxWidth.coerceAtLeast(160.dp)
                     val calculatorKeyHeight = (calculatorWidth / 4).coerceIn(40.dp, 58.dp)
                     val backspaceSize = (calculatorKeyHeight * 0.8f).coerceIn(36.dp, 46.dp)
                     val numberFontSize = (calculatorKeyHeight.value * 0.31f).coerceIn(14f, 18f).sp
@@ -8030,18 +8039,31 @@ private fun FullScreenEditorDialog(
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = c.surface) {
             Column(modifier = Modifier.fillMaxSize()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .heightIn(min = 56.dp)
-                        .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text)
+                // Title bar: Close (left) | Title (center, flexible) | action icons (right)
+                Surface(shadowElevation = 4.dp, color = c.surface) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .heightIn(min = 56.dp)
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text)
+                        }
+                        Text(
+                            title,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            color = c.text,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        // Action area — caller injects Delete + Save icons here
+                        actions()
                     }
-                    Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = c.text)
                 }
                 HorizontalDivider(color = c.divider)
                 Column(
@@ -8049,13 +8071,11 @@ private fun FullScreenEditorDialog(
                         .fillMaxWidth()
                         .weight(1f)
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    actions()
-                    HorizontalDivider(color = c.divider)
-                    content()
-                }
+                        .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 24.dp)
+                        .navigationBarsPadding(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    content = content
+                )
             }
         }
     }
@@ -8134,9 +8154,54 @@ fun EditTransactionDialog(
     val selectedCategory = filteredCats.firstOrNull { it.name == categorySelection }
         ?: allCategories.firstOrNull { it.name == categorySelection }
 
+    var showDeleteConfirmForEdit by remember { mutableStateOf(false) }
+    if (showDeleteConfirmForEdit) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmForEdit = false },
+            title = { Text("Delete Transaction", color = c.text) },
+            text = { Text("Are you absolutely sure you want to delete this transaction?", color = c.text.copy(alpha = 0.7f)) },
+            confirmButton = {
+                TextButton(onClick = { onDelete(); showDeleteConfirmForEdit = false }, colors = ButtonDefaults.textButtonColors(contentColor = c.expense)) {
+                    Text("Delete", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteConfirmForEdit = false }) { Text("Cancel", color = c.text) } },
+            containerColor = c.surface
+        )
+    }
+
     FullScreenEditorDialog(
         title = "Update Transaction",
         onDismiss = onDismiss,
+        actions = {
+            // Delete (trash icon) + Save (text button) in title bar
+            IconButton(onClick = { showDeleteConfirmForEdit = true }) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete transaction", tint = c.expense)
+            }
+            TextButton(
+                onClick = {
+                    val dAmt = amountStr.toDoubleOrNull() ?: 0.0
+                    if ((if (editType == "BALANCE_UPDATE") dAmt >= 0.0 else dAmt > 0.0) && title.isNotBlank()) {
+                        onConfirm(
+                            tx.copy(
+                                title = title,
+                                amount = dAmt,
+                                category = categorySelection,
+                                type = editType,
+                                timestamp = selectedTimestamp,
+                                note = if (editType == "TRANSFER") {
+                                    val userNote = userNoteFrom(notesStr.ifBlank { null })
+                                    "[Acc: $accountSelection] [To: $toAccountSelection]${if (userNote.isNotBlank()) " $userNote" else ""}"
+                                } else {
+                                    rebuildNote(notesStr.ifBlank { null }, accountSelection, tx.note)
+                                }
+                            ),
+                            applyToAllPayees
+                        )
+                    }
+                }
+            ) { Text("Save", fontWeight = FontWeight.Bold, color = c.accent, fontSize = 15.sp) }
+        },
         content = {
                 val amountColor = when (editType) {
                     "EXPENSE" -> c.expense
@@ -8324,53 +8389,6 @@ fun EditTransactionDialog(
                         )
                     }
                 }
-        },
-        actions = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
-                    Text("Cancel", fontWeight = FontWeight.SemiBold)
-                }
-                Button(
-                    onClick = onDelete,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = c.expense.copy(0.13f), contentColor = c.expense)
-                ) {
-                    Text("Delete", fontWeight = FontWeight.Bold)
-                }
-                
-                Button(
-                    onClick = {
-                        val dAmt = amountStr.toDoubleOrNull() ?: 0.0
-                        if ((if (editType == "BALANCE_UPDATE") dAmt >= 0.0 else dAmt > 0.0) && title.isNotBlank()) {
-                            onConfirm(
-                                tx.copy(
-                                    title = title,
-                                    amount = dAmt,
-                                    category = categorySelection,
-                                    type = editType,
-                                    timestamp = selectedTimestamp,
-                                    // Preserve [To:][T:A][IncRef:] tags while applying user note + account tag
-                                    note = if (editType == "TRANSFER") {
-                                        val userNote = userNoteFrom(notesStr.ifBlank { null })
-                                        "[Acc: $accountSelection] [To: $toAccountSelection]${if (userNote.isNotBlank()) " $userNote" else ""}"
-                                    } else {
-                                        rebuildNote(notesStr.ifBlank { null }, accountSelection, tx.note)
-                                    }
-                                ),
-                                applyToAllPayees
-                            )
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
-                ) {
-                    Text("Save", fontWeight = FontWeight.Bold)
-                }
-            }
         }
     )
 
@@ -9062,12 +9080,12 @@ fun BackupDialog(
     val context = LocalContext.current
     val isPaid by viewModel.isPaidFeaturesEnabled.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
-    
+
     val freq by viewModel.backupFrequency.collectAsStateWithLifecycle()
     val customBackupPath by viewModel.customBackupPath.collectAsStateWithLifecycle()
     val lastTime by viewModel.lastBackupTime.collectAsStateWithLifecycle()
     val availableBackups by viewModel.availableBackups.collectAsStateWithLifecycle()
-    
+
     // UI states
     var isBackingUp by remember { mutableStateOf(false) }
     var backupStatusText by remember { mutableStateOf("") }
@@ -9076,7 +9094,7 @@ fun BackupDialog(
     var restoreConfirmItem by remember { mutableStateOf<com.example.viewmodel.BackupItem?>(null) }
     var isRestoring by remember { mutableStateOf(false) }
     var exportedCsv by remember { mutableStateOf(false) }
-    
+
     // Refresh backups list when dialog is shown or custom path changes
     LaunchedEffect(customBackupPath) {
         viewModel.refreshAvailableBackups()
@@ -9164,7 +9182,7 @@ fun BackupDialog(
                         color = c.textSecondary
                     )
                 }
-                
+
                 HorizontalDivider(color = c.divider)
 
                 // 1. Auto Backup Frequency
@@ -9400,12 +9418,12 @@ fun BackupDialog(
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1.5f),
                                 contentPadding = PaddingValues(vertical = 10.dp)
-                             ) {
+                            ) {
                                 Icon(Icons.Default.Backup, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text("Back Up Now", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
-                            
+
                             Column(
                                 modifier = Modifier.weight(1f),
                                 horizontalAlignment = Alignment.Start
@@ -9421,7 +9439,7 @@ fun BackupDialog(
                     }
                 }
                 } // end ProGate (backup button)
-                
+
                 HorizontalDivider(color = c.divider)
 
                 // 4. Restore List
@@ -9452,7 +9470,7 @@ fun BackupDialog(
                             )
                         }
                     }
-                    
+
                     if (availableBackups.isEmpty()) {
                         Surface(
                             color = c.surfaceVariant.copy(alpha = 0.5f),
@@ -9540,7 +9558,7 @@ fun BackupDialog(
                         }
                     }
                 }
-                
+
                 HorizontalDivider(color = c.divider)
 
                 // 5. Manual Backup Actions (Legacy compatibility)
@@ -9593,7 +9611,7 @@ fun BackupDialog(
     )
 
     // ── Dialog Subcomponents (Account Selector, Warning, Progress Loader) ────────────────
-    
+
 if (restoreConfirmItem != null) {
         val backupItem = restoreConfirmItem!!
         var cleanRestore by remember { mutableStateOf(false) }
@@ -10237,7 +10255,7 @@ fun getPeriodRange(mode: DisplayMode, anchorTime: Long): Pair<Long, Long> {
             cal.set(Calendar.SECOND, 0)
             cal.set(Calendar.MILLISECOND, 0)
             val start = cal.timeInMillis
-            
+
             val calEnd = Calendar.getInstance().apply { timeInMillis = anchorTime }
             calEnd.set(Calendar.DAY_OF_MONTH, calEnd.getActualMaximum(Calendar.DAY_OF_MONTH))
             calEnd.set(Calendar.HOUR_OF_DAY, 23)
@@ -10255,7 +10273,7 @@ fun getPeriodRange(mode: DisplayMode, anchorTime: Long): Pair<Long, Long> {
             cal.set(Calendar.SECOND, 0)
             cal.set(Calendar.MILLISECOND, 0)
             val start = cal.timeInMillis
-            
+
             val calEnd = Calendar.getInstance().apply { timeInMillis = anchorTime }
             calEnd.set(Calendar.DAY_OF_MONTH, calEnd.getActualMaximum(Calendar.DAY_OF_MONTH))
             calEnd.set(Calendar.HOUR_OF_DAY, 23)
@@ -10273,7 +10291,7 @@ fun getPeriodRange(mode: DisplayMode, anchorTime: Long): Pair<Long, Long> {
             cal.set(Calendar.SECOND, 0)
             cal.set(Calendar.MILLISECOND, 0)
             val start = cal.timeInMillis
-            
+
             cal.set(Calendar.MONTH, Calendar.DECEMBER)
             cal.set(Calendar.DAY_OF_MONTH, 31)
             cal.set(Calendar.HOUR_OF_DAY, 23)

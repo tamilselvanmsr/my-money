@@ -307,6 +307,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     val analyticsIncomeCatFilter: StateFlow<Set<String>> = _analyticsIncomeCatFilter.asStateFlow()
     fun setAnalyticsIncomeCatFilter(f: Set<String>) { _analyticsIncomeCatFilter.value = f }
 
+    private val _analyticsShowBudgetedOnly = MutableStateFlow(false)
+    val analyticsShowBudgetedOnly: StateFlow<Boolean> = _analyticsShowBudgetedOnly.asStateFlow()
+    fun setAnalyticsShowBudgetedOnly(v: Boolean) { _analyticsShowBudgetedOnly.value = v }
+
     // Legacy single-filter kept for other modes (flow, account analysis)
     private val _analyticsCategoryFilter = MutableStateFlow<Set<String>>(emptySet())
     val analyticsCategoryFilter: StateFlow<Set<String>> = _analyticsCategoryFilter.asStateFlow()

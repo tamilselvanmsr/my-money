@@ -2604,7 +2604,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
     val analyticsExpenseCatFilter by viewModel.analyticsExpenseCatFilter.collectAsStateWithLifecycle()
     val analyticsIncomeCatFilter  by viewModel.analyticsIncomeCatFilter.collectAsStateWithLifecycle()
     val activeBudgetsForAnalytics by viewModel.monthlyBudgets.collectAsStateWithLifecycle()
-    var analyticsShowBudgetedOnly by remember { mutableStateOf(false) }
+    val analyticsShowBudgetedOnly by viewModel.analyticsShowBudgetedOnly.collectAsStateWithLifecycle()
     val analyticsCategoryFilter = when (selectedMode) {
         AnalyticsMode.EXPENSE_OVERVIEW, AnalyticsMode.EXPENSE_FLOW -> analyticsExpenseCatFilter
         AnalyticsMode.INCOME_OVERVIEW,  AnalyticsMode.INCOME_FLOW  -> analyticsIncomeCatFilter
@@ -2676,8 +2676,11 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
     val displayOverviewTotal = if (analyticsShowBudgetedOnly) displayCategoryTotals.sumOf { it.total }
         else if (analyticsCategoryFilter.isEmpty()) totalOverviewSum else filteredOverviewTotal
     // Category-filtered transactions for flow & account analysis
-    val categoryFilteredTxns = if (analyticsCategoryFilter.isEmpty()) filteredTransactions
-    else filteredTransactions.filter { it.category in analyticsCategoryFilter }
+    val categoryFilteredTxns = when {
+        analyticsShowBudgetedOnly -> filteredTransactions.filter { it.category.lowercase() in budgetedCatNamesForFilter }
+        analyticsCategoryFilter.isEmpty() -> filteredTransactions
+        else -> filteredTransactions.filter { it.category in analyticsCategoryFilter }
+    }
     val flowPoints = remember(categoryFilteredTxns, analysisStart, analysisEnd) {
         buildDailyFlowPoints(categoryFilteredTxns, analysisStart, analysisEnd)
     }
@@ -2830,7 +2833,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                         }
                                     },
                                     onClick = { 
-                                        analyticsShowBudgetedOnly = false
+                                        viewModel.setAnalyticsShowBudgetedOnly(false)
                                         when (selectedMode) {
                                             AnalyticsMode.EXPENSE_OVERVIEW, AnalyticsMode.EXPENSE_FLOW -> viewModel.setAnalyticsExpenseCatFilter(emptySet())
                                             AnalyticsMode.INCOME_OVERVIEW,  AnalyticsMode.INCOME_FLOW  -> viewModel.setAnalyticsIncomeCatFilter(emptySet())
@@ -2849,9 +2852,9 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                         }
                                     },
                                     onClick = {
-                                        analyticsShowBudgetedOnly = !analyticsShowBudgetedOnly
+                                        viewModel.setAnalyticsShowBudgetedOnly(!analyticsShowBudgetedOnly)
                                         // Clear individual cat filter when switching to budgeted-only
-                                        if (analyticsShowBudgetedOnly) when (selectedMode) {
+                                        if (!analyticsShowBudgetedOnly) when (selectedMode) {
                                             AnalyticsMode.EXPENSE_OVERVIEW, AnalyticsMode.EXPENSE_FLOW -> viewModel.setAnalyticsExpenseCatFilter(emptySet())
                                             AnalyticsMode.INCOME_OVERVIEW,  AnalyticsMode.INCOME_FLOW  -> viewModel.setAnalyticsIncomeCatFilter(emptySet())
                                             else -> {}
@@ -3276,12 +3279,11 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
         ) {
             Surface(modifier = Modifier.fillMaxSize(), color = c.bg) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    Surface(shadowElevation = 0.dp, color = c.bg) {
+                    Surface(shadowElevation = 6.dp, color = c.bg) {
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
                                 Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text)
                                 Spacer(Modifier.height(1.dp))
-                                HorizontalDivider(color = c.divider, thickness = 0.5.dp, modifier = Modifier.padding(end = 8.dp))
                                 Text("Period: $periodLabelA", fontSize = 11.sp, color = c.textSecondary)
                             }
                             IconButton(onClick = { categoryDetailItem = null; expandedNotesTxId = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
@@ -3289,7 +3291,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                             }
                         }
                     }
-                    HorizontalDivider(color = c.divider)
+                    HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 1.dp)
                     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         // ── Header ────────────────────────────────────────────
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -3326,8 +3328,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                             }
                                         }
                                     }
-                                    // Right half: text left-aligned within the half
-                                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    // Right half: text left-aligned, indented for visual centering
+                                    Column(modifier = Modifier.weight(1f).padding(start = 20.dp), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Text(String.format(Locale.getDefault(), "%.1f%%", cat.percentage * 100), fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = cat.category.color)
                                         Text("of total spending", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
                                         Spacer(Modifier.height(4.dp))
@@ -5553,12 +5555,11 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             Surface(modifier = Modifier.fillMaxSize(), color = c.bg) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     // ── Top bar ──────────────────────────────────────────────
-                    Surface(shadowElevation = 0.dp, color = c.bg) {
+                    Surface(shadowElevation = 6.dp, color = c.bg) {
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
                                 Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text)
                                 Spacer(Modifier.height(1.dp))
-                                HorizontalDivider(color = c.divider, thickness = 0.5.dp, modifier = Modifier.padding(end = 8.dp))
                                 Text("Period: $monthLabel", fontSize = 11.sp, color = c.textSecondary)
                             }
                             IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
@@ -5566,7 +5567,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             }
                         }
                     }
-                    HorizontalDivider(color = c.divider)
+                    HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 1.dp)
 
                     // ── Scrollable body ──────────────────────────────────────
                     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -5583,7 +5584,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 if (limitDetail > 0) {
                                     // Spend vs limit — full numbers
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text("₹${amtFmt.format(catSpendDetail)} of ₹${amtFmt.format(limitDetail)}", fontSize = 12.sp, color = progColor, fontWeight = FontWeight.SemiBold)
+                                        Text("₹${amtFmt.format(catSpendDetail)} of ₹${amtFmt.format(limitDetail)}", fontSize = 12.sp, color = progColor, fontWeight = FontWeight.ExtraBold)
                                         val overBudget = remaining < 0
                                         val badgeColor = if (overBudget) c.expense else c.income
                                         Surface(color = badgeColor.copy(alpha = 0.12f), shape = RoundedCornerShape(5.dp)) {
@@ -10262,7 +10263,7 @@ fun budgetProgressColor(percent: Double, appColors: com.example.ui.theme.AppColo
         percent > 100.0 -> Color(0xFF991B1B)  // >100%: dark red (over budget)
         percent > 90.0  -> Color(0xFFEF4444)  // >90%: red (critical)
         percent > 75.0  -> Color(0xFFFF6B00)  // >75%: vivid orange
-        percent > 50.0  -> Color(0xFFD97706)  // >50%: amber (visible on light+dark)
+        percent > 50.0  -> Color(0xFFFFD500)  // >50%: bright yellow
         percent > 30.0  -> Color(0xFF16A34A)  // >30%: vibrant green (ok)
         else            -> Color(0xFF86EFAC)  // ≤30%: soft green (safe)
     }

@@ -13,8 +13,8 @@ android {
     applicationId = "com.personalfinance.tamil"
     minSdk = 24
     targetSdk = 36
-    versionCode = 123
-    versionName = "2.23"
+    versionCode = 124
+    versionName = "2.24"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

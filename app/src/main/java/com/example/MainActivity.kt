@@ -3246,12 +3246,12 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                 Column(modifier = Modifier.fillMaxSize()) {
                     Surface(shadowElevation = 0.dp, color = c.bg) {
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { categoryDetailItem = null; expandedNotesTxId = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
-                                Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
-                            }
-                            Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
+                            Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
                                 Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, lineHeight = 18.sp)
                                 Text(periodLabelA, fontSize = 12.sp, color = c.textSecondary, lineHeight = 14.sp)
+                            }
+                            IconButton(onClick = { categoryDetailItem = null; expandedNotesTxId = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
@@ -3266,12 +3266,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(cat.category.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Spacer(Modifier.height(4.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("₹${decFmtA.format(cat.total)}", fontSize = 15.sp, color = cat.category.color, fontWeight = FontWeight.SemiBold)
-                                    Surface(color = cat.category.color.copy(alpha = 0.12f), shape = RoundedCornerShape(5.dp)) {
-                                        Text(String.format(Locale.getDefault(), "%.1f%% of total", cat.percentage * 100), fontSize = 10.sp, color = cat.category.color, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                    }
-                                }
+                                Text("₹${decFmtA.format(cat.total)}", fontSize = 15.sp, color = cat.category.color, fontWeight = FontWeight.SemiBold)
                             }
                         }
                         if (c.isBorderless) HorizontalDivider(color = c.flatDivider)
@@ -3279,49 +3274,26 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         Surface(color = if (c.isBorderless) Color.Transparent else c.cardBg, shape = RoundedCornerShape(14.dp), border = if (!c.isBorderless) BorderStroke(1.dp, c.border) else null, modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("SHARE OF TOTAL", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp, color = c.textSecondary)
-                                // Donut + legend side by side
+                                // Filled pie + percentage info
                                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    // Donut
-                                    Box(modifier = Modifier.size(110.dp), contentAlignment = Alignment.Center) {
+                                    Box(modifier = Modifier.size(100.dp)) {
                                         Canvas(modifier = Modifier.fillMaxSize()) {
                                             val d = size.minDimension
-                                            val tl = androidx.compose.ui.geometry.Offset((size.width - d) / 2f, (size.height - d) / 2f)
                                             val rect = androidx.compose.ui.geometry.Size(d, d)
+                                            val tl = androidx.compose.ui.geometry.Offset(0f, 0f)
                                             val catSweep = (cat.percentage * 360.0).toFloat().coerceIn(1f, 359f)
                                             val restSweep = 360f - catSweep
-                                            // Rest segment (dim background fill)
                                             if (restSweep > 0.5f) drawArc(color = cat.category.color.copy(alpha = 0.14f), startAngle = -90f + catSweep, sweepAngle = restSweep, useCenter = true, size = rect, topLeft = tl)
-                                            // Category segment (filled pie slice)
                                             drawArc(color = cat.category.color, startAngle = -90f, sweepAngle = catSweep, useCenter = true, size = rect, topLeft = tl)
-                                            // Thin separator circle
                                             drawCircle(color = Color.White.copy(alpha = 0.25f), radius = d / 2f, center = center, style = Stroke(width = 1.5.dp.toPx()))
                                         }
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Text(String.format(Locale.getDefault(), "%.1f%%", cat.percentage * 100), fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = cat.category.color, textAlign = TextAlign.Center)
-                                            Text("share", fontSize = 9.sp, color = c.textSecondary, textAlign = TextAlign.Center)
-                                        }
                                     }
-                                    // Legend
-                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                                Box(modifier = Modifier.size(8.dp).background(cat.category.color, CircleShape))
-                                                Text(cat.category.displayName, fontSize = 11.sp, color = c.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            }
-                                            Text("₹${decFmtA.format(cat.total)}", fontSize = 12.sp, color = cat.category.color, fontWeight = FontWeight.Bold)
-                                        }
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                                Box(modifier = Modifier.size(8.dp).background(cat.category.color.copy(alpha = 0.22f), CircleShape))
-                                                Text("Other categories", fontSize = 11.sp, color = c.textSecondary)
-                                            }
-                                            Text("₹${decFmtA.format((filteredOverviewTotal - cat.total).coerceAtLeast(0.0))}", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
-                                        }
-                                        HorizontalDivider(color = c.divider)
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("Total", fontSize = 11.sp, color = c.textSecondary)
-                                            Text("₹${decFmtA.format(filteredOverviewTotal)}", fontSize = 12.sp, color = c.text, fontWeight = FontWeight.Bold)
-                                        }
+                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(String.format(Locale.getDefault(), "%.1f%%", cat.percentage * 100), fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = cat.category.color)
+                                        Text("of spending", fontSize = 12.sp, color = c.textSecondary)
+                                        Spacer(Modifier.height(6.dp))
+                                        Text("₹${decFmtA.format(cat.total)}", fontSize = 14.sp, color = cat.category.color, fontWeight = FontWeight.SemiBold)
+                                        Text("out of ₹${decFmtA.format(filteredOverviewTotal)}", fontSize = 11.sp, color = c.textSecondary)
                                     }
                                 }
                             }
@@ -5543,26 +5515,13 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                 Column(modifier = Modifier.fillMaxSize()) {
                     // ── Top bar ──────────────────────────────────────────────
                     Surface(shadowElevation = 0.dp, color = c.bg) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
-                                Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
-                            }
-                            Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
                                 Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, lineHeight = 18.sp)
                                 Text(monthLabel, fontSize = 12.sp, color = c.textSecondary, lineHeight = 14.sp)
                             }
-                            var showTopKebab by remember { mutableStateOf(false) }
-                            Box {
-                                IconButton(onClick = { showTopKebab = true }, modifier = Modifier.size(36.dp)) {
-                                    Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = c.textSecondary, modifier = Modifier.size(18.dp))
-                                }
-                                DropdownMenu(expanded = showTopKebab, onDismissRequest = { showTopKebab = false }, containerColor = c.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
-                                    DropdownMenuItem(text = { Text("Edit Budget", color = c.text, fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = c.accent, modifier = Modifier.size(16.dp)) }, onClick = { showTopKebab = false; showBudgetCategoryDetailFor = null; showBudgetAmountDialog = cat })
-                                    DropdownMenuItem(text = { Text("Edit Category", color = c.text, fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Category, null, tint = c.accent, modifier = Modifier.size(16.dp)) }, onClick = { showTopKebab = false; showBudgetCategoryDetailFor = null; showEditCategoryDialog = cat })
-                                }
+                            IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
@@ -5605,14 +5564,14 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         if (limitDetail > 0) {
                             Surface(color = if (c.isBorderless) Color.Transparent else c.cardBg, shape = RoundedCornerShape(14.dp), border = if (!c.isBorderless) BorderStroke(1.dp, c.border) else null, modifier = Modifier.fillMaxWidth()) {
                                 Column(modifier = Modifier.padding(if (c.isBorderless) PaddingValues(vertical = 8.dp) else PaddingValues(16.dp)), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text(String.format(Locale.getDefault(), "%.1f%%", actualPct) + " of budget used", fontSize = 14.sp, color = progColor, fontWeight = FontWeight.Bold)
-                                        if (totalBudgetedSpend > 0) Text(String.format(Locale.getDefault(), "%.1f%%", ofTotalPct) + " of total", fontSize = 13.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
-                                    }
-                                    // Fill bar with border (text is above, always visible)
+                                    // Fill bar with text inside
                                     Box(modifier = Modifier.fillMaxWidth().height(44.dp).border(1.5.dp, progColor.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp))) {
                                         Box(modifier = Modifier.fillMaxSize().background(progColor.copy(alpha = 0.07f)))
                                         Box(modifier = Modifier.fillMaxWidth(barRatio).fillMaxHeight().background(progColor.copy(alpha = 0.65f)))
+                                        Row(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                            Text(String.format(Locale.getDefault(), "%.1f%%", actualPct) + " of budget", fontSize = 13.sp, color = c.text, fontWeight = FontWeight.Bold)
+                                            if (totalBudgetedSpend > 0) Text(String.format(Locale.getDefault(), "%.1f%%", ofTotalPct) + " of total", fontSize = 11.sp, color = c.text.copy(alpha = 0.75f))
+                                        }
                                     }
                                 }
                             }
@@ -5677,7 +5636,20 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                                 Text(tx.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                                                 if (hasNote) Icon(Icons.Default.Notes, contentDescription = "Has note", tint = if (isNoteExpanded) c.accent else c.textTertiary, modifier = Modifier.size(10.dp))
                                             }
-                                            Text(tx.getAccountName(), fontSize = 10.sp, color = c.textSecondary, maxLines = 1)
+                                            val bAccName = tx.getAccountName()
+                                            val bAccType = when {
+                                                bAccName.contains("card", ignoreCase = true) || bAccName.contains("credit", ignoreCase = true) -> "CREDIT_CARD"
+                                                bAccName.contains("cash", ignoreCase = true) -> "CASH"
+                                                bAccName.contains("wallet", ignoreCase = true) -> "WALLET"
+                                                else -> "BANK"
+                                            }
+                                            val bAccColor = when (bAccType) { "CASH" -> c.income; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> Color(0xFF3B82F6) }
+                                            Surface(color = bAccColor.copy(0.12f), shape = RoundedCornerShape(4.dp)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                                    Icon(walletIconFor(bAccName, bAccType), null, tint = bAccColor, modifier = Modifier.size(10.dp))
+                                                    Text(bAccName, fontSize = 9.sp, color = bAccColor, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                }
+                                            }
                                         }
                                         Column(horizontalAlignment = Alignment.End) {
                                             Text("₹${amtFmt.format(tx.amount)}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cat.color)
@@ -10249,8 +10221,8 @@ fun budgetProgressColor(percent: Double, appColors: com.example.ui.theme.AppColo
     return when {
         percent > 100.0 -> Color(0xFF991B1B)  // >100%: dark red (over budget)
         percent > 90.0  -> Color(0xFFEF4444)  // >90%: red (critical)
-        percent > 75.0  -> Color(0xFFFB923C)  // >75%: orange (warning)
-        percent > 50.0  -> Color(0xFFFACC15)  // >50%: yellow (caution)
+        percent > 75.0  -> Color(0xFFFF6B00)  // >75%: vivid orange
+        percent > 50.0  -> Color(0xFFFFD500)  // >50%: bright yellow
         percent > 30.0  -> Color(0xFF16A34A)  // >30%: vibrant green (ok)
         else            -> Color(0xFF86EFAC)  // ≤30%: soft green (safe)
     }

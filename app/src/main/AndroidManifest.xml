@@ -33,17 +33,6 @@
         </activity>
 
         <receiver
-            android:name="com.example.widget.FinanceWidgetProvider"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info" />
-        </receiver>
-
-        <receiver
             android:name="com.example.receiver.SmsReceiver"
             android:exported="true"
             android:permission="android.permission.BROADCAST_SMS">

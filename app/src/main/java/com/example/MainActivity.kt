@@ -157,6 +157,7 @@ fun TransactionEntry.getAccountName(consolidate: Boolean = false): String {
     }
 }
 
+/** Appends [Acc: accountName] tag to a note, removing any pre-existing account tag. */
 fun makeNoteWithAccount(plainNote: String?, accountName: String): String {
     // Strip any pre-existing [Acc: ...] tag to avoid double-tagging on re-save
     val clean = (plainNote ?: "").replace("\\s*\\[Acc:[^]]*]".toRegex(), "").trim()
@@ -164,6 +165,8 @@ fun makeNoteWithAccount(plainNote: String?, accountName: String): String {
 }
 
 /** Strips ALL internal metadata tags, returning only the user-written portion of a note. */
+/** Strips all internal metadata tags ([Acc:], [To:], [T:A], [IncRef:]) from a note,
+ * returning only the user-visible portion. */
 fun userNoteFrom(note: String?): String = (note ?: "")
     .replace(Regex("\\s*\\[Acc:[^]]*]"), "")
     .replace(Regex("\\s*\\[To:[^]]*]"), "")
@@ -172,6 +175,7 @@ fun userNoteFrom(note: String?): String = (note ?: "")
     .trim()
 
 /** Rebuilds the full note for saving: account tag + preserved transfer metadata + user text. */
+/** Reconstructs the full note string: user text + account tag + preserved transfer metadata. */
 fun rebuildNote(userNote: String?, accountName: String, originalNote: String?): String {
     val withAccount = makeNoteWithAccount(userNote, accountName)
     val transferTags = buildString {
@@ -195,6 +199,11 @@ fun consolidateAccountName(raw: String): String {
 }
 
 // Base balances helper
+/**
+ * Computes the current balance for every wallet by replaying all transactions
+ * from the account's base balance (or the most recent BALANCE_UPDATE snapshot).
+ * Handles TRANSFER entries, optional account consolidation, and carry-over toggle.
+ */
 fun computeWalletBalances(
     transactions: List<TransactionEntry>,
     accountsList: List<Account> = emptyList(),
@@ -290,6 +299,36 @@ fun computeWalletBalances(
     return balances
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AutoLedger — Personal Finance Tracker  (single-file Compose UI)
+//
+// Architecture Flow:
+//   SMS inbox / Manual entry
+//       ↓
+//   SmsReceiver / AddTransactionDialog
+//       ↓
+//   FinanceViewModel  ←→  Room Database
+//   (transactions, budgets, accounts, categories, SMS rules)
+//       ↓  StateFlow / collectAsStateWithLifecycle
+//   MainAppScreen  →  HorizontalPager (5 tabs)
+//       ├─ DashboardScreen   (Records)   – wallet cards, grouped tx list
+//       ├─ AnalyticsScreen   (Analysis)  – donut/flow/account charts
+//       ├─ BudgetsScreen     (Budgets)   – limits, category drag-sort
+//       ├─ AccountScreen     (Accounts)  – wallet management, transfers
+//       └─ AutoScanHubScreen (SMS Scan)  – on-device SMS parser
+//
+// Theming:
+//   AppColors data class  →  LocalAppColors  →  `val c = LocalAppColors.current`
+//   `c.isBorderless` drives the flat/bordered style toggle.
+//
+// Conventions:
+//   `c`          – current AppColors (theme palette)
+//   `isPaid`     – Pro features unlocked
+//   `rawMonthYear` – period key "yyyy-MM"
+//   `txs`        – all transactions from DB (unfiltered)
+// ═══════════════════════════════════════════════════════════════════════════
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -324,6 +363,11 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Root app shell — owns the Scaffold (top bar, bottom navigation bar, FAB)
+ * and the HorizontalPager that drives tab navigation between the 5 main screens.
+ * Also owns app-level overlays: Add Transaction, CSV Export, Backup, Restore, Pro Upgrade.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
@@ -1056,7 +1100,18 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     }
 }
 
-// 1. RECORDS / DASHBOARD SCREEN
+// ═══════════════════════════════════════════════════════════════════════════
+// SCREEN 1 — RECORDS / DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Records tab — period-aware transaction list grouped by date.
+ * Features:
+ *  - Multi-wallet balance cards + "All" aggregate
+ *  - Daily / Weekly / Monthly / 3M / 6M / 1Y period selector
+ *  - Full-text + type / category / account filters
+ *  - Running balance column (optional)
+ *  - Delete by all / period / category
+ */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
@@ -2166,14 +2221,11 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                             modifier = Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            // Chip: weight(fill=false) — Row measures non-weighted time first,
-                                            // then chip gets the remaining width as its max constraint.
-                                            // fill=false means the pill still wraps its content (no stretching).
-                                            // Font auto-shrinks via onTextLayout instead of showing "...".
+                                            // Chip fills remaining space (fill=true), pushing time to the right
                                             Surface(
                                                 color = acctColor.copy(alpha = 0.10f),
                                                 shape = RoundedCornerShape(20.dp),
-                                                modifier = Modifier.weight(1f, fill = false)
+                                                modifier = Modifier.weight(1f, fill = true)
                                             ) {
                                                 Row(
                                                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
@@ -2573,7 +2625,15 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     }
 }
 
-// 2. ANALYSIS / ANALYTICS SCREEN
+// ═══════════════════════════════════════════════════════════════════════════
+// SCREEN 2 — ANALYSIS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Analysis tab — visual spending/income analytics over the selected period.
+ * Modes: Expense Overview | Income Overview | Expense Flow | Income Flow | Account Analysis
+ * Category filter persists via ViewModel; "Budgeted Only" toggle filters all modes.
+ * Tapping a category opens a full-screen detail popup with pie chart + transaction list.
+ */
 @Composable
 fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememberLazyListState()) {
     val c = LocalAppColors.current
@@ -3268,8 +3328,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
 
     // Category detail dialog
     categoryDetailItem?.let { (cat, txList) ->
-        val decFmtA = remember { java.text.DecimalFormat("#,##0.00") }
-        val sdfA = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
+        val amtFormatter = remember { java.text.DecimalFormat("#,##0.00") }
+        val dateFormatter = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
         val txsWithNotesCat = txList.filter { userNoteFrom(it.note).isNotBlank() }
         val periodLabelA = formatAnalyticsPeriodLabel(rawMonthYear, timeFilter, anchorTime)
 
@@ -3333,7 +3393,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                         Text(String.format(Locale.getDefault(), "%.1f%%", cat.percentage * 100), fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = cat.category.color)
                                         Text("of total spending", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
                                         Spacer(Modifier.height(4.dp))
-                                        Text("₹${decFmtA.format(cat.total)}", fontSize = 14.sp, color = cat.category.color, fontWeight = FontWeight.Bold)
+                                        Text("₹${amtFormatter.format(cat.total)}", fontSize = 14.sp, color = cat.category.color, fontWeight = FontWeight.Bold)
                                         Text("out of ${compactCurrency(filteredOverviewTotal)}", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
@@ -3377,8 +3437,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                                 }
                                             }
                                             Column(horizontalAlignment = Alignment.End) {
-                                                Text("₹${decFmtA.format(tx.amount)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = cat.category.color)
-                                                Text(sdfA.format(java.util.Date(tx.timestamp)), fontSize = 10.sp, color = c.textSecondary)
+                                                Text("₹${amtFormatter.format(tx.amount)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = cat.category.color)
+                                                Text(dateFormatter.format(java.util.Date(tx.timestamp)), fontSize = 10.sp, color = c.textSecondary)
                                             }
                                         }
                                         if (isExpanded && hasNote) {
@@ -4366,6 +4426,7 @@ private fun buildDailyFlowPoints(
     return points
 }
 
+/** Formats an amount with ₹ prefix, abbreviating large values: 1.2L, 3.5K, etc. */
 private fun compactCurrency(amount: Double): String {
     val absAmount = if (amount < 0) -amount else amount
     return when {
@@ -4581,7 +4642,18 @@ val categoryColorsList = listOf(
     "#26C6DA" to Color(0xFF26C6DA),  // Cyan Light
 )
 
-// 3. BUDGETS SCREEN
+// ═══════════════════════════════════════════════════════════════════════════
+// SCREEN 3 — BUDGETS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Budgets tab — manage per-category monthly limits and expected income targets.
+ * Features:
+ *  - Global spend vs limit progress bar
+ *  - Drag-to-reorder category cards (order persisted per type/tab)
+ *  - Tap budgeted category → full-screen detail popup
+ *  - "Copy from last month" for unbudgeted categories
+ *  - Expense / Income category tabs
+ */
 @Composable
 fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememberLazyListState()) {
     val c = LocalAppColors.current
@@ -5509,7 +5581,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     showBudgetCategoryDetailFor?.let { cat ->
         val amtFmt = remember { java.text.DecimalFormat("#,##0.00") }
         val sdf = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
-        val catTxs = remember(cat.name, rawMonthYear, activeCategoryTypeTab) {
+        val categoryTxs = remember(cat.name, rawMonthYear, activeCategoryTypeTab) {
             if (activeCategoryTypeTab == "EXPENSE") {
                 monthExpenses.filter { it.category.equals(cat.name, ignoreCase = true) }.sortedByDescending { it.timestamp }
             } else {
@@ -5517,14 +5589,14 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             }
         }
         val budgetObj = activeBudgets.firstOrNull { it.category.equals(cat.name, ignoreCase = true) }
-        val catSpendDetail = catTxs.sumOf { it.amount }
+        val catSpendDetail = categoryTxs.sumOf { it.amount }
         val limitDetail = budgetObj?.amountLimit ?: 0.0
         val remaining = limitDetail - catSpendDetail
-        // actualPct uncapped — shows >100% when over budget
-        val actualPct = if (limitDetail > 0) (catSpendDetail / limitDetail * 100) else 0.0
-        // barRatio capped at 1f for visual bar
-        val barRatio = if (limitDetail > 0) (catSpendDetail / limitDetail).toFloat().coerceIn(0f, 1f) else 0f
-        val progColor = budgetProgressColor(actualPct, c)
+        // percentUsed uncapped — shows >100% when over budget
+        val percentUsed = if (limitDetail > 0) (catSpendDetail / limitDetail * 100) else 0.0
+        // fillFraction capped at 1f for visual bar
+        val fillFraction = if (limitDetail > 0) (catSpendDetail / limitDetail).toFloat().coerceIn(0f, 1f) else 0f
+        val progressColor = budgetProgressColor(percentUsed, c)
         val totalBudgetedSpend = monthExpenses.filter { tx -> activeBudgets.any { it.category.equals(tx.category, ignoreCase = true) } }.sumOf { it.amount }
         val ofTotalPct = if (totalBudgetedSpend > 0) (catSpendDetail / totalBudgetedSpend * 100) else 0.0
         val calDetail = remember { Calendar.getInstance() }
@@ -5546,7 +5618,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         }
         var expandedBudgetNoteIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
         var allBudgetNotesExpanded by remember { mutableStateOf(false) }
-        val txsWithNotes = catTxs.filter { userNoteFrom(it.note).isNotBlank() }
+        val txsWithNotes = categoryTxs.filter { userNoteFrom(it.note).isNotBlank() }
 
         Dialog(
             onDismissRequest = { showBudgetCategoryDetailFor = null },
@@ -5584,7 +5656,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 if (limitDetail > 0) {
                                     // Spend vs limit — full numbers
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text("₹${amtFmt.format(catSpendDetail)} of ₹${amtFmt.format(limitDetail)}", fontSize = 12.sp, color = progColor, fontWeight = FontWeight.ExtraBold)
+                                        Text("₹${amtFmt.format(catSpendDetail)} of ₹${amtFmt.format(limitDetail)}", fontSize = 12.sp, color = progressColor, fontWeight = FontWeight.ExtraBold)
                                         val overBudget = remaining < 0
                                         val badgeColor = if (overBudget) c.expense else c.income
                                         Surface(color = badgeColor.copy(alpha = 0.12f), shape = RoundedCornerShape(5.dp)) {
@@ -5607,11 +5679,11 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             Surface(color = if (c.isBorderless) Color.Transparent else c.cardBg, shape = RoundedCornerShape(14.dp), border = if (!c.isBorderless) BorderStroke(1.dp, c.border) else null, modifier = Modifier.fillMaxWidth()) {
                                 Column(modifier = Modifier.padding(if (c.isBorderless) PaddingValues(vertical = 8.dp) else PaddingValues(16.dp)), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     // Fill bar with text inside
-                                    Box(modifier = Modifier.fillMaxWidth().height(44.dp).border(1.5.dp, progColor.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp))) {
-                                        Box(modifier = Modifier.fillMaxSize().background(progColor.copy(alpha = 0.07f)))
-                                        Box(modifier = Modifier.fillMaxWidth(barRatio).fillMaxHeight().background(progColor.copy(alpha = 0.65f)))
+                                    Box(modifier = Modifier.fillMaxWidth().height(44.dp).border(1.5.dp, progressColor.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp))) {
+                                        Box(modifier = Modifier.fillMaxSize().background(progressColor.copy(alpha = 0.07f)))
+                                        Box(modifier = Modifier.fillMaxWidth(fillFraction).fillMaxHeight().background(progressColor.copy(alpha = 0.65f)))
                                         Row(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                            Text(String.format(Locale.getDefault(), "%.1f%%", actualPct) + " of budget", fontSize = 13.sp, color = c.text, fontWeight = FontWeight.Bold)
+                                            Text(String.format(Locale.getDefault(), "%.1f%%", percentUsed) + " of budget", fontSize = 13.sp, color = c.text, fontWeight = FontWeight.Bold)
                                             if (totalBudgetedSpend > 0) Text(String.format(Locale.getDefault(), "%.1f%%", ofTotalPct) + " of total", fontSize = 11.sp, color = c.text.copy(alpha = 0.75f))
                                         }
                                     }
@@ -5651,7 +5723,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
 
                         // ── Transactions ─────────────────────────────────────
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("${catTxs.size} TRANSACTION${if (catTxs.size != 1) "S" else ""}", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp, color = c.textSecondary)
+                            Text("${categoryTxs.size} TRANSACTION${if (categoryTxs.size != 1) "S" else ""}", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp, color = c.textSecondary)
                             if (txsWithNotes.isNotEmpty()) {
                                 val allExpanded = allBudgetNotesExpanded
                                 IconButton(onClick = { allBudgetNotesExpanded = !allBudgetNotesExpanded; if (!allBudgetNotesExpanded) expandedBudgetNoteIds = emptySet() }, modifier = Modifier.size(32.dp)) {
@@ -5661,7 +5733,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         }
                         if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
                         Column(verticalArrangement = Arrangement.spacedBy(if (c.isBorderless) 0.dp else 2.dp)) {
-                        catTxs.forEachIndexed { idx, tx ->
+                        categoryTxs.forEachIndexed { idx, tx ->
                             val hasNote = userNoteFrom(tx.note).isNotBlank()
                             val isNoteExpanded = allBudgetNotesExpanded || tx.id in expandedBudgetNoteIds
                             if (c.isBorderless && idx > 0) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
@@ -5919,7 +5991,14 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     }
 }
 
-// 4. ACCOUNTS / WALLETS MANAGEMENT SCREEN
+// ═══════════════════════════════════════════════════════════════════════════
+// SCREEN 4 — ACCOUNTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Accounts tab — view and manage named wallets (Bank, Cash, Credit Card, Digital Wallet).
+ * Shows combined net-worth balance, per-wallet balances, and optional running balance.
+ * Supports inter-wallet fund transfers. Credit card accounts show available limit.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememberLazyListState()) {
@@ -6686,7 +6765,19 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     }
 }
 
-// 5. AUTO-SCAN SMS UTILITY HUB
+// ═══════════════════════════════════════════════════════════════════════════
+// SCREEN 5 — SMS SCAN HUB
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** SMS Scan tab — 100% on-device SMS parser for auto-tracking transactions.
+ * Never uploads data; reads only verified bank/fintech SMS formats (-S/-T suffix).
+ * Features:
+ *  - Configurable scan range (1–3 months)
+ *  - Custom inclusion/exclusion keyword rules
+ *  - Manual SMS paste & analyze
+ *  - Merchant → Category mapping rules (Pro)
+ *  - Balance sync toggle
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = rememberLazyListState()) {
@@ -7485,7 +7576,10 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
     }
 }
 
-// 6. POPUP DIALOGS & UTILS
+// ═══════════════════════════════════════════════════════════════════════════
+// DIALOGS & UTILITY COMPOSABLES
+// ═══════════════════════════════════════════════════════════════════════════
+
 /** Evaluate a left-to-right arithmetic expression using +, -, ×, ÷. Returns null on error. */
 private fun evalCalcExpr(expr: String): Double? {
     if (expr.isBlank()) return null
@@ -7512,6 +7606,11 @@ private fun formatCalcNum(d: Double): String =
     if (d == kotlin.math.floor(d) && d < 1_000_000_000.0) d.toLong().toString()
     else "%.2f".format(d)
 
+/** Full-screen dialog to log a new cash flow (expense or income).
+ * Features an inline 4-function calculator, category/account pickers,
+ * date-time picker, and notes field.
+ * Remembers the last used category and account for convenience.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AddTransactionDialog(
@@ -7860,6 +7959,11 @@ fun AddTransactionDialog(
     }
 }
 
+/** Dialog to update an existing transaction.
+ * Supports type change, amount edit, category/account reassignment,
+ * note editing, timestamp change, and optional batch-apply to all
+ * same-payee transactions.
+ */
 @Composable
 fun EditTransactionDialog(
     tx: TransactionEntry,
@@ -8219,6 +8323,9 @@ fun EditTransactionDialog(
     }
 }
 
+/** Reusable date + time picker row using native Android pickers.
+ * Themed to match the current light/dark mode.
+ */
 @Composable
 fun TransactionDateTimePicker(
     selectedTimestamp: Long,
@@ -8740,6 +8847,7 @@ private fun QuickAddCategoryDialog(
     )
 }
 
+/** Dialog offering Excel (.xlsx) and PDF export of all transactions. */
 @Composable
 fun ExportCsvDialog(
     viewModel: FinanceViewModel,
@@ -8817,6 +8925,7 @@ fun ExportCsvDialog(
     )
 }
 
+/** Backup center — auto-backup frequency, custom folder, restore from list. */
 @Composable
 fun BackupDialog(
     viewModel: FinanceViewModel,
@@ -9457,6 +9566,7 @@ if (restoreConfirmItem != null) {
     }
 }
 
+/** Import a CSV or JSON backup file from storage. */
 @Composable
 fun RestoreBackupDialog(
     viewModel: FinanceViewModel,
@@ -9657,6 +9767,7 @@ private val TRIAL_ACTIVATION_CODES: Map<String, Int> = mapOf(
     "ALP-TRIAL45-26" to 45
 )
 
+/** Pro upgrade screen — feature list, pricing plans, UPI payment, activation code entry. */
 @Composable
 fun ProUpgradeDialog(
     autoTrackedThisMonth: Int = 0,
@@ -9944,6 +10055,7 @@ fun ProUpgradeDialog(
     }
 }
 
+/** Returns [startMs, endMs] timestamp range for [mode] anchored to [anchorTime]. */
 fun getPeriodRange(mode: DisplayMode, anchorTime: Long): Pair<Long, Long> {
     val cal = Calendar.getInstance().apply { timeInMillis = anchorTime }
     return when (mode) {
@@ -10047,6 +10159,7 @@ fun getPeriodRange(mode: DisplayMode, anchorTime: Long): Pair<Long, Long> {
     }
 }
 
+/** Settings for Accounts tab — visibility toggles, CC details, SMS blocklist management. */
 @Composable
 fun AccountCenterSettingsDialog(
     viewModel: FinanceViewModel,
@@ -10231,6 +10344,7 @@ fun AccountCenterSettingsDialog(
     )
 }
 
+/** Returns [startMs, endMs] for the analytics view, delegating to getPeriodRange. */
 fun getAnalyticsRange(monthYear: String, filter: String, anchorTimeMs: Long = -1L): Pair<Long, Long> {
     val anchor = if (anchorTimeMs > 0) anchorTimeMs else System.currentTimeMillis()
     // Use the same period logic as Records view so both tabs show identical date ranges
@@ -10245,6 +10359,7 @@ fun getAnalyticsRange(monthYear: String, filter: String, anchorTimeMs: Long = -1
     }
 }
 
+/** Returns a new "yyyy-MM" string shifted by [amount] months. */
 fun shiftMonthYear(monthYear: String, amount: Int): String {
     val calendar = Calendar.getInstance().apply {
         try {
@@ -10258,6 +10373,11 @@ fun shiftMonthYear(monthYear: String, amount: Int): String {
     return SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(calendar.time)
 }
 
+/**
+ * Maps a budget usage percentage to a colour:
+ *  ≤30% → soft green (safe)   30-50% → yellow   50-75% → amber
+ *  75-90% → orange            90-100% → red      >100% → dark red
+ */
 fun budgetProgressColor(percent: Double, appColors: com.example.ui.theme.AppColors): Color {
     return when {
         percent > 100.0 -> Color(0xFF991B1B)  // >100%: dark red (over budget)
@@ -10269,6 +10389,7 @@ fun budgetProgressColor(percent: Double, appColors: com.example.ui.theme.AppColo
     }
 }
 
+/** Returns the canonical budget key for a category (always uses category.name). */
 fun resolveBudgetCategoryName(category: DisplayCategory, editedName: String): String {
     // Always use category.name as the budget key.
     // For standard categories (even if icon/color customised), name is the enum value (e.g. "FOOD").
@@ -10277,6 +10398,7 @@ fun resolveBudgetCategoryName(category: DisplayCategory, editedName: String): St
     return category.name
 }
 
+/** Shifts the Analytics period by [amount] steps, updating the ViewModel anchor. */
 fun shiftAnalyticsPeriod(viewModel: FinanceViewModel, monthYear: String, timeFilter: String, amount: Int, anchorTimeMs: Long = -1L) {
     val sdf = SimpleDateFormat("yyyy-MM", Locale.getDefault())
     val cal = if ((timeFilter == "WEEKLY" || timeFilter == "DAILY") && anchorTimeMs > 0) {
@@ -10299,6 +10421,7 @@ fun shiftAnalyticsPeriod(viewModel: FinanceViewModel, monthYear: String, timeFil
     viewModel.setAnchorDate(cal.timeInMillis)
 }
 
+/** Returns a human-readable label for the Analytics period bar. */
 fun formatAnalyticsPeriodLabel(monthYear: String, timeFilter: String, anchorTimeMs: Long = -1L): String {
     val (startMs, endMs) = getAnalyticsRange(monthYear, timeFilter, anchorTimeMs)
     val startCal = Calendar.getInstance().apply { timeInMillis = startMs }
@@ -10320,6 +10443,7 @@ fun formatAnalyticsPeriodLabel(monthYear: String, timeFilter: String, anchorTime
     }
 }
 
+/** Shifts the Records period by [amount] steps (±1) in the given display [mode]. */
 fun shiftPeriod(viewModel: FinanceViewModel, mode: DisplayMode, anchorTime: Long, amount: Int) {
     val cal = Calendar.getInstance().apply { timeInMillis = anchorTime }
     when (mode) {
@@ -10333,6 +10457,7 @@ fun shiftPeriod(viewModel: FinanceViewModel, mode: DisplayMode, anchorTime: Long
     viewModel.setAnchorDate(cal.timeInMillis)
 }
 
+/** Returns a human-readable period label for the top bar (e.g. "July 2026", "Week 28–4 Jul"). */
 fun formatPeriodLabel(mode: DisplayMode, anchorTime: Long): String {
     val cal = Calendar.getInstance().apply { timeInMillis = anchorTime }
     return when (mode) {

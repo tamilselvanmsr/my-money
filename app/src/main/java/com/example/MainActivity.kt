@@ -5452,7 +5452,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
 
     // ── Budget category detail popup ─────────────────────────────────────────
     showBudgetCategoryDetailFor?.let { cat ->
-        val decFmt = remember { DecimalFormat("₹#,##0.00") }
+        val amtFmt = remember { java.text.DecimalFormat("#,##0.00") }
         val sdf = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
         val catTxs = remember(cat.name, rawMonthYear, activeCategoryTypeTab) {
             if (activeCategoryTypeTab == "EXPENSE") {
@@ -5469,13 +5469,21 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         val progColor = budgetProgressColor(pct.toDouble(), c)
         val totalBudgetedSpend = monthExpenses.filter { tx -> activeBudgets.any { it.category.equals(tx.category, ignoreCase = true) } }.sumOf { it.amount }
         val ofTotalPct = if (totalBudgetedSpend > 0) (catSpendDetail / totalBudgetedSpend * 100) else 0.0
-        // Daily stats
         val calDetail = remember { Calendar.getInstance() }
         val daysInMonth = calDetail.getActualMaximum(Calendar.DAY_OF_MONTH)
         val dayOfMonth = calDetail.get(Calendar.DAY_OF_MONTH)
         val daysRemaining = (daysInMonth - dayOfMonth).coerceAtLeast(1)
         val avgDailySpend = if (dayOfMonth > 0) catSpendDetail / dayOfMonth else 0.0
         val dailyAllowanceLeft = if (limitDetail > 0) (limitDetail - catSpendDetail) / daysRemaining else 0.0
+        // Month label for header and transactions section
+        val monthLabel = remember(rawMonthYear) {
+            try { SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(rawMonthYear) ?: Date()) }
+            catch (_: Exception) { rawMonthYear }
+        }
+        // Notes expand state (mirrors analytics pattern)
+        var expandedBudgetNoteIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
+        var allBudgetNotesExpanded by remember { mutableStateOf(false) }
+        val txsWithNotes = catTxs.filter { userNoteFrom(it.note).isNotBlank() }
 
         Dialog(
             onDismissRequest = { showBudgetCategoryDetailFor = null },
@@ -5483,30 +5491,34 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         ) {
             Surface(modifier = Modifier.fillMaxSize(), color = c.bg) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Top bar
-                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(20.dp))
-                        }
-                        Text(cat.displayName, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = c.text, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        // Edit kebab from top bar
-                        var showTopKebab by remember { mutableStateOf(false) }
-                        Box {
-                            IconButton(onClick = { showTopKebab = true }, modifier = Modifier.size(40.dp)) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = c.textSecondary, modifier = Modifier.size(20.dp))
+                    // ── Top bar ──────────────────────────────────────────────
+                    Surface(shadowElevation = 0.dp, color = c.bg) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(20.dp))
+                                }
+                                Text("Category Details", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.text, modifier = Modifier.weight(1f).padding(start = 8.dp))
+                                var showTopKebab by remember { mutableStateOf(false) }
+                                Box {
+                                    IconButton(onClick = { showTopKebab = true }, modifier = Modifier.size(40.dp)) {
+                                        Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = c.textSecondary, modifier = Modifier.size(20.dp))
+                                    }
+                                    DropdownMenu(expanded = showTopKebab, onDismissRequest = { showTopKebab = false }, containerColor = c.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
+                                        DropdownMenuItem(text = { Text("Edit Budget", color = c.text, fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = c.accent, modifier = Modifier.size(16.dp)) }, onClick = { showTopKebab = false; showBudgetCategoryDetailFor = null; showBudgetAmountDialog = cat })
+                                        DropdownMenuItem(text = { Text("Edit Category", color = c.text, fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Category, null, tint = c.accent, modifier = Modifier.size(16.dp)) }, onClick = { showTopKebab = false; showBudgetCategoryDetailFor = null; showEditCategoryDialog = cat })
+                                    }
+                                }
                             }
-                            DropdownMenu(expanded = showTopKebab, onDismissRequest = { showTopKebab = false }, containerColor = c.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
-                                DropdownMenuItem(text = { Text("Edit Budget", color = c.text, fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = c.accent, modifier = Modifier.size(16.dp)) }, onClick = { showTopKebab = false; showBudgetCategoryDetailFor = null; showBudgetAmountDialog = cat })
-                                DropdownMenuItem(text = { Text("Edit Category", color = c.text, fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Category, null, tint = c.accent, modifier = Modifier.size(16.dp)) }, onClick = { showTopKebab = false; showBudgetCategoryDetailFor = null; showEditCategoryDialog = cat })
-                            }
+                            Text(monthLabel, fontSize = 13.sp, color = c.textSecondary, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 48.dp))
                         }
                     }
                     HorizontalDivider(color = c.divider)
 
-                    // Scrollable body
+                    // ── Scrollable body ──────────────────────────────────────
                     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
-                        // ── Header: icon + name + amount ────────────────────
+                        // ── Header: icon + name + amount ─────────────────────
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                             Surface(shape = CircleShape, color = cat.color.copy(alpha = 0.15f), modifier = Modifier.size(56.dp)) {
                                 Box(contentAlignment = Alignment.Center) { Icon(cat.icon, null, tint = cat.color, modifier = Modifier.size(30.dp)) }
@@ -5516,9 +5528,9 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 Text(cat.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Spacer(Modifier.height(4.dp))
                                 if (limitDetail > 0) {
-                                    Text("₹${DecimalFormat("#,##0.00").format(catSpendDetail)} spent of ₹${DecimalFormat("#,##0.00").format(limitDetail)}", fontSize = 14.sp, color = progColor, fontWeight = FontWeight.SemiBold)
+                                    Text("₹${amtFmt.format(catSpendDetail)} spent of ₹${amtFmt.format(limitDetail)}", fontSize = 14.sp, color = progColor, fontWeight = FontWeight.SemiBold)
                                 } else {
-                                    Text("₹${DecimalFormat("#,##0.00").format(catSpendDetail)} spent", fontSize = 14.sp, color = cat.color, fontWeight = FontWeight.SemiBold)
+                                    Text("₹${amtFmt.format(catSpendDetail)} spent", fontSize = 14.sp, color = cat.color, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -5531,7 +5543,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                         Text(String.format(Locale.getDefault(), "%.1f%%", pct) + " of budget used", fontSize = 14.sp, color = progColor, fontWeight = FontWeight.Bold)
                                         if (totalBudgetedSpend > 0) Text(String.format(Locale.getDefault(), "%.1f%%", ofTotalPct) + " of total", fontSize = 13.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
                                     }
-                                    LinearProgressIndicator(progress = { ratioDetail }, color = progColor, trackColor = c.text.copy(alpha = 0.08f), modifier = Modifier.fillMaxWidth().height(14.dp).clip(RoundedCornerShape(4.dp)))
+                                    LinearProgressIndicator(progress = { ratioDetail }, color = progColor, trackColor = c.text.copy(alpha = 0.08f), modifier = Modifier.fillMaxWidth().height(14.dp))
                                 }
                             }
                         }
@@ -5542,7 +5554,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Icon(Icons.Default.CalendarToday, null, tint = c.accent, modifier = Modifier.size(14.dp))
-                                        Text("Daily Breakdown (· Day $dayOfMonth of $daysInMonth)", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
+                                        Text("Daily Breakdown (Day $dayOfMonth of $daysInMonth)", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
                                     }
                                     HorizontalDivider(color = c.divider)
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -5560,22 +5572,51 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         }
 
                         // ── Transactions ─────────────────────────────────────
-                        Text("TRANSACTIONS (${catTxs.size})", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp, color = c.textSecondary)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("${catTxs.size} transaction${if (catTxs.size != 1) "s" else ""}", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.5.sp, color = c.textSecondary)
+                            if (txsWithNotes.isNotEmpty()) {
+                                val allExpanded = allBudgetNotesExpanded
+                                IconButton(onClick = { allBudgetNotesExpanded = !allBudgetNotesExpanded; if (!allBudgetNotesExpanded) expandedBudgetNoteIds = emptySet() }, modifier = Modifier.size(32.dp)) {
+                                    Icon(if (allExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore, contentDescription = if (allExpanded) "Hide notes" else "Show notes", tint = if (allExpanded) c.accent else c.textSecondary, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
                         if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
+                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                         catTxs.forEachIndexed { idx, tx ->
+                            val hasNote = userNoteFrom(tx.note).isNotBlank()
+                            val isNoteExpanded = allBudgetNotesExpanded || tx.id in expandedBudgetNoteIds
                             if (c.isBorderless && idx > 0) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
-                            Surface(color = if (c.isBorderless) Color.Transparent else c.cardBg, shape = RoundedCornerShape(12.dp), border = if (!c.isBorderless) BorderStroke(1.dp, c.border) else null, modifier = Modifier.fillMaxWidth()) {
-                                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                        Text(tx.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(tx.getAccountName(), fontSize = 11.sp, color = c.textSecondary, maxLines = 1)
+                            Surface(
+                                color = if (isNoteExpanded && hasNote) c.accent.copy(alpha = 0.06f) else c.divider,
+                                shape = RoundedCornerShape(10.dp),
+                                border = if (isNoteExpanded && hasNote) BorderStroke(1.dp, c.accent.copy(alpha = 0.3f)) else null,
+                                modifier = Modifier.fillMaxWidth().then(if (hasNote) Modifier.clickable { expandedBudgetNoteIds = if (tx.id in expandedBudgetNoteIds) expandedBudgetNoteIds - tx.id else expandedBudgetNoteIds + tx.id } else Modifier)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Text(tx.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                                if (hasNote) Icon(Icons.Default.Notes, contentDescription = "Has note", tint = if (isNoteExpanded) c.accent else c.textTertiary, modifier = Modifier.size(10.dp))
+                                            }
+                                            Text(tx.getAccountName(), fontSize = 10.sp, color = c.textSecondary, maxLines = 1)
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text("₹${amtFmt.format(tx.amount)}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cat.color)
+                                            Text(sdf.format(Date(tx.timestamp)), fontSize = 10.sp, color = c.textSecondary)
+                                        }
                                     }
-                                    Column(horizontalAlignment = Alignment.End) {
-                                        Text(decFmt.format(tx.amount), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cat.color)
-                                        Text(sdf.format(Date(tx.timestamp)), fontSize = 10.sp, color = c.textSecondary)
+                                    if (isNoteExpanded && hasNote) {
+                                        val userNote = userNoteFrom(tx.note)
+                                        Spacer(Modifier.height(6.dp))
+                                        HorizontalDivider(color = c.accent.copy(alpha = 0.2f))
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(userNote, fontSize = 11.sp, color = c.text.copy(alpha = 0.85f), fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                                     }
                                 }
                             }
+                        }
                         }
                         Spacer(Modifier.height(8.dp))
                     }

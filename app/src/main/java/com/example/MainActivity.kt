@@ -5468,9 +5468,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         val budgetObj = activeBudgets.firstOrNull { it.category.equals(cat.name, ignoreCase = true) }
         val catSpendDetail = catTxs.sumOf { it.amount }
         val limitDetail = budgetObj?.amountLimit ?: 0.0
-        // actualPct is uncapped — shows >100% when over budget
+        val remaining = limitDetail - catSpendDetail
+        // actualPct uncapped — shows >100% when over budget
         val actualPct = if (limitDetail > 0) (catSpendDetail / limitDetail * 100) else 0.0
-        // barRatio capped at 1f so the visual bar doesn't overflow
+        // barRatio capped at 1f for visual bar
         val barRatio = if (limitDetail > 0) (catSpendDetail / limitDetail).toFloat().coerceIn(0f, 1f) else 0f
         val progColor = budgetProgressColor(actualPct, c)
         val totalBudgetedSpend = monthExpenses.filter { tx -> activeBudgets.any { it.category.equals(tx.category, ignoreCase = true) } }.sumOf { it.amount }
@@ -5480,6 +5481,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         val dayOfMonth = calDetail.get(Calendar.DAY_OF_MONTH)
         val daysRemaining = (daysInMonth - dayOfMonth).coerceAtLeast(1)
         val avgDailySpend = if (dayOfMonth > 0) catSpendDetail / dayOfMonth else 0.0
+        val expectedDailyBudget = if (daysInMonth > 0) limitDetail / daysInMonth else 0.0
         val dailyAllowanceLeft = if (limitDetail > 0) (limitDetail - catSpendDetail) / daysRemaining else 0.0
         val monthLabel = remember(rawMonthYear) {
             try { SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(rawMonthYear) ?: Date()) }
@@ -5504,7 +5506,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
                                 Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
                             }
-                            Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                            Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
                                 Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(monthLabel, fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
                             }
@@ -5535,9 +5537,21 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 Text(cat.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Spacer(Modifier.height(4.dp))
                                 if (limitDetail > 0) {
-                                    Text("₹${amtFmt.format(catSpendDetail)} spent of ₹${amtFmt.format(limitDetail)}", fontSize = 14.sp, color = progColor, fontWeight = FontWeight.SemiBold)
+                                    // Spend vs limit — compact currency
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("${compactCurrency(catSpendDetail)} of ${compactCurrency(limitDetail)}", fontSize = 13.sp, color = progColor, fontWeight = FontWeight.SemiBold)
+                                        val overBudget = remaining < 0
+                                        val badgeColor = if (overBudget) c.expense else c.income
+                                        Surface(color = badgeColor.copy(alpha = 0.12f), shape = RoundedCornerShape(5.dp)) {
+                                            Text(
+                                                if (overBudget) "↑ ${compactCurrency(-remaining)} over" else "↓ ${compactCurrency(remaining)} left",
+                                                fontSize = 10.sp, color = badgeColor, fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
                                 } else {
-                                    Text("₹${amtFmt.format(catSpendDetail)} spent", fontSize = 14.sp, color = cat.color, fontWeight = FontWeight.SemiBold)
+                                    Text("${compactCurrency(catSpendDetail)} spent", fontSize = 14.sp, color = cat.color, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -5569,14 +5583,19 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                         Text("Daily Breakdown (Day $dayOfMonth of $daysInMonth)", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
                                     }
                                     HorizontalDivider(color = c.divider)
+                                    // 3-column: avg spent / daily target / left per day
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Column {
-                                            Text("${compactCurrency(avgDailySpend)}/day", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = c.text)
-                                            Text("avg spent so far", fontSize = 12.sp, color = c.textSecondary)
+                                        Column(horizontalAlignment = Alignment.Start) {
+                                            Text(compactCurrency(avgDailySpend), fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = c.text)
+                                            Text("avg/day so far", fontSize = 10.sp, color = c.textSecondary)
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(compactCurrency(expectedDailyBudget), fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = c.accent)
+                                            Text("daily target", fontSize = 10.sp, color = c.textSecondary)
                                         }
                                         Column(horizontalAlignment = Alignment.End) {
-                                            Text("${compactCurrency(dailyAllowanceLeft.coerceAtLeast(0.0))}/day", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = if (dailyAllowanceLeft < 0) c.expense else c.income)
-                                            Text(if (dailyAllowanceLeft < 0) "over budget" else "left per day", fontSize = 12.sp, color = c.textSecondary)
+                                            Text(compactCurrency(dailyAllowanceLeft.coerceAtLeast(0.0)), fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = if (dailyAllowanceLeft < 0) c.expense else c.income)
+                                            Text(if (dailyAllowanceLeft < 0) "over budget" else "left/day", fontSize = 10.sp, color = c.textSecondary)
                                         }
                                     }
                                 }
@@ -10183,11 +10202,12 @@ fun shiftMonthYear(monthYear: String, amount: Int): String {
 
 fun budgetProgressColor(percent: Double, appColors: com.example.ui.theme.AppColors): Color {
     return when {
-        percent > 90.0 -> Color(0xFFEF4444)   // >90%: red (critical)
-        percent > 75.0 -> Color(0xFFFB923C)   // >75%: orange (warning)
-        percent > 50.0 -> Color(0xFFFACC15)   // >50%: yellow (caution)
-        percent > 30.0 -> Color(0xFF86EFAC)   // >30%: light green (ok)
-        else           -> Color(0xFF22C55E)   // ≤30%: bright green (safe)
+        percent > 100.0 -> Color(0xFF991B1B)  // >100%: dark red (over budget)
+        percent > 90.0  -> Color(0xFFEF4444)  // >90%: red (critical)
+        percent > 75.0  -> Color(0xFFFB923C)  // >75%: orange (warning)
+        percent > 50.0  -> Color(0xFFFACC15)  // >50%: yellow (caution)
+        percent > 30.0  -> Color(0xFF16A34A)  // >30%: vibrant green (ok)
+        else            -> Color(0xFF86EFAC)  // ≤30%: soft green (safe)
     }
 }
 

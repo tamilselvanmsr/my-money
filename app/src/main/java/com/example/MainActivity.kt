@@ -3233,116 +3233,202 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
 
     // Category detail dialog
     categoryDetailItem?.let { (cat, txList) ->
-        val decFormat = remember { DecimalFormat("₹#,##0.00") }
-        val sdf = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
+        val decFmtA = remember { java.text.DecimalFormat("#,##0.00") }
+        val sdfA = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
         val txsWithNotesCat = txList.filter { userNoteFrom(it.note).isNotBlank() }
-        AlertDialog(
+        val periodLabelA = formatAnalyticsPeriodLabel(rawMonthYear, timeFilter, anchorTime)
+        val dailyKeyFmtA = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+        val dailySpendDataA = remember(txList) {
+            txList.groupBy { dailyKeyFmtA.format(java.util.Date(it.timestamp)) }
+                .entries.sortedBy { it.key }
+                .map { it.key to it.value.sumOf { tx -> tx.amount } }
+        }
+        val dailyMaxA = dailySpendDataA.maxOfOrNull { it.second }?.coerceAtLeast(1.0) ?: 1.0
+        val activeDaysA = dailySpendDataA.size
+        val dailyAvgA = if (activeDaysA > 0) cat.total / activeDaysA else 0.0
+        val peakDayA = dailySpendDataA.maxByOrNull { it.second }
+
+        Dialog(
             onDismissRequest = { categoryDetailItem = null; expandedNotesTxId = null },
-            containerColor = c.cardBg,
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(shape = CircleShape, color = cat.category.color.copy(alpha = 0.15f), modifier = Modifier.size(40.dp)) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(cat.category.icon, contentDescription = null, tint = cat.category.color, modifier = Modifier.size(22.dp))
-                        }
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(cat.category.displayName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text)
-                        Text(decFormat.format(cat.total), fontSize = 13.sp, color = cat.category.color, fontWeight = FontWeight.SemiBold)
-                    }
-                    if (txsWithNotesCat.isNotEmpty()) {
-                        val allExpanded = expandedNotesTxId == -1
-                        IconButton(
-                            onClick = { expandedNotesTxId = if (allExpanded) null else -1 },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                if (allExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore,
-                                contentDescription = if (allExpanded) "Hide all notes" else "Show all notes",
-                                tint = if (allExpanded) cat.category.color else c.textSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-            },
-            text = {
-                if (txList.isEmpty()) {
-                    Text("No transactions in this period.", color = c.textSecondary, fontSize = 13.sp)
-                } else {
-                    Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        txList.sortedByDescending { it.timestamp }.forEach { tx ->
-                            val accountName = tx.getAccountName()
-                            val acctType = allAccountsForAnalytics.find { it.name == accountName }?.type ?: ""
-                            val acctColor = when (acctType) {
-                                "CASH"        -> c.income
-                                "BANK"        -> Color(0xFF3B82F6)
-                                "CREDIT_CARD" -> c.expense
-                                "WALLET"      -> Color(0xFFFF9800)
-                                else          -> c.textSecondary
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = c.bg) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Surface(shadowElevation = 0.dp, color = c.bg) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { categoryDetailItem = null; expandedNotesTxId = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
                             }
-                            val userNote = userNoteFrom(tx.note)
-                            val hasNote = userNote.isNotBlank()
-                            val isExpanded = expandedNotesTxId == -1 || expandedNotesTxId == tx.id
-                            Surface(
-                                color = if (c.isBorderless) Color.Transparent else if (isExpanded && hasNote) acctColor.copy(alpha = 0.06f) else c.divider,
-                                shape = RoundedCornerShape(10.dp),
-                                border = if (isExpanded && hasNote) BorderStroke(1.dp, acctColor.copy(alpha = 0.3f)) else null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .then(if (hasNote) Modifier.clickable {
-                                        // Individual toggle overrides the "all" sentinel
-                                        if (expandedNotesTxId == -1) {
-                                            expandedNotesTxId = null // collapse all, including this one
-                                        } else {
-                                            expandedNotesTxId = if (isExpanded) null else tx.id
-                                        }
-                                    } else Modifier)
-                            ) {
-                                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // Left: title + account chip
-                                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                            Text(tx.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                Surface(color = acctColor.copy(alpha = 0.12f), shape = RoundedCornerShape(4.dp)) {
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    ) {
-                                                        Icon(walletIconFor(accountName, acctType.ifEmpty { null }), contentDescription = null, tint = acctColor, modifier = Modifier.size(10.dp))
-                                                        Text(accountName, fontSize = 9.sp, color = acctColor, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                    }
-                                                }
-                                                if (hasNote) Icon(Icons.Default.Notes, contentDescription = "Has note", tint = c.textTertiary, modifier = Modifier.size(10.dp))
-                                            }
-                                        }
-                                        // Right: amount + time
-                                        Column(horizontalAlignment = Alignment.End) {
-                                            Text(decFormat.format(tx.amount), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = cat.category.color)
-                                            Text(sdf.format(java.util.Date(tx.timestamp)), fontSize = 10.sp, color = c.textSecondary)
-                                        }
-                                    }
-                                    // Expanded notes section
-                                    if (isExpanded && hasNote) {
-                                        Spacer(Modifier.height(6.dp))
-                                        HorizontalDivider(color = acctColor.copy(alpha = 0.2f))
-                                        Spacer(Modifier.height(4.dp))
-                                        Text(userNote, fontSize = 11.sp, color = c.text.copy(alpha = 0.85f), fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                            Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
+                                Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, lineHeight = 18.sp)
+                                Text(periodLabelA, fontSize = 12.sp, color = c.textSecondary, lineHeight = 14.sp)
+                            }
+                        }
+                    }
+                    HorizontalDivider(color = c.divider)
+                    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        // ── Header ────────────────────────────────────────────
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Surface(shape = CircleShape, color = cat.category.color.copy(alpha = 0.15f), modifier = Modifier.size(56.dp)) {
+                                Box(contentAlignment = Alignment.Center) { Icon(cat.category.icon, null, tint = cat.category.color, modifier = Modifier.size(30.dp)) }
+                            }
+                            Spacer(Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(cat.category.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Spacer(Modifier.height(4.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("₹${decFmtA.format(cat.total)}", fontSize = 15.sp, color = cat.category.color, fontWeight = FontWeight.SemiBold)
+                                    Surface(color = cat.category.color.copy(alpha = 0.12f), shape = RoundedCornerShape(5.dp)) {
+                                        Text(String.format(Locale.getDefault(), "%.1f%% of total", cat.percentage * 100), fontSize = 10.sp, color = cat.category.color, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                                     }
                                 }
                             }
                         }
+                        if (c.isBorderless) HorizontalDivider(color = c.flatDivider)
+                        // ── Fill chart: share of total ────────────────────────
+                        Surface(color = if (c.isBorderless) Color.Transparent else c.cardBg, shape = RoundedCornerShape(14.dp), border = if (!c.isBorderless) BorderStroke(1.dp, c.border) else null, modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text("SHARE OF TOTAL", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp, color = c.textSecondary)
+                                // Donut + legend side by side
+                                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    // Donut
+                                    Box(modifier = Modifier.size(110.dp), contentAlignment = Alignment.Center) {
+                                        Canvas(modifier = Modifier.fillMaxSize()) {
+                                            val strokeW = size.minDimension * 0.18f
+                                            val arcSz = androidx.compose.ui.geometry.Size(size.minDimension - strokeW, size.minDimension - strokeW)
+                                            val tl = androidx.compose.ui.geometry.Offset(strokeW / 2f, strokeW / 2f)
+                                            // Dimmed background ring (rest of expenses)
+                                            drawArc(color = cat.category.color.copy(alpha = 0.13f), startAngle = -90f, sweepAngle = 360f, useCenter = false, style = Stroke(width = strokeW, cap = StrokeCap.Round), size = arcSz, topLeft = tl)
+                                            // Category arc
+                                            val sweep = (cat.percentage * 360.0).toFloat().coerceIn(2f, 360f)
+                                            drawArc(color = cat.category.color, startAngle = -90f, sweepAngle = sweep, useCenter = false, style = Stroke(width = strokeW * 1.1f, cap = StrokeCap.Round), size = arcSz, topLeft = tl)
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(String.format(Locale.getDefault(), "%.1f%%", cat.percentage * 100), fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = cat.category.color, textAlign = TextAlign.Center)
+                                            Text("share", fontSize = 9.sp, color = c.textSecondary, textAlign = TextAlign.Center)
+                                        }
+                                    }
+                                    // Legend
+                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                                Box(modifier = Modifier.size(8.dp).background(cat.category.color, CircleShape))
+                                                Text(cat.category.displayName, fontSize = 11.sp, color = c.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            }
+                                            Text("₹${decFmtA.format(cat.total)}", fontSize = 12.sp, color = cat.category.color, fontWeight = FontWeight.Bold)
+                                        }
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                                Box(modifier = Modifier.size(8.dp).background(cat.category.color.copy(alpha = 0.22f), CircleShape))
+                                                Text("Other categories", fontSize = 11.sp, color = c.textSecondary)
+                                            }
+                                            Text("₹${decFmtA.format((filteredOverviewTotal - cat.total).coerceAtLeast(0.0))}", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
+                                        }
+                                        HorizontalDivider(color = c.divider)
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text("Total", fontSize = 11.sp, color = c.textSecondary)
+                                            Text("₹${decFmtA.format(filteredOverviewTotal)}", fontSize = 12.sp, color = c.text, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (c.isBorderless) HorizontalDivider(color = c.flatDivider)
+                        // ── Daily spend bar chart ─────────────────────────────
+                        if (dailySpendDataA.size >= 2) {
+                            Surface(color = if (c.isBorderless) Color.Transparent else c.cardBg, shape = RoundedCornerShape(14.dp), border = if (!c.isBorderless) BorderStroke(1.dp, c.border) else null, modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Text("DAILY SPENDING", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp, color = c.textSecondary)
+                                    Row(modifier = Modifier.fillMaxWidth()) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                            Text("₹${decFmtA.format(dailyAvgA)}", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = c.text, textAlign = TextAlign.Center)
+                                            Text("avg/day", fontSize = 10.sp, color = c.textSecondary, textAlign = TextAlign.Center)
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                            Text("$activeDaysA", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = c.accent, textAlign = TextAlign.Center)
+                                            Text("active days", fontSize = 10.sp, color = c.textSecondary, textAlign = TextAlign.Center)
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                            Text("₹${decFmtA.format(dailyMaxA)}", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = cat.category.color, textAlign = TextAlign.Center)
+                                            Text("peak day", fontSize = 10.sp, color = c.textSecondary, textAlign = TextAlign.Center)
+                                        }
+                                    }
+                                    Canvas(modifier = Modifier.fillMaxWidth().height(80.dp)) {
+                                        val topPad = 6.dp.toPx(); val chartH = size.height - topPad
+                                        val slotW = size.width / dailySpendDataA.size
+                                        val barW = (slotW * 0.6f).coerceAtLeast(4.dp.toPx())
+                                        dailySpendDataA.forEachIndexed { idx, (_, amt) ->
+                                            val cx = slotW * idx + slotW / 2f
+                                            val barH = ((amt / dailyMaxA) * chartH).toFloat().coerceAtLeast(3.dp.toPx())
+                                            drawRoundRect(color = cat.category.color.copy(alpha = if (peakDayA?.second == amt) 1f else 0.55f), topLeft = androidx.compose.ui.geometry.Offset(cx - barW / 2f, topPad + chartH - barH), size = androidx.compose.ui.geometry.Size(barW, barH), cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()))
+                                        }
+                                    }
+                                    val xIdxA = if (dailySpendDataA.size <= 7) dailySpendDataA.indices.toList() else listOf(0, dailySpendDataA.size / 4, dailySpendDataA.size / 2, (dailySpendDataA.size * 3) / 4, dailySpendDataA.lastIndex).distinct()
+                                    Row(modifier = Modifier.fillMaxWidth()) {
+                                        dailySpendDataA.forEachIndexed { idx, (dateKey, _) ->
+                                            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                                if (idx in xIdxA) Text(dateKey.takeLast(2).trimStart('0'), fontSize = 8.sp, color = c.textSecondary, textAlign = TextAlign.Center)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (c.isBorderless) HorizontalDivider(color = c.flatDivider)
+                        // ── Transactions ──────────────────────────────────────
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("${txList.size} TRANSACTION${if (txList.size != 1) "S" else ""}", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp, color = c.textSecondary)
+                            if (txsWithNotesCat.isNotEmpty()) {
+                                val allExpanded = expandedNotesTxId == -1
+                                IconButton(onClick = { expandedNotesTxId = if (allExpanded) null else -1 }, modifier = Modifier.size(32.dp)) {
+                                    Icon(if (allExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore, null, tint = if (allExpanded) c.accent else c.textSecondary, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                        if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
+                        Column(verticalArrangement = Arrangement.spacedBy(if (c.isBorderless) 0.dp else 2.dp)) {
+                            txList.sortedByDescending { it.timestamp }.forEachIndexed { idx, tx ->
+                                val accountName = tx.getAccountName()
+                                val acctType = allAccountsForAnalytics.find { it.name == accountName }?.type ?: ""
+                                val acctColor = when (acctType) { "CASH" -> c.income; "BANK" -> Color(0xFF3B82F6); "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.textSecondary }
+                                val userNote = userNoteFrom(tx.note); val hasNote = userNote.isNotBlank()
+                                val isExpanded = expandedNotesTxId == -1 || expandedNotesTxId == tx.id
+                                if (c.isBorderless && idx > 0) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
+                                Surface(color = if (c.isBorderless) Color.Transparent else if (isExpanded && hasNote) acctColor.copy(0.06f) else c.divider, shape = RoundedCornerShape(if (c.isBorderless) 0.dp else 10.dp), border = if (!c.isBorderless && isExpanded && hasNote) BorderStroke(1.dp, acctColor.copy(0.3f)) else null, modifier = Modifier.fillMaxWidth().then(if (hasNote) Modifier.clickable { expandedNotesTxId = if (expandedNotesTxId == -1) null else if (isExpanded) null else tx.id } else Modifier)) {
+                                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Text(tx.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                                    if (hasNote) Icon(Icons.Default.Notes, null, tint = if (isExpanded) c.accent else c.textTertiary, modifier = Modifier.size(10.dp))
+                                                }
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Surface(color = acctColor.copy(0.12f), shape = RoundedCornerShape(4.dp)) {
+                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                                            Icon(walletIconFor(accountName, acctType.ifEmpty { null }), null, tint = acctColor, modifier = Modifier.size(10.dp))
+                                                            Text(accountName, fontSize = 9.sp, color = acctColor, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Column(horizontalAlignment = Alignment.End) {
+                                                Text("₹${decFmtA.format(tx.amount)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = cat.category.color)
+                                                Text(sdfA.format(java.util.Date(tx.timestamp)), fontSize = 10.sp, color = c.textSecondary)
+                                            }
+                                        }
+                                        if (isExpanded && hasNote) {
+                                            Spacer(Modifier.height(6.dp)); HorizontalDivider(color = acctColor.copy(0.2f)); Spacer(Modifier.height(4.dp))
+                                            Text(userNote, fontSize = 11.sp, color = c.text.copy(0.85f), fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
                     }
                 }
-            },
-            confirmButton = { Button(onClick = { categoryDetailItem = null; expandedNotesTxId = null }, colors = ButtonDefaults.buttonColors(containerColor = c.accent.copy(0.12f), contentColor = c.accent), elevation = ButtonDefaults.buttonElevation(0.dp)) { Text("Close", fontWeight = FontWeight.SemiBold) } }
-        )
+            }
+        }
     }
 } // closes AnalyticsScreen
 
@@ -5483,6 +5569,12 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         val avgDailySpend = if (dayOfMonth > 0) catSpendDetail / dayOfMonth else 0.0
         val expectedDailyBudget = if (daysInMonth > 0) limitDetail / daysInMonth else 0.0
         val dailyAllowanceLeft = if (limitDetail > 0) (limitDetail - catSpendDetail) / daysRemaining else 0.0
+        // avg/day color: red if over daily target, else orange if close, else green
+        val avgDayColor = when {
+            avgDailySpend > expectedDailyBudget * 1.05 -> c.expense
+            avgDailySpend > expectedDailyBudget * 0.9  -> Color(0xFFFB923C)
+            else -> c.income
+        }
         val monthLabel = remember(rawMonthYear) {
             try { SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(rawMonthYear) ?: Date()) }
             catch (_: Exception) { rawMonthYear }
@@ -5507,8 +5599,8 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
                             }
                             Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
-                                Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(monthLabel, fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
+                                Text("Category Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, lineHeight = 18.sp)
+                                Text(monthLabel, fontSize = 12.sp, color = c.textSecondary, lineHeight = 14.sp)
                             }
                             var showTopKebab by remember { mutableStateOf(false) }
                             Box {
@@ -5533,25 +5625,25 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 Box(contentAlignment = Alignment.Center) { Icon(cat.icon, null, tint = cat.color, modifier = Modifier.size(30.dp)) }
                             }
                             Spacer(Modifier.width(14.dp))
-                            Column(verticalArrangement = Arrangement.Center) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                                 Text(cat.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Spacer(Modifier.height(4.dp))
                                 if (limitDetail > 0) {
-                                    // Spend vs limit — compact currency
+                                    // Spend vs limit — full numbers
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text("${compactCurrency(catSpendDetail)} of ${compactCurrency(limitDetail)}", fontSize = 13.sp, color = progColor, fontWeight = FontWeight.SemiBold)
+                                        Text("₹${amtFmt.format(catSpendDetail)} of ₹${amtFmt.format(limitDetail)}", fontSize = 12.sp, color = progColor, fontWeight = FontWeight.SemiBold)
                                         val overBudget = remaining < 0
                                         val badgeColor = if (overBudget) c.expense else c.income
                                         Surface(color = badgeColor.copy(alpha = 0.12f), shape = RoundedCornerShape(5.dp)) {
                                             Text(
-                                                if (overBudget) "↑ ${compactCurrency(-remaining)} over" else "↓ ${compactCurrency(remaining)} left",
+                                                if (overBudget) "↑ ₹${amtFmt.format(-remaining)} over" else "↓ ₹${amtFmt.format(remaining)} left",
                                                 fontSize = 10.sp, color = badgeColor, fontWeight = FontWeight.Bold,
                                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                             )
                                         }
                                     }
                                 } else {
-                                    Text("${compactCurrency(catSpendDetail)} spent", fontSize = 14.sp, color = cat.color, fontWeight = FontWeight.SemiBold)
+                                    Text("₹${amtFmt.format(catSpendDetail)} spent", fontSize = 14.sp, color = cat.color, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -5583,19 +5675,19 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                         Text("Daily Breakdown (Day $dayOfMonth of $daysInMonth)", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
                                     }
                                     HorizontalDivider(color = c.divider)
-                                    // 3-column: avg spent / daily target / left per day
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Column(horizontalAlignment = Alignment.Start) {
-                                            Text(compactCurrency(avgDailySpend), fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = c.text)
-                                            Text("avg/day so far", fontSize = 10.sp, color = c.textSecondary)
+                                    // 3-column: avg spent / daily target / left per day — equal, centered
+                                    Row(modifier = Modifier.fillMaxWidth()) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                            Text("₹${amtFmt.format(avgDailySpend)}", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = avgDayColor, textAlign = TextAlign.Center)
+                                            Text("avg/day so far", fontSize = 10.sp, color = c.textSecondary, textAlign = TextAlign.Center)
                                         }
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Text(compactCurrency(expectedDailyBudget), fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = c.accent)
-                                            Text("daily target", fontSize = 10.sp, color = c.textSecondary)
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                            Text("₹${amtFmt.format(expectedDailyBudget)}", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF3B82F6), textAlign = TextAlign.Center)
+                                            Text("daily target", fontSize = 10.sp, color = c.textSecondary, textAlign = TextAlign.Center)
                                         }
-                                        Column(horizontalAlignment = Alignment.End) {
-                                            Text(compactCurrency(dailyAllowanceLeft.coerceAtLeast(0.0)), fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = if (dailyAllowanceLeft < 0) c.expense else c.income)
-                                            Text(if (dailyAllowanceLeft < 0) "over budget" else "left/day", fontSize = 10.sp, color = c.textSecondary)
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                            Text("₹${amtFmt.format(dailyAllowanceLeft.coerceAtLeast(0.0))}", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = if (dailyAllowanceLeft < 0) c.expense else c.income, textAlign = TextAlign.Center)
+                                            Text(if (dailyAllowanceLeft < 0) "over budget" else "left/day", fontSize = 10.sp, color = c.textSecondary, textAlign = TextAlign.Center)
                                         }
                                     }
                                 }
@@ -5605,7 +5697,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
 
                         // ── Transactions ─────────────────────────────────────
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("${catTxs.size} transaction${if (catTxs.size != 1) "s" else ""}", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.5.sp, color = c.textSecondary)
+                            Text("${catTxs.size} TRANSACTION${if (catTxs.size != 1) "S" else ""}", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp, color = c.textSecondary)
                             if (txsWithNotes.isNotEmpty()) {
                                 val allExpanded = allBudgetNotesExpanded
                                 IconButton(onClick = { allBudgetNotesExpanded = !allBudgetNotesExpanded; if (!allBudgetNotesExpanded) expandedBudgetNoteIds = emptySet() }, modifier = Modifier.size(32.dp)) {

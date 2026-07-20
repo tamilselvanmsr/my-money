@@ -24,6 +24,7 @@ private val SENDER_CODE_MAP: List<Pair<String, String>> = listOf(
     // Indian Bank (IDIB / legacy IND)
     "INDIANBANK" to "IND", "INDIANB" to "IND", "INDBKS" to "IND",
     "INDBNK"   to "IND",  "IDIBK"   to "IND",  "IDIB"   to "IND",
+    "INDBK"    to "IND",  // common real-world DLT fragment, e.g. "JD-INDBK-S"
     "ALBNK"    to "IND",  // Allahabad Bank (merged into Indian Bank 2020)
     // IOB — Indian Overseas Bank
     "IOBBK"    to "IOB",  "IOBBNK"  to "IOB",  "IOB"    to "IOB",
@@ -198,6 +199,58 @@ fun smsBankMatchesAccount(bankCode: String, accountName: String): Boolean {
         else      -> n.contains(bankCode.uppercase())
     }
 }
+
+/** Classifies which kind of "card" wording (if any) an SMS uses.
+ *
+ *  Real-world Indian bank/card-issuer SMS are asymmetric about this wording, which is why
+ *  a bare "card" mention can't be treated as ambiguous/neutral the way it first seems:
+ *   - Credit-card issuers overwhelmingly brand their SMS with just the card name — e.g.
+ *     "SBI Card", "HDFC Bank Card ending 1234" — and rarely spell out the word "credit"
+ *     at all. So a bare "card" mention (no "debit" qualifier) is, in practice, almost
+ *     always a CREDIT card, not an unknown/ambiguous case.
+ *   - Genuine debit-card SWIPE alerts, by contrast, are the ones that reliably DO spell
+ *     out "debit card" explicitly; a plain bank debit (UPI/NEFT/etc.) never mentions
+ *     "card" in the first place.
+ *  So: explicit "debit card" is the one case that must be pulled OUT of the default
+ *  card→CREDIT assumption (otherwise it gets wrongly tracked as a revolving CREDIT_CARD
+ *  with credit-limit fields that make no sense for it) — everything else that mentions
+ *  "card" defaults to CREDIT.
+ */
+enum class SmsCardKind { CREDIT, DEBIT, NONE }
+
+fun inferSmsCardKind(smsBody: String, senderHeader: String?): SmsCardKind {
+    val body = smsBody.lowercase()
+    return when {
+        body.contains("debit card") -> SmsCardKind.DEBIT
+        body.contains("credit card") || body.contains("card") ||
+            (senderHeader ?: "").uppercase().contains("CARD") -> SmsCardKind.CREDIT
+        else -> SmsCardKind.NONE
+    }
+}
+
+/** Single source of truth for the account `type` + auto-generated display name derived
+ *  from a card-kind classification, shared by every SMS-import entry point so the same
+ *  SMS wording always produces the same account type/name regardless of which code path
+ *  (foreground scan vs background SmsReceiver) handled it — and so accounts are always
+ *  matched/updated afterwards by the card/account's last-4 digits, never by name text.
+ *
+ *  - CREDIT → CREDIT_CARD type (tracks available/total credit limit), named "{Bank} CC".
+ *  - DEBIT  → DEBIT_CARD type — a distinct type from CREDIT_CARD since a debit card has
+ *             no independent credit line of its own (draws straight from the linked bank
+ *             account, no credit-limit tracking), but still its own selectable account
+ *             type (not folded into plain BANK) — named "{Bank} Card" (kept short, no
+ *             "Debit" wording).
+ *  - NONE   → ordinary bank account, unchanged from the existing naming.
+ */
+fun accountTypeAndLabelFor(kind: SmsCardKind, displayBankName: String, last4: String): Pair<String, String> {
+    return when (kind) {
+        SmsCardKind.CREDIT -> "CREDIT_CARD" to "$displayBankName CC ·$last4"
+        SmsCardKind.DEBIT  -> "DEBIT_CARD" to "$displayBankName Card ·$last4"
+        SmsCardKind.NONE   -> "BANK" to if (displayBankName.endsWith("Bank", ignoreCase = true))
+            "$displayBankName ·$last4" else "$displayBankName Bank ·$last4"
+    }
+}
+
 
 fun isSmsTrackingBlocked(account: Account, blockedAccountIds: Set<String>): Boolean {
     return blockedAccountIds.contains(account.id)

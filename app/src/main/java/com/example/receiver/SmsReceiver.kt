@@ -15,6 +15,8 @@ import com.example.utils.inferSmsBankCode
 import com.example.utils.isDuplicateImportedTransaction
 import com.example.utils.smsBankMatchesAccount
 import com.example.utils.smsDisplayBankName
+import com.example.utils.inferSmsCardKind
+import com.example.utils.accountTypeAndLabelFor
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -315,26 +317,13 @@ class SmsReceiver : BroadcastReceiver() {
             (bodyLower.contains("emi") && !bodyLower.contains("credited") && !bodyLower.contains("debited")) ||
             (bodyLower.contains("due") && (bodyLower.contains("bill") || bodyLower.contains("loan")))
         if (isDueOrReminder) return null
-        val isCreditCard = bodyLower.contains("card") || 
-                           bodyLower.contains("credit card") || 
-                           bodyLower.contains("card limit") || 
-                           bodyLower.contains("spent on") || 
-                           (senderHeader ?: "").uppercase().contains("CARD")
-        val acType = if (isCreditCard) "CREDIT_CARD" else "BANK"
+        // Card-kind classification (and the resulting type/name) is shared with
+        // FinanceViewModel.ensureAccountExists via accountTypeAndLabelFor() so this
+        // background-scan entry point and the foreground one never diverge on naming —
+        // both are matched afterwards purely by the account's last-4 digits either way.
+        val cardKind = inferSmsCardKind(smsBody, senderHeader)
         val displayName = smsDisplayBankName(extractedBank)
-        val nameLabel = if (isCreditCard) {
-            if (displayName == "SBI" || displayName == "HDFC" || displayName == "ICICI" || displayName == "AXIS" || displayName == "PNB") {
-                "$displayName Credit Card Ending $actualLast4"
-            } else {
-                "$displayName Card Ending $actualLast4"
-            }
-        } else {
-            if (displayName.endsWith("Bank", ignoreCase = true)) {
-                "$displayName Ending $actualLast4"
-            } else {
-                "$displayName Bank Ending $actualLast4"
-            }
-        }
+        val (acType, nameLabel) = accountTypeAndLabelFor(cardKind, displayName, actualLast4)
 
         val startBal = 0.0
         // Guard: do NOT create account if name or sender is in the SMS Import Blocklist

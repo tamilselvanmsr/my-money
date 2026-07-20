@@ -24,8 +24,10 @@ import org.robolectric.annotation.Config
  *   BK-KOTAK-S  → Kotak Bank (ends -S)
  *   JD-INDBK-S  → Indian Bank(ends -S)
  *   AX-SBICC-S  → SBI CC     (ends -S)
- *   JK-BANK-T   → Generic    (ends -T) — category / amount edge cases
- *   JK-BANK-S   → Generic    (ends -S) — sender-validation test
+ *
+ * NOTE: senders must map to a real bank/card issuer in SENDER_CODE_MAP — parseOffline()
+ * now rejects SMS whose sender can't be resolved to a known issuer (see SmsAccountUtils),
+ * so an unmapped placeholder sender like the old "JK-BANK-*" no longer parses.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -238,7 +240,7 @@ class SmsParserTest {
     @Test fun `Indian comma-formatted amount parsed correctly`() {
         val result = SmsParser.parseOffline(
             "INR 1,23,456.78 debited from account XX1234 on 01-Jul-26.",
-            "JK-BANK-T"
+            "HD-HDFC-T"
         )
         assertNotNull(result)
         assertEquals(123456.78, result!!.amount, 0.01)
@@ -247,7 +249,7 @@ class SmsParserTest {
     @Test fun `Amount without decimal parses correctly`() {
         val result = SmsParser.parseOffline(
             "Rs 200 debited from a/c xx3421 on 01-Jul-26.",
-            "JK-BANK-T"
+            "HD-HDFC-T"
         )
         assertNotNull(result)
         assertEquals(200.0, result!!.amount, 0.01)
@@ -256,7 +258,7 @@ class SmsParserTest {
     @Test fun `Zero amount SMS yields null`() {
         val result = SmsParser.parseOffline(
             "Rs.0.00 debited from a/c XX9999 on 01-Jul-26.",
-            "JK-BANK-T"
+            "HD-HDFC-T"
         )
         if (result != null) assertTrue("Zero amount must not be valid", result.amount > 0)
     }
@@ -316,7 +318,7 @@ class SmsParserTest {
 
     private fun expenseAt(merchant: String, amount: Double = 250.0) = SmsParser.parseOffline(
         "Rs.$amount debited from a/c xx5678 at $merchant on 01-Jul-26 via UPI.",
-        "JK-BANK-T"
+        "HD-HDFC-T"
     )
 
     @Test fun `Category FOOD - Zomato payment`() {
@@ -553,7 +555,7 @@ class SmsParserTest {
     @Test fun `Sender ending in -S is accepted`() {
         val result = SmsParser.parseOffline(
             "Rs.500.00 debited from a/c xx1234 on 01-Jul-26 via UPI.",
-            "JK-BANK-S"
+            "VM-SBI-S"
         )
         assertNotNull("Sender ending in -S must be accepted", result)
     }
@@ -561,7 +563,7 @@ class SmsParserTest {
     @Test fun `Sender ending in -T is accepted`() {
         val result = SmsParser.parseOffline(
             "Rs.500.00 debited from a/c xx1234 on 01-Jul-26 via UPI.",
-            "JK-BANK-T"
+            "HD-HDFC-T"
         )
         assertNotNull("Sender ending in -T must be accepted", result)
     }

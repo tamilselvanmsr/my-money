@@ -200,7 +200,7 @@ object PdfExporter {
                 val inc = activity.filter { it.type == "INCOME" }.sumOf { it.amount }
                 val exp = activity.filter { it.type == "EXPENSE" }.sumOf { it.amount }
                 val typeLabel = when (acc.type) {
-                    "BANK" -> "Bank"; "CREDIT_CARD" -> "Credit Card"
+                    "BANK" -> "Bank"; "CREDIT_CARD" -> "Credit Card"; "DEBIT_CARD" -> "Debit Card"
                     "CASH" -> "Cash"; "WALLET" -> "Wallet"; else -> acc.type
                 }
                 cv.drawText(acc.name.take(30),   colA[0], y, paint(8.5f, C_TEXT))

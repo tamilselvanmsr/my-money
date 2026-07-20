@@ -238,6 +238,7 @@ object ExcelExporter {
                 val typeLabel = when (acc.type) {
                     "BANK"        -> "Bank"
                     "CREDIT_CARD" -> "Credit Card"
+                    "DEBIT_CARD"  -> "Debit Card"
                     "CASH"        -> "Cash"
                     "WALLET"      -> "Wallet"
                     else          -> acc.type

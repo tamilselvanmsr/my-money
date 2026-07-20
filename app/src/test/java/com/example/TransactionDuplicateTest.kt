@@ -410,7 +410,7 @@ class TransactionDuplicateTest {
 
     @Test fun `valid -S sender and invalid sender on same body`() {
         val body = "Rs.500.00 debited from a/c xx1234 on 01-Jul-26 via UPI."
-        assertNotNull(SmsParser.parseOffline(body, "JK-BANK-S"))  // valid
+        assertNotNull(SmsParser.parseOffline(body, "VM-SBI-S"))  // valid
         assertNull(SmsParser.parseOffline(body, "JKBANK"))         // invalid — no -S/-T suffix
     }
 

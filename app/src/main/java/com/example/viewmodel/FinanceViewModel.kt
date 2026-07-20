@@ -20,6 +20,9 @@ import com.example.utils.inferSmsBankCode
 import com.example.utils.isSmsTrackingBlocked
 import com.example.utils.smsBankMatchesAccount
 import com.example.utils.smsDisplayBankName
+import com.example.utils.SmsCardKind
+import com.example.utils.inferSmsCardKind
+import com.example.utils.accountTypeAndLabelFor
 import com.example.utils.SmsParser
 import com.example.utils.isDuplicateImportedTransaction
 import kotlinx.coroutines.Dispatchers
@@ -887,23 +890,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             Log.d(TAG, "ensureAccountExists: skipping account creation for due/reminder SMS.")
             return null
         }
-        val isCreditCard = bodyLower.contains("card") || 
-                           bodyLower.contains("credit card") || 
-                           bodyLower.contains("card limit") || 
-                           bodyLower.contains("spent on") || 
-                           (senderHeader ?: "").uppercase().contains("CARD")
-         val acType = if (isCreditCard) "CREDIT_CARD" else "BANK"
+         // Card-kind classification is the single source of truth for both the account
+         // `type` and its display name — see accountTypeAndLabelFor()/SmsCardKind doc for
+         // why a bare "card" mention (kind unknown) is treated as BANK rather than guessed
+         // as CREDIT_CARD, and why "debit card" must never be tracked as CREDIT_CARD.
+         val cardKind = inferSmsCardKind(smsBody, senderHeader)
          val displayName = smsDisplayBankName(extractedBank)
-         val nameLabel = if (isCreditCard) {
-             "$displayName CC ·$actualLast4"
-         } else {
-             if (displayName.endsWith("Bank", ignoreCase = true)) {
-                 "$displayName ·$actualLast4"
-             } else {
-                 "$displayName Bank ·$actualLast4"
-             }
-         }
- 
+         val (acType, nameLabel) = accountTypeAndLabelFor(cardKind, displayName, actualLast4)
+
          val startBal = 0.0
 
          // Safety rule: account name must NEVER start with a digit.
@@ -918,9 +912,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                  val prefix = (prefixMatcher.group(1) ?: "").uppercase().filter { it.isLetter() }
                  if (prefix.isNotBlank()) {
                      val prefixDisplay = smsDisplayBankName(prefix)
-                     if (isCreditCard) "$prefixDisplay CC ·$actualLast4"
-                     else if (prefixDisplay.endsWith("Bank", ignoreCase = true)) "$prefixDisplay ·$actualLast4"
-                     else "$prefixDisplay Bank ·$actualLast4"
+                     accountTypeAndLabelFor(cardKind, prefixDisplay, actualLast4).second
                  } else nameLabel
              } else nameLabel
          } else nameLabel
@@ -1394,6 +1386,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             // Keep CC availableLimit in sync with manual transactions
             adjustCcAvailableLimit(note, amount, type, reverse = false, txTimestamp = timestamp)
             maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
+            // Mark as newly-added so the Records list shows the same "NEW" badge used for
+            // freshly-imported SMS transactions — manual entries deserve the same cue.
+            _recentlyImportedFingerprints.value = setOf("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
             _toastMessage.emit("Added: $title ($type)")
         }
     }

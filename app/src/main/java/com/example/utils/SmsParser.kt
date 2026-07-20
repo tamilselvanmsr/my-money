@@ -109,8 +109,16 @@ object SmsParser {
 
         // 9. Account reference (last 3–4 digits)
         val last4Digits = extractAccountRef(lowerBody) ?: run { Log.d(TAG, "Excluded: no account ref"); return null }
-        var bankName = inferSmsBankCode(senderId, cleanBody)
-        if (bankName.isBlank() || bankName.length <= 1) bankName = "Bank"
+        // Deliberately do NOT fall back to a generic "Bank" account when the sender header
+        // doesn't map to a known bank/card issuer. Some unknown wallet/promotional senders
+        // happen to contain a bare 4-digit number plus an amount and a transactional-sounding
+        // word (credited/debited/etc.), which would otherwise get silently imported as a
+        // "Bank-1234" transaction with no real bank behind it. If we can't identify the
+        // actual issuer, the safest behavior is to exclude the SMS rather than guess.
+        val bankName = inferSmsBankCode(senderId, cleanBody)
+        if (bankName.isBlank() || bankName.length <= 1 || bankName == "Bank") {
+            Log.d(TAG, "Excluded: could not identify a bank/card issuer for this SMS"); return null
+        }
         val accountRef = "$bankName-$last4Digits"
 
         // 10. Timestamp

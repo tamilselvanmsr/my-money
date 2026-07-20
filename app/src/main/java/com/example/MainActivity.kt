@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -51,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -77,6 +79,7 @@ import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -2175,6 +2178,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 "CASH"        -> c.income
                                 "BANK"        -> Color(0xFF3B82F6)
                                 "CREDIT_CARD" -> c.expense
+                                "DEBIT_CARD"  -> Color(0xFF0EA5E9)
                                 "WALLET"      -> Color(0xFFFF9800)
                                 else          -> c.textSecondary
                             }
@@ -3303,6 +3307,9 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                     Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         txList.sortedByDescending { it.timestamp }.forEach { tx ->
                             val resolvedCat = CategoryResolver.resolve(tx.category, customCats)
+                            val accountName = tx.getAccountName()
+                            val acctType = allAccountsForAnalytics.find { it.name == accountName }?.type ?: ""
+                            val acctColor = when (acctType) { "CASH" -> c.income; "BANK" -> Color(0xFF3B82F6); "CREDIT_CARD" -> c.expense; "DEBIT_CARD" -> Color(0xFF0EA5E9); "WALLET" -> Color(0xFFFF9800); else -> c.textSecondary }
                             val userNote = userNoteFrom(tx.note)
                             val hasNote = userNote.isNotBlank()
                             val isNoteExpanded = allFlowNotesExpanded || tx.id in expandedFlowNoteIds
@@ -3337,14 +3344,26 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                                     Text(tx.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                                                     if (hasNote) Icon(Icons.Default.Notes, contentDescription = "Has note", tint = if (isNoteExpanded) accent else c.textTertiary, modifier = Modifier.size(10.dp))
                                                 }
-                                                Text(sdf.format(java.util.Date(tx.timestamp)), fontSize = 10.sp, color = c.textSecondary)
+                                                Spacer(Modifier.height(3.dp))
+                                                // Account chip — same style as the Overview category-detail popup.
+                                                Surface(color = acctColor.copy(0.12f), shape = RoundedCornerShape(4.dp)) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                                        Icon(walletIconFor(accountName, acctType.ifEmpty { null }), null, tint = acctColor, modifier = Modifier.size(10.dp))
+                                                        Text(accountName, fontSize = 9.sp, color = acctColor, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    }
+                                                }
                                             }
                                         }
-                                        Text(
-                                            if (tx.type == "INCOME") "+${decFormat.format(tx.amount)}" else "-${decFormat.format(tx.amount)}",
-                                            fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                                            color = if (tx.type == "INCOME") c.income else c.expense
-                                        )
+                                        // Time now sits under the amount, right-aligned — matching the
+                                        // Overview category-detail popup's transaction rows.
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(
+                                                if (tx.type == "INCOME") "+${decFormat.format(tx.amount)}" else "-${decFormat.format(tx.amount)}",
+                                                fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                                                color = if (tx.type == "INCOME") c.income else c.expense
+                                            )
+                                            Text(sdf.format(java.util.Date(tx.timestamp)), fontSize = 10.sp, color = c.textSecondary)
+                                        }
                                     }
                                     // Expanded notes — shown below the row, separated by a divider
                                     if (isNoteExpanded && hasNote) {
@@ -3385,7 +3404,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                 Spacer(Modifier.height(1.dp))
                                 Text("Period: $periodLabelA", fontSize = 11.sp, color = c.textSecondary)
                             }
-                            IconButton(onClick = { categoryDetailItem = null; expandedNotesTxId = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
+                            IconButton(onClick = { categoryDetailItem = null; expandedNotesTxId = null }, modifier = Modifier.padding(end = 3.dp).size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
                                 Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
                             }
                         }
@@ -3454,7 +3473,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                             txList.sortedByDescending { it.timestamp }.forEachIndexed { idx, tx ->
                                 val accountName = tx.getAccountName()
                                 val acctType = allAccountsForAnalytics.find { it.name == accountName }?.type ?: ""
-                                val acctColor = when (acctType) { "CASH" -> c.income; "BANK" -> Color(0xFF3B82F6); "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.textSecondary }
+                                val acctColor = when (acctType) { "CASH" -> c.income; "BANK" -> Color(0xFF3B82F6); "CREDIT_CARD" -> c.expense; "DEBIT_CARD" -> Color(0xFF0EA5E9); "WALLET" -> Color(0xFFFF9800); else -> c.textSecondary }
                                 val userNote = userNoteFrom(tx.note); val hasNote = userNote.isNotBlank()
                                 val isExpanded = expandedNotesTxId == -1 || expandedNotesTxId == tx.id
                                 if (c.isBorderless && idx > 0) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
@@ -4837,8 +4856,24 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         }
                     } // end Box
 
+                    // Shrink to icon-only when EITHER the current month label itself is
+                    // long enough to need the room (e.g. "September 2026", "November 2026")
+                    // OR the available width is reduced (small screens) — short labels on
+                    // a wide screen keep the full text button as before.
+                    val monthLabelIsLong = formatDisplay.format(currentMonthDate).length > 11
                     BoxWithConstraints {
-                        if (maxWidth >= 260.dp) {
+                        if (monthLabelIsLong || maxWidth < 260.dp) {
+                            FilledTonalIconButton(
+                                onClick = { showAddCategoryDialog = true },
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = c.accent.copy(alpha = 0.12f),
+                                    contentColor = c.accent
+                                ),
+                                modifier = Modifier.size(36.dp).testTag("add_custom_category_button")
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Add Category", modifier = Modifier.size(18.dp))
+                            }
+                        } else {
                             Button(
                                 onClick = { showAddCategoryDialog = true },
                                 colors = ButtonDefaults.buttonColors(
@@ -4857,17 +4892,6 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 }
                                 Spacer(modifier = Modifier.width(5.dp))
                                 Text("Add Category", fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        } else {
-                            FilledTonalIconButton(
-                                onClick = { showAddCategoryDialog = true },
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = c.accent.copy(alpha = 0.12f),
-                                    contentColor = c.accent
-                                ),
-                                modifier = Modifier.size(36.dp).testTag("add_custom_category_button")
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = "Add Category", modifier = Modifier.size(18.dp))
                             }
                         }
                     }
@@ -5700,7 +5724,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 Spacer(Modifier.height(1.dp))
                                 Text("Period: $monthLabel", fontSize = 11.sp, color = c.textSecondary)
                             }
-                            IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
+                            IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.padding(end = 3.dp).size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
                                 Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
                             }
                         }
@@ -6349,6 +6373,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             "CASH" -> c.income
                             "BANK" -> c.accent
                             "CREDIT_CARD" -> c.expense
+                            "DEBIT_CARD" -> Color(0xFF0EA5E9)
                             "WALLET" -> Color(0xFFFF9800)
                             else -> Color(0xFF94A3B8)
                         }
@@ -6370,6 +6395,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                         "CASH" -> Icons.Default.Money
                                         "BANK" -> Icons.Default.AccountBalance
                                         "CREDIT_CARD" -> Icons.Default.CreditCard
+                                        "DEBIT_CARD" -> Icons.Default.CreditCard
                                         "WALLET" -> Icons.Default.AccountBalanceWallet
                                         else -> Icons.Default.AllInclusive
                                     },
@@ -6452,11 +6478,10 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
 
         val supportWallets = activeAccounts.map { it.name }
 
-        AlertDialog(
-            onDismissRequest = { showTransferDialog = false },
-            title = { Text("Transfer Funds", fontWeight = FontWeight.Bold, color = c.text) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
+        AdaptiveEditorDialog(
+            title = "Transfer Funds",
+            onDismiss = { showTransferDialog = false },
+            content = {
                     Text("Move funds between your accounts. Creates a single Transfer entry.", fontSize = 11.sp, color = c.textSecondary)
 
                     OutlinedTextField(
@@ -6530,38 +6555,48 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             }
                         }
                     }
+            },
+            actions = {
+                Column {
+                    Button(
+                        onClick = {
+                            val dVal = trAmount.toDoubleOrNull() ?: 0.0
+                            if (dVal > 0.0 && sourceWall != destWall) {
+                                // Single TRANSFER entry with [Acc: SOURCE][To: DEST] note
+                                viewModel.addTransaction(
+                                    title = "Transfer",
+                                    amount = dVal,
+                                    categoryName = "TRANSFER",
+                                    type = "TRANSFER",
+                                    note = "[Acc: $sourceWall][To: $destWall]",
+                                    timestamp = trTimestamp
+                                )
+                            }
+                            showTransferDialog = false
+                        },
+                        enabled = trAmount.toDoubleOrNull()?.let { it > 0.0 } == true && sourceWall != destWall,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
+                    ) {
+                        Text("Execute Transfer", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { showTransferDialog = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, c.divider),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.textSecondary)
+                    ) {
+                        Text("Cancel", fontWeight = FontWeight.SemiBold)
+                    }
                 }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val dVal = trAmount.toDoubleOrNull() ?: 0.0
-                        if (dVal > 0.0 && sourceWall != destWall) {
-                            // Single TRANSFER entry with [Acc: SOURCE][To: DEST] note
-                            viewModel.addTransaction(
-                                title = "Transfer",
-                                amount = dVal,
-                                categoryName = "TRANSFER",
-                                type = "TRANSFER",
-                                note = "[Acc: $sourceWall][To: $destWall]",
-                                timestamp = trTimestamp
-                            )
-                        }
-                        showTransferDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
-                ) {
-                    Text("Execute Transfer", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTransferDialog = false }) { Text("Cancel", color = c.text) }
-            },
-            containerColor = c.surface
+            }
         )
     }
 
-    // Dialog: Add Custom Account Dialog
+    // Dialog: Add Custom Account Dialog — same AdaptiveEditorDialog frame as Edit Account.
     if (showAddAccountDialog) {
         var nameInput by remember { mutableStateOf("") }
         var baseBalanceInput by remember { mutableStateOf("") }
@@ -6569,17 +6604,12 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         var last4Input by remember { mutableStateOf("") }
         var openingBalanceTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
 
-        val types = listOf("CASH", "BANK", "CREDIT_CARD", "WALLET")
+        val types = listOf("CASH", "BANK", "CREDIT_CARD", "DEBIT_CARD", "WALLET")
 
-        AlertDialog(
-            onDismissRequest = { showAddAccountDialog = false },
-            title = { Text("Create New Account", fontWeight = FontWeight.Bold, color = c.text) },
-            properties = DialogProperties(decorFitsSystemWindows = false),
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
+        AdaptiveEditorDialog(
+            title = "Add Account",
+            onDismiss = { showAddAccountDialog = false },
+            content = {
                     OutlinedTextField(
                         value = nameInput,
                         onValueChange = { nameInput = it },
@@ -6592,6 +6622,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         value = baseBalanceInput,
                         onValueChange = { baseBalanceInput = it },
                         label = { Text("Initial Ledger Balance (₹)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        placeholder = { Text("e.g. 25000", color = c.text.copy(0.4f)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
                         modifier = Modifier.fillMaxWidth()
@@ -6632,30 +6663,42 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             }
                         }
                     }
+            },
+            actions = {
+                Column {
+                    // Add Account — primary, full width, matching Edit Account's
+                    // "Save Changes" button style/position.
+                    Button(
+                        onClick = {
+                            val initBal = baseBalanceInput.toDoubleOrNull() ?: 0.0
+                            viewModel.addAccount(
+                                name = nameInput,
+                                balance = initBal,
+                                type = typeInput,
+                                lastFour = if (last4Input.isBlank()) null else last4Input,
+                                openingBalanceTimestamp = openingBalanceTimestamp
+                            )
+                            showAddAccountDialog = false
+                        },
+                        enabled = nameInput.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
+                    ) {
+                        Text("Add Account", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { showAddAccountDialog = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, c.divider),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.textSecondary)
+                    ) {
+                        Text("Cancel", fontWeight = FontWeight.SemiBold)
+                    }
                 }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val initBal = baseBalanceInput.toDoubleOrNull() ?: 0.0
-                        viewModel.addAccount(
-                            name = nameInput,
-                            balance = initBal,
-                            type = typeInput,
-                            lastFour = if (last4Input.isBlank()) null else last4Input,
-                            openingBalanceTimestamp = openingBalanceTimestamp
-                        )
-                        showAddAccountDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
-                ) {
-                    Text("Provision Wallet", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddAccountDialog = false }) { Text("Cancel", color = c.text) }
-            },
-            containerColor = c.surface
+            }
         )
     }
 
@@ -6668,7 +6711,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         var editCreditLimit by remember(acc) { mutableStateOf(if (acc.creditLimit > 0) acc.creditLimit.toString() else "") }
         var editShowCreditLimitBalance by remember(acc) { mutableStateOf(acc.showCreditLimitBalance) }
 
-        val types = listOf("CASH", "BANK", "CREDIT_CARD", "WALLET")
+        val types = listOf("CASH", "BANK", "CREDIT_CARD", "DEBIT_CARD", "WALLET")
 
         AdaptiveEditorDialog(
             title = "Edit Account",
@@ -7770,7 +7813,7 @@ private fun EdgeToEdgeDialogWindowEffect(isDarkBackground: Boolean) {
  * date-time picker, and notes field.
  * Remembers the last used category and account for convenience.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun AddTransactionDialog(
     viewModel: FinanceViewModel,
@@ -7871,15 +7914,65 @@ fun AddTransactionDialog(
         // safeDrawingPadding is dispatched correctly) and keep status/nav bar icons legible
         // against this dialog's own background.
         EdgeToEdgeDialogWindowEffect(isDarkBackground = c.isDark)
+        // decorFitsSystemWindows(false) alone doesn't reliably stop the OS from still
+        // resizing/panning this Window on every device/OS version when the keyboard opens
+        // — that residual, uncontrolled resize was the "portrait glitch" (a small
+        // shrink/shift creeping in despite excluding the IME inset below). Explicitly
+        // disabling ALL automatic adjustment here guarantees the ONLY thing that can ever
+        // move this dialog in response to the keyboard is our own manual offset further
+        // down (which only applies in landscape) — portrait is now mathematically
+        // guaranteed to never react to the keyboard at all.
+        val dialogViewForIme = LocalView.current
+        SideEffect {
+            (dialogViewForIme.parent as? DialogWindowProvider)?.window?.setSoftInputMode(
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            )
+        }
         Surface(modifier = Modifier.fillMaxSize(), color = c.bg) {
-            // Deliberately excludes the IME (soft keyboard) from the insets used to size
-            // this Column. Padding for status/navigation bars + display cutout is still
-            // applied — and the layout below still shrinks normally on real screen-size
-            // changes (rotation, split-screen, small devices) since that only depends on
-            // the Window's physical bounds — but opening the keyboard to type in Payee/
-            // Notes no longer shrinks the WHOLE proportional layout (calculator included)
-            // to make room; the keyboard simply overlays the bottom of the dialog instead.
-            Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.exclude(WindowInsets.ime))) {
+            // Manual "pan" instead of a Window-level SOFT_INPUT_ADJUST_PAN: this dialog's
+            // Window already has decorFitsSystemWindows(false) set (edge-to-edge), and once
+            // that's set Android expects the app to handle IME insets itself rather than
+            // relying on the legacy adjustPan/adjustResize window behavior — so setting
+            // SOFT_INPUT_ADJUST_PAN on the window here silently has no effect. Instead we
+            // read the live IME height and shift the WHOLE column up with a plain offset —
+            // offsets never affect measurement/layout size, so nothing shrinks.
+            //
+            // LANDSCAPE ONLY, and only a fraction of the raw IME height, capped — portrait
+            // must stay completely untouched (its rows are tall enough that the keyboard
+            // never covers the focused field there), and shifting by the FULL IME height in
+            // landscape pushed the very top row (Payee box) up far enough to disappear
+            // behind the status bar. Reduced by ~1/4 (not half) of the raw height, capped
+            // at 90dp.
+            //
+            // Portrait must NEVER read WindowInsets.ime at all (not even indirectly via
+            // safeDrawing.exclude(ime)) — the animated ime inset value changes every frame
+            // while the keyboard is sliding in/out, and Compose recomposes/remeasures any
+            // reader of that combined insets object on every one of those frames even
+            // though the excluded net result is always 0dp. That per-frame remeasure of the
+            // BoxWithConstraints below (whose `scale` is derived straight from its measured
+            // height) is what was still visible as a brief shrink/pan in portrait despite
+            // SOFT_INPUT_ADJUST_NOTHING. Building portrait's padding purely from
+            // statusBars + navigationBars + displayCutout — none of which ever change when
+            // the keyboard animates — makes it truly immune, not just "offset by zero".
+            val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+            val isLandscapeOrientation = configuration.screenWidthDp > configuration.screenHeightDp
+            val outerModifier = if (isLandscapeOrientation) {
+                val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
+                val imeOffsetDp = (with(LocalDensity.current) { imeBottomPx.toDp() } * 0.75f).coerceAtMost(90.dp)
+                Modifier
+                    .windowInsetsPadding(WindowInsets.safeDrawing.exclude(WindowInsets.ime))
+                    .offset(y = -imeOffsetDp)
+            } else {
+                Modifier
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .windowInsetsPadding(WindowInsets.displayCutout)
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(outerModifier)
+            ) {
 
                 // ── Body: every section (including the top controls row and the
                 // calculator) gets a proportional weight of the available height. This
@@ -7899,6 +7992,13 @@ fun AddTransactionDialog(
                 // that have no such floor and can shrink to whatever weight gives them.
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     val totalH = maxHeight
+                    // Landscape packs the SAME sections into far fewer stacked rows per
+                    // column (2-column layout below), so each row gets a much bigger share
+                    // of totalH there than the equivalent portrait row does. Every size
+                    // computed from `scale` further down needs to know this up front so
+                    // landscape text/icons can be sized to actually fill their (bigger) box
+                    // instead of looking small — see the isLandscape branches below.
+                    val isLandscape = maxWidth > totalH
 
                     // Shared date/time state
                     val dateLabel = remember(selectedTimestamp) { java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(selectedTimestamp)) }
@@ -7910,20 +8010,51 @@ fun AddTransactionDialog(
                     // Account / category shared values
                     val acctType  = accounts.find { it.name == accountSelection }?.type
                     val acctIcon  = walletIconFor(accountSelection, acctType)
-                    val acctColor = when (acctType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
+                    val acctColor = when (acctType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "DEBIT_CARD" -> Color(0xFF0EA5E9); "WALLET" -> Color(0xFFFF9800); else -> c.accent }
                     val catIcon   = selectedCategory?.icon ?: Icons.Default.Category
                     val catColor  = selectedCategory?.color ?: c.accent
 
                     // Fonts/paddings shrink together with the screen — same totalH the calculator uses.
                     val scale  = (totalH.value / 700f).coerceIn(0.55f, 1f)
-                    val gap    = (6.dp * scale).coerceAtLeast(3.dp)
-                    // Slightly bigger than before — the "Account"/"Category" sub-labels were
-                    // reported as too small to read comfortably.
-                    val lbFsz  = (13f * scale).coerceAtLeast(10f)
-                    val inFsz  = (14f * scale).coerceAtLeast(10f)
-                    val tgFsz  = (16f * scale).coerceAtLeast(12f)
-                    val icSz   = (17.dp * scale).coerceAtLeast(13.dp)
+                    // Slightly more breathing room between rows, as requested.
+                    val gap    = (7.dp * scale).coerceAtLeast(4.dp)
+                    // Landscape variants are deliberately bigger at the same `scale` — each
+                    // row there gets proportionally more of totalH than in portrait (fewer
+                    // rows sharing the same column height), so a portrait-sized font/icon
+                    // would look undersized inside a taller landscape box. All of these still
+                    // safely shrink-to-fit (onTextLayout / ShrinkingSingleLineText) if a box
+                    // ever ends up smaller than expected, so this can never overflow.
+                    // lbFsz dialed back down (15→12/13) — the previous bump made the
+                    // Account/Category sub-labels look too big/heavy.
+                    val lbFsz  = ((if (isLandscape) 13f else 12f) * scale).coerceAtLeast(10f)
+                    val inFsz  = ((if (isLandscape) 17f else 14f) * scale).coerceAtLeast(if (isLandscape) 12f else 10f)
+                    // Dedicated, slightly bigger font just for the Payee/Merchant field —
+                    // Date/Time intentionally keeps using its own dedicated `dtFsz` below so
+                    // neither grows along with the other. Landscape floor bumped 11f→17f —
+                    // landscape's shorter totalH keeps `scale` pinned near its 0.55 floor,
+                    // which was silently overriding the bigger 19f base and leaving this
+                    // stuck at its old, too-small floor regardless.
+                    val payeeFsz = ((if (isLandscape) 19f else 16f) * scale).coerceAtLeast(if (isLandscape) 17f else 11f)
+                    // Landscape Date/Time bumped up a bit, as requested — portrait unchanged
+                    // (still uses the shared `inFsz`).
+                    val dtFsz  = ((if (isLandscape) 21f else 14f) * scale).coerceAtLeast(if (isLandscape) 14f else 10f)
+                    // Landscape floor bumped 13f→18f — same `scale`-pinned-to-floor issue
+                    // as payeeFsz above was keeping this stuck too small under the titlebar.
+                    val tgFsz  = ((if (isLandscape) 22f else 16f) * scale).coerceAtLeast(if (isLandscape) 18f else 13f)
+                    // Landscape icon box dialed back a touch (26→22) — was reported bigger
+                    // than it needed to be.
+                    val icSz   = if (isLandscape) (22.dp * scale).coerceAtLeast(18.dp) else (17.dp * scale).coerceAtLeast(13.dp)
                     val bsSz   = (40.dp * scale).coerceAtLeast(26.dp)
+                    val amtFszBase   = if (isLandscape) 30f else 24f
+                    val titleFszBase = if (isLandscape) 27f else 21f
+                    val saveFszBase  = if (isLandscape) 19f else 16f
+                    // `scale` is often near its 0.55 floor in landscape (short totalH), which
+                    // was crushing titleFszBase/saveFszBase back down close to their old
+                    // small size despite the bigger base — these floors are raised
+                    // specifically for landscape so the title/Save text actually stays big,
+                    // matching the (already fixed-size, unscaled) bigger Close icon.
+                    val titleFszFloor = if (isLandscape) 20f else 14f
+                    val saveFszFloor  = if (isLandscape) 15f else 11f
 
                     // A shared, centered text style — disables extra font-padding and centers
                     // line-height so short text aligns visually with the middle of its
@@ -7956,66 +8087,121 @@ fun AddTransactionDialog(
                     // already has content — matching the real Material OutlinedTextField
                     // behavior used in the Update Transaction dialog — instead of always
                     // sitting on the border regardless of focus.
+                    //
+                    // The floating label is offset UPWARD by half its own line height so it
+                    // visually straddles the border line (its opaque background "cuts" a
+                    // gap in the border stroke) exactly like Update Transaction's fields,
+                    // instead of sitting fully inside the box. The content row below is
+                    // reserved its own real space (a Spacer, not just padding under an
+                    // overlay) sized to clear the label's lower half, so typed text can
+                    // never end up hidden behind the label chip.
                     @Composable
-                    fun CompactTextField(value: String, onValueChange: (String) -> Unit, placeholder: String, modifier: Modifier, singleLine: Boolean = true, maxLines: Int = 1, showNewBadge: Boolean = false) {
+                    fun CompactTextField(value: String, onValueChange: (String) -> Unit, placeholder: String, modifier: Modifier, singleLine: Boolean = true, maxLines: Int = 1, showNewBadge: Boolean = false, contentFontSizeSp: Float? = null, reserveTopClearance: Boolean = true) {
                         val vAlign = if (singleLine) Alignment.CenterStart else Alignment.TopStart
                         var isFocused by remember { mutableStateOf(false) }
                         val floated = isFocused || value.isNotEmpty()
-                        val labelFs = (10f * scale).coerceAtLeast(8f)
+                        val fieldFsz = contentFontSizeSp ?: inFsz
+                        val labelFs = (lbFsz * 0.82f).coerceAtLeast(8f)
+                        // Approximate rendered line-height for the label's font size, used
+                        // to center the label vertically ON the border line (half above,
+                        // half below it) and to reserve just enough content-row clearance.
+                        val labelLineHeight = labelFs * 1.25f
+                        val topGap = (labelLineHeight / 2f + 4f).dp
                         val borderAlpha = if (isFocused) 0.9f else 0.4f
-                        Box(modifier = modifier) {
-                            Box(
+                        // A small fixed clearance ABOVE the bordered box itself (not just
+                        // the internal label gap) — the floating label straddles the TOP
+                        // border and pokes above the box's own bounds, which looked cramped
+                        // against whatever sits directly above it (Type toggle / Date-time
+                        // row) with no breathing room. Reserved unconditionally (not just
+                        // while floated) so the box's size/position never jumps as it
+                        // focuses/unfocuses. Skippable (reserveTopClearance = false) for
+                        // instances that sit beside same-height sibling boxes in a Row
+                        // (e.g. landscape's icon-only Account/Category buttons), where
+                        // shrinking only this box would make it visibly shorter than them.
+                        Box(modifier = if (reserveTopClearance) modifier.padding(top = 5.dp) else modifier) {
+                            Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(top = if (floated) (labelFs / 2f).dp else 0.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .border(1.dp, c.accent.copy(borderAlpha), RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 10.dp, vertical = if (singleLine) 0.dp else 8.dp),
-                                contentAlignment = vAlign
                             ) {
-                                // Inline placeholder — only shown while unfocused AND empty,
-                                // i.e. exactly when the label is NOT floated on the border.
-                                if (!floated) {
-                                    Text(placeholder, fontSize = inFsz.sp, color = c.textSecondary.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                                BasicTextField(
-                                    value = value,
-                                    onValueChange = onValueChange,
-                                    singleLine = singleLine,
-                                    maxLines = maxLines,
-                                    textStyle = TextStyle(fontSize = inFsz.sp, color = c.text),
-                                    cursorBrush = SolidColor(c.accent),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .onFocusChanged { isFocused = it.isFocused }
-                                )
-                            }
-                            // Floating label — only rendered once focused/filled; background
-                            // matches the dialog so it visually "cuts" a gap in the border.
-                            if (floated) {
+                                // Reserved gap for the floating label — only present once
+                                // floated. While unfocused/empty (no gap), the placeholder
+                                // is perfectly vertically centered in the WHOLE box, exactly
+                                // like Update Transaction's fields; it shifts down to make
+                                // room for the label the moment it floats.
+                                Spacer(Modifier.height(if (floated) topGap else 0.dp))
                                 Row(
-                                    verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
-                                        .align(Alignment.TopStart)
-                                        .padding(start = 8.dp)
-                                        .background(c.bg)
-                                        .padding(horizontal = 4.dp)
+                                        .weight(1f)
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = if (singleLine) 0.dp else 6.dp),
+                                    verticalAlignment = if (singleLine) Alignment.CenterVertically else Alignment.Top
                                 ) {
-                                    Text(
-                                        placeholder,
-                                        fontSize = labelFs.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = if (isFocused) c.accent else c.textSecondary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    if (showNewBadge) {
-                                        Spacer(Modifier.width(4.dp))
+                                    Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = vAlign) {
+                                        // Inline placeholder — only shown while unfocused AND
+                                        // empty, i.e. exactly when the label is NOT floated.
+                                        if (!floated) {
+                                            Text(placeholder, fontSize = fieldFsz.sp, color = c.textSecondary.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                        val focusManagerForField = LocalFocusManager.current
+                                        BasicTextField(
+                                            value = value,
+                                            onValueChange = onValueChange,
+                                            singleLine = singleLine,
+                                            maxLines = maxLines,
+                                            // includeFontPadding = false removes Compose's default
+                                            // extra ascent/descent spacing that was pushing this
+                                            // text visibly off-center (toward the bottom) inside
+                                            // its Box despite Alignment.CenterStart — same fix
+                                            // already used by `centeredBtnTextStyle` elsewhere.
+                                            textStyle = TextStyle(fontSize = fieldFsz.sp, color = c.text, platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                                            cursorBrush = SolidColor(c.accent),
+                                            // Always a "Done" key (checkmark), even for the
+                                            // multi-line Notes field — Notes previously fell
+                                            // back to the default newline/return icon since it's
+                                            // not singleLine, unlike Payee which got "Done" by
+                                            // default. Pressing it now just dismisses the
+                                            // keyboard instead of inserting a newline.
+                                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                            keyboardActions = KeyboardActions(onDone = { focusManagerForField.clearFocus() }),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .then(if (!singleLine) Modifier.fillMaxHeight() else Modifier)
+                                                .onFocusChanged { isFocused = it.isFocused }
+                                        )
+                                    }
+                                    // "NEW" badge — sits INSIDE the box at its right-most end
+                                    // (same visual chip used for newly-imported records),
+                                    // reserved via a real Row slot so it never overlaps text.
+                                    if (showNewBadge && floated && value.isNotBlank()) {
+                                        Spacer(Modifier.width(6.dp))
                                         Surface(color = c.income.copy(alpha = 0.15f), shape = RoundedCornerShape(4.dp)) {
                                             Text("NEW", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = c.income, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
                                         }
                                     }
                                 }
+                            }
+                            // Floating label — only rendered once focused/filled. Offset
+                            // upward by half its own line height so its vertical CENTER
+                            // lands exactly on the border line (straddling it, same as a
+                            // real Material OutlinedTextField), with an opaque background
+                            // matching the dialog so it visually "cuts" a gap in the border.
+                            if (floated) {
+                                Text(
+                                    placeholder,
+                                    fontSize = labelFs.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (isFocused) c.accent else c.textSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = centeredBtnTextStyle,
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .offset(x = 8.dp, y = -(labelLineHeight / 2f).dp)
+                                        .background(c.bg)
+                                        .padding(horizontal = 4.dp)
+                                )
                             }
                         }
                     }
@@ -8037,21 +8223,21 @@ fun AddTransactionDialog(
                     }
 
                     @Composable
-                    fun DateTimeRow(modifier: Modifier) {
+                    fun DateTimeRow(modifier: Modifier, fontSize: Float = inFsz) {
                         Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             CustomOutlinedButton(modifier = Modifier.weight(1f).fillMaxHeight(), borderColor = c.accent.copy(0.5f), shape = RoundedCornerShape(percent = 50), onClick = { val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }; android.app.DatePickerDialog(pickerCtx, { _, y, m, d -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(y, m, d) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH)).show() }) {
-                                ShrinkingSingleLineText(dateLabel, c.text, inFsz, 8f, Modifier.fillMaxWidth(), FontWeight.SemiBold, TextAlign.Center)
+                                ShrinkingSingleLineText(dateLabel, c.text, fontSize, 8f, Modifier.fillMaxWidth(), FontWeight.SemiBold, TextAlign.Center)
                             }
                             CustomOutlinedButton(modifier = Modifier.weight(1f).fillMaxHeight(), borderColor = c.accent.copy(0.5f), shape = RoundedCornerShape(percent = 50), onClick = { val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp }; android.app.TimePickerDialog(pickerCtx, { _, h, min -> val u = java.util.Calendar.getInstance().apply { timeInMillis = selectedTimestamp; set(java.util.Calendar.HOUR_OF_DAY, h); set(java.util.Calendar.MINUTE, min) }; selectedTimestamp = u.timeInMillis }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), false).show() }) {
-                                ShrinkingSingleLineText(timeLabel, c.text, inFsz, 8f, Modifier.fillMaxWidth(), FontWeight.SemiBold, TextAlign.Center)
+                                ShrinkingSingleLineText(timeLabel, c.text, fontSize, 8f, Modifier.fillMaxWidth(), FontWeight.SemiBold, TextAlign.Center)
                             }
                         }
                     }
 
                     @Composable
                     fun AccountCategoryRow(modifier: Modifier) {
-                        // Pure weight-based split — label gets weight(0.32f), button gets
-                        // weight(0.68f) of the SAME Column, using Compose's own weight
+                        // Pure weight-based split — label gets weight(0.36f), button gets
+                        // weight(0.64f) of the SAME Column, using Compose's own weight
                         // algorithm exactly like every other row in this dialog. This is
                         // mathematically guaranteed to shrink at the identical rate as
                         // sibling rows (no custom formula that can silently drift out of
@@ -8059,33 +8245,34 @@ fun AddTransactionDialog(
                         // every other label in this dialog — consistent sizing — and only
                         // auto-shrinks-on-overflow (like ShrinkingSingleLineText) if it
                         // genuinely doesn't fit, instead of starting from an arbitrary
-                        // fixed guess that was too small to begin with. The button's share
-                        // was bumped from 0.58f (combined with a bigger weight() at the call
-                        // site) so it renders at roughly the same height as Update
-                        // Transaction's 44dp OutlinedButton pickers instead of looking small.
+                        // fixed guess that was too small to begin with. The label's share
+                        // was bumped from 0.32f to 0.36f — it was still shrinking below its
+                        // intended size on shorter screens.
                         Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                                Box(modifier = Modifier.fillMaxWidth().weight(0.32f), contentAlignment = Alignment.CenterStart) {
+                                Box(modifier = Modifier.fillMaxWidth().weight(0.36f), contentAlignment = Alignment.CenterStart) {
                                     var lfs by remember(scale) { mutableStateOf(lbFsz.sp) }
-                                    Text("Account", fontSize = lfs, color = c.textSecondary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, modifier = Modifier.padding(start = 2.dp), onTextLayout = { r -> if (r.hasVisualOverflow && lfs.value > 7f) lfs = (lfs.value * 0.9f).sp })
+                                    Text("Account", fontSize = lfs, color = c.textSecondary, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, modifier = Modifier.padding(start = 2.dp), onTextLayout = { r -> if (r.hasVisualOverflow && lfs.value > 7f) lfs = (lfs.value * 0.9f).sp })
                                 }
-                                CustomOutlinedButton(modifier = Modifier.fillMaxWidth().weight(0.68f), borderColor = acctColor, onClick = { showWalletPicker = true }) {
-                                    Icon(acctIcon, null, tint = acctColor, modifier = Modifier.size(icSz))
+                                // Fixed font size — long names WRAP to a second line
+                                // instead of shrinking; the button never grows past its
+                                // weighted height, so the icon is bumped up a bit to stay
+                                // visually balanced against 2-line text.
+                                CustomOutlinedButton(modifier = Modifier.fillMaxWidth().weight(0.64f), borderColor = acctColor, onClick = { showWalletPicker = true }) {
+                                    Icon(acctIcon, null, tint = acctColor, modifier = Modifier.size(icSz * 1.15f))
                                     Spacer(Modifier.width(6.dp))
-                                    var af by remember(accountSelection, scale) { mutableStateOf(inFsz.sp) }
-                                    Text(accountSelection.ifBlank { "Account" }, fontSize = af, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, fontWeight = FontWeight.SemiBold, color = c.text, style = centeredBtnTextStyle, modifier = Modifier.weight(1f), onTextLayout = { r -> if (r.hasVisualOverflow && af.value > 8f) af = (af.value * 0.85f).sp })
+                                    Text(accountSelection.ifBlank { "Account" }, fontSize = inFsz.sp, lineHeight = (inFsz + 1f).sp, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, color = c.text, style = centeredBtnTextStyle, textAlign = TextAlign.Start, modifier = Modifier.weight(1f))
                                 }
                             }
                             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                                Box(modifier = Modifier.fillMaxWidth().weight(0.32f), contentAlignment = Alignment.CenterStart) {
+                                Box(modifier = Modifier.fillMaxWidth().weight(0.36f), contentAlignment = Alignment.CenterStart) {
                                     var lfs by remember(scale) { mutableStateOf(lbFsz.sp) }
-                                    Text("Category", fontSize = lfs, color = c.textSecondary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, modifier = Modifier.padding(start = 2.dp), onTextLayout = { r -> if (r.hasVisualOverflow && lfs.value > 7f) lfs = (lfs.value * 0.9f).sp })
+                                    Text("Category", fontSize = lfs, color = c.textSecondary, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, modifier = Modifier.padding(start = 2.dp), onTextLayout = { r -> if (r.hasVisualOverflow && lfs.value > 7f) lfs = (lfs.value * 0.9f).sp })
                                 }
-                                CustomOutlinedButton(modifier = Modifier.fillMaxWidth().weight(0.68f), borderColor = catColor, onClick = { showCategoryPicker = true }) {
-                                    Icon(catIcon, null, tint = catColor, modifier = Modifier.size(icSz))
+                                CustomOutlinedButton(modifier = Modifier.fillMaxWidth().weight(0.64f), borderColor = catColor, onClick = { showCategoryPicker = true }) {
+                                    Icon(catIcon, null, tint = catColor, modifier = Modifier.size(icSz * 1.15f))
                                     Spacer(Modifier.width(6.dp))
-                                    var cf by remember(categorySelection, scale) { mutableStateOf(inFsz.sp) }
-                                    Text(selectedCategory?.displayName ?: "Category", fontSize = cf, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, fontWeight = FontWeight.SemiBold, color = c.text, style = centeredBtnTextStyle, modifier = Modifier.weight(1f), onTextLayout = { r -> if (r.hasVisualOverflow && cf.value > 8f) cf = (cf.value * 0.85f).sp })
+                                    Text(selectedCategory?.displayName ?: "Category", fontSize = inFsz.sp, lineHeight = (inFsz + 1f).sp, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, color = c.text, style = centeredBtnTextStyle, textAlign = TextAlign.Start, modifier = Modifier.weight(1f))
                                 }
                             }
                         }
@@ -8107,7 +8294,12 @@ fun AddTransactionDialog(
                                     Icon(catIcon, contentDescription = "Category", tint = catColor, modifier = Modifier.size(icSz))
                                 }
                             }
-                            CompactTextField(value = notesStr, onValueChange = { notesStr = it }, placeholder = "Notes", modifier = Modifier.weight(1f).fillMaxHeight(), singleLine = false, maxLines = 3)
+                            // reserveTopClearance = false — this Notes box sits in a Row
+                            // right beside the Account/Category icon buttons, all sharing
+                            // the exact same fillMaxHeight() slot; reserving the usual
+                            // label clearance here would shrink ONLY this box, making it
+                            // visibly shorter than its row-mates.
+                            CompactTextField(value = notesStr, onValueChange = { notesStr = it }, placeholder = "Notes", modifier = Modifier.weight(1f).fillMaxHeight(), singleLine = false, maxLines = 3, reserveTopClearance = false)
                         }
                     }
 
@@ -8117,7 +8309,7 @@ fun AddTransactionDialog(
                             Row(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                                     if (hasOp) Text(calcExpr, fontSize = (11f * scale).coerceAtLeast(9f).sp, color = c.textSecondary, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    var amtFs by remember(calcExpr, calcResult, scale) { mutableStateOf((24f * scale).coerceAtLeast(14f).sp) }
+                                    var amtFs by remember(calcExpr, calcResult, scale) { mutableStateOf((amtFszBase * scale).coerceAtLeast(14f).sp) }
                                     Text(when { calcResult != null -> "₹ ${formatCalcNum(calcResult)}"; calcExpr.isEmpty() -> "₹ 0"; else -> "₹ $calcExpr" }, fontSize = amtFs, fontWeight = FontWeight.Bold, color = amountColor, textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, onTextLayout = { r -> if (r.hasVisualOverflow && amtFs.value > 12f) amtFs = (amtFs.value * 0.85f).sp })
                                 }
                                 Spacer(Modifier.width(8.dp))
@@ -8162,8 +8354,8 @@ fun AddTransactionDialog(
                     // calculator, left: everything else) so the calculator doesn't get
                     // squeezed to an unusable size under short landscape heights. Portrait
                     // keeps the original single-column proportional layout completely
-                    // untouched below — this flag only decides WHICH branch renders.
-                    val isLandscape = maxWidth > totalH
+                    // untouched below — this flag (computed earlier, alongside `scale`)
+                    // only decides WHICH branch renders.
 
                     if (isLandscape) {
                         Row(
@@ -8171,22 +8363,23 @@ fun AddTransactionDialog(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             // Left column — header, type toggle, payee, date/time, and the
-                            // compact icon-only account/category + notes row.
+                            // compact icon-only account/category + notes row. Extra spacing
+                            // (gap * 1.4) between rows here specifically, as requested.
                             Column(
                                 modifier = Modifier.weight(1f).fillMaxHeight(),
-                                verticalArrangement = Arrangement.spacedBy(gap)
+                                verticalArrangement = Arrangement.spacedBy(gap * 1.4f + 2.dp)
                             ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().weight(0.9f),
+                                    modifier = Modifier.fillMaxWidth().weight(1.05f),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Box(
                                         modifier = Modifier.fillMaxHeight().aspectRatio(1f).clip(CircleShape).clickable(onClick = onDismiss),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(20.dp))
+                                        Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(28.dp))
                                     }
-                                    Text("Log Cashflow", fontWeight = FontWeight.Bold, fontSize = (16f * scale).coerceAtLeast(12f).sp, color = c.text, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("Log Cashflow", fontWeight = FontWeight.Bold, fontSize = (titleFszBase * scale).coerceAtLeast(titleFszFloor).sp, color = c.text, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Box(
                                         modifier = Modifier.fillMaxHeight().clip(RoundedCornerShape(8.dp)).clickable(enabled = resolvedAmount > 0.0) {
                                             val cleanTitle = if (title.isBlank()) "Merchant Log" else title
@@ -8196,24 +8389,29 @@ fun AddTransactionDialog(
                                         }.padding(horizontal = 10.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text("Save", fontWeight = FontWeight.Bold, color = c.accent, fontSize = (14f * scale).coerceAtLeast(11f).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text("Save", fontWeight = FontWeight.Bold, color = c.accent, fontSize = (saveFszBase * scale).coerceAtLeast(saveFszFloor).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                                 TypeToggle(modifier = Modifier.fillMaxWidth().weight(1.0f))
-                                CompactTextField(value = title, onValueChange = { title = it }, placeholder = "Payee / Merchant", modifier = Modifier.fillMaxWidth().weight(1.18f), showNewBadge = isNewPayee)
-                                DateTimeRow(modifier = Modifier.fillMaxWidth().weight(1.0f))
+                                // Weight trimmed 1.3f→1.15f, as requested (a little smaller).
+                                CompactTextField(value = title, onValueChange = { title = it }, placeholder = "Payee / Merchant", modifier = Modifier.fillMaxWidth().weight(1.15f), showNewBadge = isNewPayee, contentFontSizeSp = payeeFsz)
+                                // Weight trimmed 1.0f→0.85f, as requested (a little smaller).
+                                DateTimeRow(modifier = Modifier.fillMaxWidth().weight(0.85f), fontSize = dtFsz)
                                 // Account + Category (icon-only, side by side) form one half
                                 // of this row; Notes forms the other half — all same height.
-                                AccountCategoryNotesRow(modifier = Modifier.fillMaxWidth().weight(2.4f))
+                                // Weight trimmed further, 1.0f→0.85f, as requested.
+                                AccountCategoryNotesRow(modifier = Modifier.fillMaxWidth().weight(0.85f))
                             }
                             // Right column — amount display on top, calculator filling the
-                            // rest, exactly the two elements the user wants on this side.
+                            // rest. Amount's weight was trimmed from 1.6f to 1.15f (closer to
+                            // one calculator row's share) since it was reported too big; the
+                            // freed space goes to the calculator instead.
                             Column(
                                 modifier = Modifier.weight(1f).fillMaxHeight(),
                                 verticalArrangement = Arrangement.spacedBy(gap)
                             ) {
-                                AmountDisplay(modifier = Modifier.fillMaxWidth().weight(1.6f))
-                                Calculator(modifier = Modifier.fillMaxWidth().weight(4.2f).padding(bottom = 2.dp))
+                                AmountDisplay(modifier = Modifier.fillMaxWidth().weight(1.15f))
+                                Calculator(modifier = Modifier.fillMaxWidth().weight(4.65f).padding(bottom = 2.dp))
                             }
                         }
                     } else {
@@ -8230,8 +8428,9 @@ fun AddTransactionDialog(
                     ) {
                         // Close / Title / Save — now weighted like everything else instead
                         // of a fixed-height Surface sitting outside the proportional system.
+                        // Weight bumped 0.9f→1.05f for a bigger title bar, as requested.
                         Row(
-                            modifier = Modifier.fillMaxWidth().weight(0.9f),
+                            modifier = Modifier.fillMaxWidth().weight(1.05f),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
@@ -8240,7 +8439,7 @@ fun AddTransactionDialog(
                             ) {
                                 Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(20.dp))
                             }
-                            Text("Log Cashflow", fontWeight = FontWeight.Bold, fontSize = (19f * scale).coerceAtLeast(14f).sp, color = c.text, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("Log Cashflow", fontWeight = FontWeight.Bold, fontSize = (titleFszBase * scale).coerceAtLeast(titleFszFloor).sp, color = c.text, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Box(
                                 modifier = Modifier.fillMaxHeight().clip(RoundedCornerShape(8.dp)).clickable(enabled = resolvedAmount > 0.0) {
                                     val cleanTitle = if (title.isBlank()) "Merchant Log" else title
@@ -8250,22 +8449,27 @@ fun AddTransactionDialog(
                                 }.padding(horizontal = 10.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("Save", fontWeight = FontWeight.Bold, color = c.accent, fontSize = (15f * scale).coerceAtLeast(11f).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("Save", fontWeight = FontWeight.Bold, color = c.accent, fontSize = (saveFszBase * scale).coerceAtLeast(saveFszFloor).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
                         TypeToggle(modifier = Modifier.fillMaxWidth().weight(1.0f))
-                        // Slightly bigger than before (+1-2dp at reference height).
-                        CompactTextField(value = title, onValueChange = { title = it }, placeholder = "Payee / Merchant", modifier = Modifier.fillMaxWidth().weight(1.18f), showNewBadge = isNewPayee)
+                        // Dedicated bigger font (payeeFsz) — Date/Time below intentionally
+                        // keeps the smaller shared `inFsz` so it doesn't grow along with it.
+                        // Weight also bumped slightly (1.18f → 1.3f) so the box stays just a
+                        // little bigger than the Date/Time row (weight 1.0f), not equal to it.
+                        CompactTextField(value = title, onValueChange = { title = it }, placeholder = "Payee / Merchant", modifier = Modifier.fillMaxWidth().weight(1.3f), showNewBadge = isNewPayee, contentFontSizeSp = payeeFsz)
                         // Pill-shaped, matches Update Transaction's date/time boxes; still
                         // shrinks proportionally since it's weight-based like everything else.
                         DateTimeRow(modifier = Modifier.fillMaxWidth().weight(1.0f))
-                        // Bumped from 1.5f to 2.0f (together with the internal 0.68f button
+                        // Bumped from 1.5f to 1.7f (together with the internal 0.68f button
                         // split) so the Account/Category pickers render close to Update
-                        // Transaction's 44dp button height instead of looking small.
-                        AccountCategoryRow(modifier = Modifier.fillMaxWidth().weight(2.0f))
+                        // Transaction's 44dp button height without looking oversized.
+                        AccountCategoryRow(modifier = Modifier.fillMaxWidth().weight(1.7f))
                         // Notes gets a taller, ~3-row box for multi-line notes.
                         CompactTextField(value = notesStr, onValueChange = { notesStr = it }, placeholder = "Notes (Optional)", modifier = Modifier.fillMaxWidth().weight(2.3f), singleLine = false, maxLines = 3)
-                        AmountDisplay(modifier = Modifier.fillMaxWidth().weight(1.4f))
+                        // Weight matches a single calculator row's share (7.0f / 4 rows =
+                        // 1.75f) instead of an arbitrary value.
+                        AmountDisplay(modifier = Modifier.fillMaxWidth().weight(1.75f))
                         // No top padding here — the Column's own spacedBy(gap) already
                         // supplies the gap above the calculator. The Compose BOM bump to
                         // 2025.08.00 fixed the Dialog WindowInsets bug (see repo memory),
@@ -8624,27 +8828,29 @@ fun EditTransactionDialog(
                 )
 
                 val editAccType = accounts.find { it.name == accountSelection }?.type
-                val editAccColor = when (editAccType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
-                var editAccFontSize by remember(accountSelection) { mutableStateOf(13.sp) }
-                var editToAccFontSize by remember(toAccountSelection) { mutableStateOf(13.sp) }
-                var editCatFontSize by remember(categorySelection) { mutableStateOf(13.sp) }
+                val editAccColor = when (editAccType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "DEBIT_CARD" -> Color(0xFF0EA5E9); "WALLET" -> Color(0xFFFF9800); else -> c.accent }
+                // Fixed font size — long names WRAP to a second line instead of shrinking
+                // the font, and the button itself never grows past its 44dp height; the
+                // icon is a little bigger to stay visually balanced against 2-line text.
+                val acctCatFontSize = 13.sp
+                val acctCatIconSize = 20.dp
                 when {
                     editType == "TRANSFER" -> {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("From Account", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
-                                OutlinedButton(onClick = { showWalletPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, editAccColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                                    Icon(walletIconFor(accountSelection, editAccType), null, tint = editAccColor, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp))
-                                    Text(accountSelection.ifBlank { "Account" }, fontSize = editAccFontSize, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, fontWeight = FontWeight.SemiBold, color = c.text, modifier = Modifier.weight(1f), onTextLayout = { r -> if (r.hasVisualOverflow && editAccFontSize.value > 8f) editAccFontSize = (editAccFontSize.value * 0.85f).sp })
+                                OutlinedButton(onClick = { showWalletPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, editAccColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
+                                    Icon(walletIconFor(accountSelection, editAccType), null, tint = editAccColor, modifier = Modifier.size(acctCatIconSize)); Spacer(Modifier.width(6.dp))
+                                    Text(accountSelection.ifBlank { "Account" }, fontSize = acctCatFontSize, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, color = c.text, textAlign = TextAlign.Start, modifier = Modifier.weight(1f))
                                 }
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("To Account", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
                                 val toAccType = accounts.find { it.name == toAccountSelection }?.type
-                                val toAccColor = when (toAccType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
-                                OutlinedButton(onClick = { showToWalletPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, toAccColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                                    Icon(walletIconFor(toAccountSelection, toAccType), null, tint = toAccColor, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp))
-                                    Text(toAccountSelection.ifBlank { "Select" }, fontSize = editToAccFontSize, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, fontWeight = FontWeight.SemiBold, color = c.text, modifier = Modifier.weight(1f), onTextLayout = { r -> if (r.hasVisualOverflow && editToAccFontSize.value > 8f) editToAccFontSize = (editToAccFontSize.value * 0.85f).sp })
+                                val toAccColor = when (toAccType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "DEBIT_CARD" -> Color(0xFF0EA5E9); "WALLET" -> Color(0xFFFF9800); else -> c.accent }
+                                OutlinedButton(onClick = { showToWalletPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, toAccColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
+                                    Icon(walletIconFor(toAccountSelection, toAccType), null, tint = toAccColor, modifier = Modifier.size(acctCatIconSize)); Spacer(Modifier.width(6.dp))
+                                    Text(toAccountSelection.ifBlank { "Select" }, fontSize = acctCatFontSize, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, color = c.text, textAlign = TextAlign.Start, modifier = Modifier.weight(1f))
                                 }
                             }
                         }
@@ -8653,18 +8859,18 @@ fun EditTransactionDialog(
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Account", fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
-                                OutlinedButton(onClick = { showWalletPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, editAccColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                                    Icon(walletIconFor(accountSelection, editAccType), null, tint = editAccColor, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp))
-                                    Text(accountSelection.ifBlank { "Account" }, fontSize = editAccFontSize, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, fontWeight = FontWeight.SemiBold, color = c.text, modifier = Modifier.weight(1f), onTextLayout = { r -> if (r.hasVisualOverflow && editAccFontSize.value > 8f) editAccFontSize = (editAccFontSize.value * 0.85f).sp })
+                                OutlinedButton(onClick = { showWalletPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, editAccColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
+                                    Icon(walletIconFor(accountSelection, editAccType), null, tint = editAccColor, modifier = Modifier.size(acctCatIconSize)); Spacer(Modifier.width(6.dp))
+                                    Text(accountSelection.ifBlank { "Account" }, fontSize = acctCatFontSize, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, color = c.text, textAlign = TextAlign.Start, modifier = Modifier.weight(1f))
                                 }
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Category", fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
                                 val catColor = selectedCategory?.color ?: c.accent
                                 val catIcon = selectedCategory?.icon ?: Icons.Default.Category
-                                OutlinedButton(onClick = { showCategoryPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, catColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                                    Icon(catIcon, null, tint = catColor, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp))
-                                    Text(selectedCategory?.displayName ?: "Category", fontSize = editCatFontSize, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false, fontWeight = FontWeight.SemiBold, color = c.text, modifier = Modifier.weight(1f), onTextLayout = { r -> if (r.hasVisualOverflow && editCatFontSize.value > 8f) editCatFontSize = (editCatFontSize.value * 0.85f).sp })
+                                OutlinedButton(onClick = { showCategoryPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, catColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
+                                    Icon(catIcon, null, tint = catColor, modifier = Modifier.size(acctCatIconSize)); Spacer(Modifier.width(6.dp))
+                                    Text(selectedCategory?.displayName ?: "Category", fontSize = acctCatFontSize, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, color = c.text, textAlign = TextAlign.Start, modifier = Modifier.weight(1f))
                                 }
                             }
                         }
@@ -9200,7 +9406,7 @@ private fun walletIconFor(name: String, type: String?): androidx.compose.ui.grap
     return when {
         type == "CASH" || name.contains("cash", ignoreCase = true) -> Icons.Default.Money
         type == "BANK" || name.contains("bank", ignoreCase = true) -> Icons.Default.AccountBalance
-        type == "CREDIT_CARD" || name.contains("card", ignoreCase = true) -> Icons.Default.CreditCard
+        type == "CREDIT_CARD" || type == "DEBIT_CARD" || name.contains("card", ignoreCase = true) -> Icons.Default.CreditCard
         type == "WALLET" || name.contains("wallet", ignoreCase = true) -> Icons.Default.AccountBalanceWallet
         else -> Icons.Default.AccountBalanceWallet
     }
@@ -9216,8 +9422,8 @@ private fun QuickAddAccountDialog(
     var amount by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("BANK") }
     var openingBalanceTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
-    val types = listOf("CASH", "BANK", "CREDIT_CARD", "WALLET")
-    val typeColor = when (type) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
+    val types = listOf("CASH", "BANK", "CREDIT_CARD", "DEBIT_CARD", "WALLET")
+    val typeColor = when (type) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "DEBIT_CARD" -> Color(0xFF0EA5E9); "WALLET" -> Color(0xFFFF9800); else -> c.accent }
 
     ModernDialogFrame(
         title = "Add New Account",
@@ -9282,7 +9488,7 @@ private fun QuickAddAccountDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 types.forEach { option ->
                     val active = option == type
-                    val optColor = when (option) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> c.accent }
+                    val optColor = when (option) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "DEBIT_CARD" -> Color(0xFF0EA5E9); "WALLET" -> Color(0xFFFF9800); else -> c.accent }
                     Box(
                         modifier = Modifier
                             .weight(1f)

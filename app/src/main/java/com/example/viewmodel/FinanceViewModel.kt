@@ -172,6 +172,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     // .value` call site with a literal `true`, so nothing else needs to change).
     val enableBalanceSync: StateFlow<Boolean> = MutableStateFlow(true).asStateFlow()
 
+    // ── App Lock (biometric) ────────────────────────────────────────────────────
+    private val _appLockEnabled = MutableStateFlow(prefs.getBoolean("app_lock_enabled", false))
+    val appLockEnabled: StateFlow<Boolean> = _appLockEnabled.asStateFlow()
+    fun setAppLockEnabled(v: Boolean) {
+        _appLockEnabled.value = v
+        prefs.edit().putBoolean("app_lock_enabled", v).apply()
+    }
+
     // ── Running balance overlay on transaction records ─────────────────────────
     private val _showRunningBalance = MutableStateFlow(prefs.getBoolean("show_running_balance", false))
     val showRunningBalance: StateFlow<Boolean> = _showRunningBalance.asStateFlow()
@@ -850,33 +858,22 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         // Check in-memory cache first to avoid race conditions during batch scan
         createdAccountsCache[last4Ref]?.let { return it }
 
-        // Special wallet markers — no last-4 digits required
-        if (last4Ref == "APAY_WALLET") {
-            val walletDisplayName = "Apay Wallet"
+        // Special wallet markers — no last-4 digits required. Covers APAY_WALLET,
+        // NEUCOINS_WALLET, and every INDIA_WALLETS entry (Paytm, PhonePe, MobiKwik, Zomato
+        // Money, etc.) via one shared lookup — previously only Apay/NeuCoins had this
+        // special-case block, so every OTHER wallet ref silently fell through to the
+        // generic bank-account path below, which treated the ref string itself (e.g.
+        // "PAYTM_WALLET") as if it were a last-4-digits account number and produced a
+        // garbage account name/type instead of a clean wallet account.
+        val walletDisplayName = com.example.utils.SmsParser.walletDisplayNameForRef(last4Ref)
+        if (walletDisplayName != null) {
             if (matchesSmsBlocklistPattern(walletDisplayName) || matchesSmsBlocklistPattern(senderHeader ?: "")) {
-                Log.d(TAG, "ensureAccountExists: blocked Apay Wallet by blocklist")
+                Log.d(TAG, "ensureAccountExists: blocked $walletDisplayName by blocklist")
                 return null
             }
             val existing = repository.allAccounts.first().find { it.name.equals(walletDisplayName, ignoreCase = true) }
             if (existing != null && (isSmsTrackingBlocked(existing, blockedSmsAccountIds.value) || matchesSmsBlocklistPattern(existing.name))) {
-                Log.d(TAG, "ensureAccountExists: import blocked for existing Apay Wallet")
-                createdAccountsCache[last4Ref] = walletDisplayName; return null
-            }
-            val name = existing?.name ?: run {
-                repository.insertAccount(Account(name = walletDisplayName, balance = 0.0, type = "WALLET", lastFour = null))
-                walletDisplayName
-            }
-            createdAccountsCache[last4Ref] = name; return name
-        }
-        if (last4Ref == "NEUCOINS_WALLET") {
-            val walletDisplayName = "NeuCoins"
-            if (matchesSmsBlocklistPattern(walletDisplayName) || matchesSmsBlocklistPattern(senderHeader ?: "")) {
-                Log.d(TAG, "ensureAccountExists: blocked NeuCoins by blocklist")
-                return null
-            }
-            val existing = repository.allAccounts.first().find { it.name.equals(walletDisplayName, ignoreCase = true) }
-            if (existing != null && (isSmsTrackingBlocked(existing, blockedSmsAccountIds.value) || matchesSmsBlocklistPattern(existing.name))) {
-                Log.d(TAG, "ensureAccountExists: import blocked for existing NeuCoins")
+                Log.d(TAG, "ensureAccountExists: import blocked for existing $walletDisplayName")
                 createdAccountsCache[last4Ref] = walletDisplayName; return null
             }
             val name = existing?.name ?: run {
@@ -1665,32 +1662,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** Returns true for Apay Wallet, NeuCoins, and EPFO passbook results — excluded from the regular scan. */
+    /** Returns true for any recognized wallet result (curated INDIA_WALLETS entry OR the
+     * generic "GENERIC_WALLET:" fallback for an unlisted wallet) and EPFO passbook results —
+     * excluded from the regular scan. Delegates entirely to SmsParser's single source of
+     * truth instead of maintaining a parallel hardcoded ref list here that had to be kept
+     * in sync by hand every time a wallet was added (and inevitably fell out of sync). */
     private fun isWalletOrPfResult(parsed: com.example.utils.SmsParsingResult): Boolean {
         val ref = parsed.accountRef ?: ""
-        return ref == "APAY_WALLET" ||
-            ref == "NEUCOINS_WALLET" ||
-            ref == "PAYTM_WALLET" ||
-            ref == "PHONEPE_WALLET" ||
-            ref == "MOBIKWIK_WALLET" ||
-            ref == "FREECHARGE_WALLET" ||
-            ref == "JIOMONEY_WALLET" ||
-            ref == "AIRTEL_WALLET" ||
-            ref == "OLAMONEY_WALLET" ||
-            ref == "CRED_WALLET" ||
-            ref == "LAZYPAY_WALLET" ||
-            ref == "SIMPL_WALLET" ||
-            ref == "SLICE_WALLET" ||
-            ref == "FAMPAY_WALLET" ||
-            ref == "JUPITER_WALLET" ||
-            ref == "FI_WALLET" ||
-            ref == "NIYO_WALLET" ||
-            ref == "BHARATPE_WALLET" ||
-            ref == "OXIGEN_WALLET" ||
-            ref == "ITZCASH_WALLET" ||
-            ref == "VODAFONEMPESA_WALLET" ||
-            ref == "POCKETAPP_WALLET" ||
-            parsed.title == "PF Contribution"
+        return com.example.utils.SmsParser.walletDisplayNameForRef(ref) != null || parsed.title == "PF Contribution"
     }
 
     fun scanDeviceSmsInbox(context: android.content.Context, monthsBack: Int = 3) {

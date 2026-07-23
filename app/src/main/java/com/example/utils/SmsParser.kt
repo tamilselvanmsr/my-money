@@ -67,16 +67,23 @@ object SmsParser {
         }
         if (isBillDueSms(lowerBody))        { Log.d(TAG, "Excluded: bill-due"); return null }
         if (isPaymentRequestSms(lowerBody)) { Log.d(TAG, "Excluded: payment request"); return null }
-        if (lowerBody.contains("balance expire")) { Log.d(TAG, "Excluded: balance expiry"); return null }
+        // "Balance expire" is meant to catch reminder spam like "your points will expire,
+        // use them now" — but plenty of REAL wallet-credit SMS (e.g. Zomato Money, gift
+        // cards, promo balance) also mention an expiry date as routine T&C text right next
+        // to the actual transaction ("Rs.7.14 added to Zomato Money... This balance expires
+        // on 21 Aug 2026."). Only treat it as a pure reminder (and exclude) when the message
+        // has no actual transaction action alongside it.
+        if (lowerBody.contains("balance expire") && !lowerBody.contains("added") && !hasTransactionKeywords(lowerBody)) {
+            Log.d(TAG, "Excluded: balance expiry"); return null
+        }
 
         // 3. Balance-update early-exit
         tryParseBalanceUpdate(cleanBody, lowerBody, senderId, smsTimestamp)?.let { return it }
 
         // 4. Special wallets (no standard last-4 account ref)
-        parseApayWallet(cleanBody, lowerBody, smsTimestamp)?.let { return it }
-        parseNeuCoins(cleanBody, lowerBody, smsTimestamp)?.let { return it }
-        parseEpfoContribution(cleanBody, lowerBody, smsTimestamp)?.let { return it }
         parseIndianWallet(cleanBody, lowerBody, upper, smsTimestamp)?.let { return it }
+        parseEpfoContribution(cleanBody, lowerBody, smsTimestamp)?.let { return it }
+        parseGenericWalletCredit(cleanBody, lowerBody, smsTimestamp)?.let { return it }
 
         // 5. Soft validation (bypassable)
         if (!bypassExclusionFilter) {
@@ -264,64 +271,25 @@ object SmsParser {
 
     // ─── Special wallet parsers ───────────────────────────────────────────────────
 
-    private fun parseApayWallet(cleanBody: String, lower: String, smsTimestamp: Long?): SmsParsingResult? {
-        if (!lower.contains("apay wallet") && !lower.contains("apay balance") && !lower.contains("using apay")) return null
-        val amount = Pattern.compile("(?:inr|rs\\.?|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)", Pattern.CASE_INSENSITIVE)
-            .let { p -> val m = p.matcher(lower); if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0 }
-        if (amount <= 0.0) return null
-        val type = if (lower.contains("credited") || lower.contains("added") || lower.contains("refund")) "INCOME" else "EXPENSE"
-        val title = Pattern.compile("(?:at|for)\\s+([A-Za-z][A-Za-z0-9.\\-]+)", Pattern.CASE_INSENSITIVE)
-            .let { p -> val m = p.matcher(cleanBody)
-                if (m.find()) (m.group(1) ?: "Apay").split(" ").joinToString(" ") { w -> w.replaceFirstChar { it.titlecase() } }
-                else "Apay Wallet"
-            }
-        return SmsParsingResult(
-            title = title, amount = amount,
-            category = if (type == "INCOME") ExpenseCategory.CASHBACK else ExpenseCategory.SHOPPING,
-            type = type, accountRef = "APAY_WALLET",
-            parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp)
-        )
-    }
-
-    private fun parseNeuCoins(cleanBody: String, lower: String, smsTimestamp: Long?): SmsParsingResult? {
-        val isNeu = lower.contains("neucoin") ||
-            (lower.contains("neucard") && (lower.contains("credited") || lower.contains("refund")))
-        if (!isNeu) return null
-        val amount = Pattern.compile("([0-9,]+(?:\\.[0-9]{1,2})?)\\s*(?:neucoin|neu\\s*coins?)", Pattern.CASE_INSENSITIVE)
-            .let { p -> val m = p.matcher(cleanBody); if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0 }
-        if (amount <= 0.0) return null
-        val type = if (lower.contains("debited") || lower.contains("used") || lower.contains("spent")) "EXPENSE" else "INCOME"
-        val category = when {
-            lower.contains("refund") -> ExpenseCategory.REFUNDS
-            type == "INCOME"         -> ExpenseCategory.COINS
-            else                     -> ExpenseCategory.SHOPPING
-        }
-        val titleMatcher = Pattern.compile(
-            "(?:at|for)\\s+([A-Za-z][A-Za-z0-9.\\-]+(?:\\s+[A-Za-z][A-Za-z0-9.\\-]+)*)(?:\\s+on\\b|\\s+check\\b|\\s*\\.\\s*check|\\s+team\\b|\\s*https)",
-            Pattern.CASE_INSENSITIVE
-        ).matcher(cleanBody)
-        val title = when {
-            lower.contains("refund") -> "Refund"
-            type == "INCOME"         -> "NeuCoins Credited"
-            titleMatcher.find()      -> (titleMatcher.group(1) ?: "NeuCoins").split(" ").joinToString(" ") { w -> w.replaceFirstChar { it.titlecase() } }
-            else                     -> "NeuCoins"
-        }
-        return SmsParsingResult(
-            title = title, amount = amount, category = category,
-            type = type, accountRef = "NEUCOINS_WALLET",
-            parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp)
-        )
-    }
-
     // ─── Comprehensive Indian digital wallet parser ───────────────────────────────
     // Covers Paytm, PhonePe, MobiKwik, FreeCharge, JioMoney, Airtel Money,
-    // Ola Money, CRED, LazyPay, Simpl, Slice, Fampay, and others.
-    // Each wallet is identified by sender-ID substring OR body keyword.
+    // Ola Money, CRED, LazyPay, Simpl, Slice, Fampay, Apay, NeuCoins, and others.
+    // Each wallet is identified by sender-ID substring OR body keyword — a single unified
+    // code path (parseIndianWallet, below) instead of a dedicated parse function per wallet.
     private data class WalletDef(
         val ref: String,          // accountRef stored in DB (e.g. "PAYTM_WALLET")
         val displayName: String,  // human-readable name used in title
-        val senderSubstrings: List<String>,   // substrings matched against UPPER sender ID
-        val bodyKeywords: List<String>        // substrings matched against lower body
+        val senderSubstrings: List<String> = emptyList(),   // substrings matched against UPPER sender ID
+        val bodyKeywords: List<String> = emptyList(),       // substrings matched against lower body
+        // Some wallets report their amount as "<number> <unit>" instead of the standard
+        // currency-prefixed "Rs./INR/₹ <number>" (e.g. NeuCoins: "50 neucoins"). Set to the
+        // exact regex alternation for that unit (e.g. "neucoin|neu\\s*coins?") to use
+        // suffix-style amount extraction instead of the default prefix style.
+        val amountUnitPattern: String? = null,
+        // Overrides the generic ExpenseCategory.INCOME_OTHERS default for this wallet's
+        // credit transactions (e.g. NeuCoins uses COINS since they're literally a coin/points
+        // currency, not general wallet cash).
+        val incomeCategory: ExpenseCategory? = null
     )
 
     private val INDIA_WALLETS = listOf(
@@ -388,7 +356,29 @@ object SmsParser {
         WalletDef("POCKETAPP_WALLET", "Pockets by ICICI",
             listOf("ICICIP", "PKTAPP"),
             listOf("icici pockets", "pockets wallet")),
+        WalletDef("ZOMATO_WALLET", "Zomato Money",
+            listOf("ZOMATO"),
+            listOf("zomato money", "zomato wallet")),
+        WalletDef("APAY_WALLET", "Apay Wallet",
+            bodyKeywords = listOf("apay wallet", "apay balance", "using apay")),
+        WalletDef("NEUCOINS_WALLET", "NeuCoins",
+            bodyKeywords = listOf("neucoin", "neucard"),
+            amountUnitPattern = "neucoin|neu\\s*coins?",
+            incomeCategory = ExpenseCategory.COINS),
     )
+
+    /**
+     * Public lookup so ensureAccountExists() (FinanceViewModel + SmsReceiver, which both
+     * create the actual Account row from a parsed [SmsParsingResult.accountRef]) can create
+     * a proper WALLET-type account with the correct display name for ANY wallet ref this
+     * parser produces — including a brand-new/unlisted wallet caught by the generic
+     * [parseGenericWalletCredit] fallback (ref prefixed "GENERIC_WALLET:"), whose display
+     * name was extracted directly from the SMS body rather than needing a curated entry.
+     */
+    fun walletDisplayNameForRef(ref: String): String? {
+        if (ref.startsWith("GENERIC_WALLET:")) return ref.removePrefix("GENERIC_WALLET:")
+        return INDIA_WALLETS.firstOrNull { it.ref == ref }?.displayName
+    }
 
     private fun parseIndianWallet(cleanBody: String, lower: String, upperSender: String, smsTimestamp: Long?): SmsParsingResult? {
         val wallet = INDIA_WALLETS.firstOrNull { w ->
@@ -396,19 +386,25 @@ object SmsParser {
             w.bodyKeywords.any { lower.contains(it) }
         } ?: return null
 
-        // Extract amount
-        val amount = Pattern.compile(
-            "(?:rs\\.?|inr|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)",
-            Pattern.CASE_INSENSITIVE
-        ).let { p ->
-            val m = p.matcher(cleanBody)
-            if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null
-        } ?: Pattern.compile(
-            "([0-9,]+(?:\\.[0-9]{1,2})?)\\s*(?:rs|inr)",
-            Pattern.CASE_INSENSITIVE
-        ).let { p ->
-            val m = p.matcher(cleanBody)
-            if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null
+        // Extract amount — suffix-style unit (e.g. "50 neucoins") for wallets that declare
+        // one, otherwise the standard currency-prefixed "Rs./INR/₹ <number>" style.
+        val amount = if (wallet.amountUnitPattern != null) {
+            Pattern.compile("([0-9,]+(?:\\.[0-9]{1,2})?)\\s*(?:${wallet.amountUnitPattern})", Pattern.CASE_INSENSITIVE)
+                .let { p -> val m = p.matcher(cleanBody); if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null }
+        } else {
+            Pattern.compile(
+                "(?:rs\\.?|inr|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)",
+                Pattern.CASE_INSENSITIVE
+            ).let { p ->
+                val m = p.matcher(cleanBody)
+                if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null
+            } ?: Pattern.compile(
+                "([0-9,]+(?:\\.[0-9]{1,2})?)\\s*(?:rs|inr)",
+                Pattern.CASE_INSENSITIVE
+            ).let { p ->
+                val m = p.matcher(cleanBody)
+                if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null
+            }
         } ?: return null
         if (amount <= 0.0) return null
 
@@ -467,7 +463,7 @@ object SmsParser {
         val category = when {
             lower.contains("cashback") || lower.contains("reward") -> ExpenseCategory.CASHBACK
             lower.contains("refund")                               -> ExpenseCategory.REFUNDS
-            type == "INCOME"                                       -> ExpenseCategory.INCOME_OTHERS
+            type == "INCOME"                                       -> wallet.incomeCategory ?: ExpenseCategory.INCOME_OTHERS
             else                                                   -> ExpenseCategory.SHOPPING
         }
 
@@ -477,6 +473,48 @@ object SmsParser {
             category = category,
             type = type,
             accountRef = wallet.ref,
+            parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp)
+        )
+    }
+
+    /**
+     * Last-resort fallback for wallet-style "top-up" SMS from merchants/wallets not in the
+     * curated [INDIA_WALLETS] list above. A fixed, curated list gives precise, correctly-
+     * cased brand names ("PhonePe", not "Phonepe") and avoids false positives — but it can
+     * never cover every wallet in existence, and that gap is exactly what silently dropped
+     * a real Zomato Money credit before "Zomato Money" was added above. This fills the gap
+     * generically: it extracts the wallet's name directly from the SMS body instead of
+     * requiring a hardcoded entry, so a brand-new/unlisted wallet still becomes a real,
+     * correctly-named account rather than being dropped entirely.
+     *
+     * Deliberately narrow to avoid misfiring on unrelated text: only matches the common
+     * "added to <Wallet Name>" template (used by Zomato Money, Swiggy Money, BookMyShow
+     * Wallet, and many others), and requires the captured name to start with a capital
+     * letter (i.e. look like an actual proper noun/brand), not just any lowercase phrase
+     * that happens to follow "to". Word order varies between merchants — Zomato phrases it
+     * "Rs.X added to Name" (amount first), Swiggy phrases it "Added Rs.X to Name" (verb
+     * first, amount in between) — so the trigger only requires the bare word "added"
+     * somewhere in the message, and the name is captured from the nearest "to <Name>"
+     * regardless of where the amount sits relative to it.
+     */
+    private fun parseGenericWalletCredit(cleanBody: String, lower: String, smsTimestamp: Long?): SmsParsingResult? {
+        if (!lower.contains("added")) return null
+        val amount = Pattern.compile("(?:rs\\.?|inr|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)", Pattern.CASE_INSENSITIVE)
+            .let { p -> val m = p.matcher(cleanBody); if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null }
+            ?: return null
+        if (amount <= 0.0) return null
+        // Case-SENSITIVE on purpose — the capital-letter requirement is what keeps this from
+        // matching generic lowercase phrasing that isn't actually naming a wallet/brand.
+        val nameMatcher = Pattern.compile("\\bto\\s+([A-Z][a-zA-Z]+(?:\\s+[A-Z][a-zA-Z]+){0,2})\\b").matcher(cleanBody)
+        if (!nameMatcher.find()) return null
+        val walletName = (nameMatcher.group(1) ?: "").trim()
+        if (walletName.length < 3) return null
+        return SmsParsingResult(
+            title = "$walletName Credit",
+            amount = amount,
+            category = ExpenseCategory.INCOME_OTHERS,
+            type = "INCOME",
+            accountRef = "GENERIC_WALLET:$walletName",
             parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp)
         )
     }
@@ -860,10 +898,15 @@ object SmsParser {
         // Any debit/credit/transfer keyword means this is a real transaction;
         // the "Avl bal" is just post-transaction info appended by the bank.
         // Let the main parser handle it — it will extract both the transaction AND the balance.
+        // "added" covers wallet top-up SMS (e.g. "Rs.7.14 added to Zomato Money... This
+        // balance expires on...") which otherwise looked identical to a pure balance
+        // snapshot (mentions "balance" + "ending with") and got silently misrouted here
+        // instead of reaching the wallet parser as the real credit transaction it is.
         val hasTransactionAction = lowerBody.contains("deposited") ||
             lowerBody.contains("credited") ||
             lowerBody.contains("debited") ||
             lowerBody.contains("transferred") ||
+            lowerBody.contains("added") ||
             lowerBody.contains("received")
         if (hasTransactionAction) return null
 

@@ -313,7 +313,38 @@ class SmsReceiver : BroadcastReceiver() {
 
     private suspend fun ensureAccountExists(context: Context, dao: com.example.data.FinanceDao, accountRef: String?, senderHeader: String?, smsBody: String): String? {
         val last4Ref = accountRef ?: return "Cash Wallet"
-        
+
+        // Special wallet markers — no last-4 digits required. Mirrors
+        // FinanceViewModel.ensureAccountExists's wallet handling (kept in sync — see that
+        // function's comment for why this generic lookup replaced per-wallet special cases).
+        val walletDisplayName = com.example.utils.SmsParser.walletDisplayNameForRef(last4Ref)
+        if (walletDisplayName != null) {
+            val blocklistPatterns = context.getSharedPreferences("finance_settings", Context.MODE_PRIVATE)
+                .getStringSet("sms_blocklist_patterns", emptySet()) ?: emptySet()
+            fun matchesBlocklist(ref: String): Boolean {
+                val refLower = ref.lowercase()
+                return blocklistPatterns.any { pat ->
+                    val p = pat.lowercase().trim()
+                    when {
+                        p.startsWith("*") && p.endsWith("*") && p.length > 2 -> refLower.contains(p.substring(1, p.length - 1))
+                        p.startsWith("*") -> refLower.endsWith(p.substring(1))
+                        p.endsWith("*") -> refLower.startsWith(p.dropLast(1))
+                        else -> refLower.contains(p)
+                    }
+                }
+            }
+            if (matchesBlocklist(walletDisplayName) || matchesBlocklist(senderHeader ?: "")) return null
+            val existing = dao.getAllAccounts().first().find { it.name.equals(walletDisplayName, ignoreCase = true) }
+            if (existing != null) {
+                val blockedIds = context.getSharedPreferences("finance_settings", Context.MODE_PRIVATE)
+                    .getStringSet("blocked_sms_account_ids", emptySet())?.toSet() ?: emptySet()
+                if (blockedIds.contains(existing.id)) return null
+                return existing.name
+            }
+            dao.insertAccount(Account(name = walletDisplayName, balance = 0.0, type = "WALLET", lastFour = null))
+            return walletDisplayName
+        }
+
         val hyphenIndex = last4Ref.indexOf('-')
         val actualLast4 = if (hyphenIndex != -1) last4Ref.substring(hyphenIndex + 1) else last4Ref
         var extractedBank = if (hyphenIndex != -1) last4Ref.substring(0, hyphenIndex) else ""

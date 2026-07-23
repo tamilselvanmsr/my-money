@@ -8,12 +8,16 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -45,6 +49,7 @@ import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.*
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -341,14 +346,10 @@ fun computeWalletBalances(
 //   `txs`        – all transactions from DB (unfiltered)
 // ═══════════════════════════════════════════════════════════════════════════
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        getSharedPreferences("finance_settings", Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean("app_lock_enabled", false)
-            .apply()
         setContent {
             val vm: FinanceViewModel = viewModel()
             val themeMode by vm.themeMode.collectAsStateWithLifecycle()
@@ -372,7 +373,167 @@ class MainActivity : ComponentActivity() {
             }.let { if (isFlatStyle) it.copy(isBorderless = true) else it }
             MyApplicationTheme(darkTheme = isDark) {
                 androidx.compose.runtime.CompositionLocalProvider(LocalAppColors provides appColors) {
-                    MainAppScreen(vm)
+                    AppLockGate(viewModel = vm) {
+                        MainAppScreen(vm)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Biometric app-lock gate. When [FinanceViewModel.appLockEnabled] is on, this shows a
+ * full-screen lock overlay in front of [content] until the user authenticates with the
+ * device's fingerprint or face unlock, and re-locks every time the app is backgrounded
+ * (ON_STOP) so it can't stay unlocked forever just because it was unlocked once after a
+ * cold start. Every biometric API call is wrapped in try/catch so a device/hardware quirk
+ * can never crash the app — worst case it shows a Toast and leaves the lock screen up,
+ * which itself has a "Disable App Lock" escape hatch so the user is never permanently
+ * locked out of their own data (e.g. if they later remove all fingerprints from the device).
+ */
+@Composable
+private fun AppLockGate(viewModel: FinanceViewModel, content: @Composable () -> Unit) {
+    val context = LocalContext.current
+    val appLockEnabled by viewModel.appLockEnabled.collectAsStateWithLifecycle()
+    var unlockedThisSession by rememberSaveable { mutableStateOf(false) }
+    // Tracks the last-seen value so we can react to a genuine TOGGLE (flip the switch while
+    // the app is already open) without also firing on the initial composition/config change
+    // (e.g. screen rotation) — that would wrongly force a re-lock every time the activity is
+    // recreated while app lock happens to already be on.
+    var previousAppLockEnabled by rememberSaveable { mutableStateOf(appLockEnabled) }
+    LaunchedEffect(appLockEnabled) {
+        if (appLockEnabled != previousAppLockEnabled) {
+            // Enabling it -> lock immediately, as visible proof it's now active.
+            // Disabling it -> unlock immediately, no reason to keep the lock screen up.
+            unlockedThisSession = !appLockEnabled
+            previousAppLockEnabled = appLockEnabled
+        }
+    }
+
+    // Re-lock whenever the app goes to the background.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, appLockEnabled) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && appLockEnabled) {
+                unlockedThisSession = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    fun launchBiometricPrompt() {
+        try {
+            val activity = context as? FragmentActivity
+            if (activity == null) {
+                Toast.makeText(context, "Unable to start App Lock — please restart the app.", Toast.LENGTH_LONG).show()
+                return
+            }
+            // The unified BiometricPrompt API has no cross-device way to force "try face
+            // before fingerprint" at the OS level — the system itself decides sensor order
+            // (in practice face usually wins anyway since it's passive/no-touch, while
+            // fingerprint waits for a deliberate touch). What we CAN control is which one our
+            // own prompt text leads with, so default to Face-first wording whenever the
+            // device actually has face hardware.
+            val hasFaceUnlock = try { context.packageManager.hasSystemFeature(PackageManager.FEATURE_FACE) } catch (_: Exception) { false }
+            val allowedAuthenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
+            when (BiometricManager.from(context).canAuthenticate(allowedAuthenticators)) {
+                BiometricManager.BIOMETRIC_SUCCESS -> {
+                    val executor = ContextCompat.getMainExecutor(context)
+                    val prompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                            try {
+                                unlockedThisSession = true
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Unlock error: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                            try {
+                                // User-cancelled / tapped the negative button — not a real error, no toast needed.
+                                if (errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON &&
+                                    errorCode != BiometricPrompt.ERROR_USER_CANCELED &&
+                                    errorCode != BiometricPrompt.ERROR_CANCELED
+                                ) {
+                                    Toast.makeText(context, "Authentication error: $errString", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (_: Exception) {}
+                        }
+                        // Called when a biometric was read but didn't match — the system prompt
+                        // already tells the user to try again, nothing else to do here.
+                        override fun onAuthenticationFailed() {}
+                    })
+                    val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                        .setTitle("Unlock AutoLedger")
+                        .setSubtitle(if (hasFaceUnlock) "Look at your phone to unlock, or use your fingerprint" else "Use your fingerprint to continue")
+                        // No manual confirmation step after a face match — matches how most
+                        // banking/finance apps feel, since face unlock is already a deliberate
+                        // user action (looking at the phone to unlock it).
+                        .setConfirmationRequired(false)
+                        .setAllowedAuthenticators(allowedAuthenticators)
+                        .setNegativeButtonText("Cancel")
+                        .build()
+                    prompt.authenticate(promptInfo)
+                }
+                else -> {
+                    Toast.makeText(
+                        context,
+                        "No fingerprint or face lock is set up on this device. Disable App Lock below, or set one up in your device settings first.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        } catch (e: Exception) {
+            Toast.makeText(context, "App Lock error: ${e.message ?: "unknown error"}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    if (!appLockEnabled || unlockedThisSession) {
+        content()
+    } else {
+        LaunchedEffect(Unit) { launchBiometricPrompt() }
+        val c = LocalAppColors.current
+        val hasFaceUnlockUi = remember {
+            try { context.packageManager.hasSystemFeature(PackageManager.FEATURE_FACE) } catch (_: Exception) { false }
+        }
+        val lockIcon = if (hasFaceUnlockUi) Icons.Default.Face else Icons.Default.Fingerprint
+        Surface(modifier = Modifier.fillMaxSize(), color = c.bg) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Surface(shape = CircleShape, color = c.accent.copy(alpha = 0.15f), modifier = Modifier.size(80.dp)) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(lockIcon, contentDescription = null, tint = c.accent, modifier = Modifier.size(40.dp))
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
+                Text("AutoLedger Locked", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = c.text)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (hasFaceUnlockUi) "Use Face Unlock or your fingerprint to continue" else "Use your fingerprint to unlock",
+                    color = c.textSecondary, fontSize = 13.sp, textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(28.dp))
+                Button(
+                    onClick = { launchBiometricPrompt() },
+                    colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.fillMaxWidth(0.7f).height(48.dp)
+                ) {
+                    Icon(lockIcon, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Unlock", fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(16.dp))
+                // Escape hatch — the user is never permanently locked out of their own data.
+                TextButton(onClick = {
+                    viewModel.setAppLockEnabled(false)
+                    unlockedThisSession = true
+                }) {
+                    Text("Can't authenticate? Disable App Lock", color = c.textSecondary, fontSize = 12.sp)
                 }
             }
         }
@@ -394,6 +555,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     val smsScanMonthsBack by viewModel.smsScanMonthsBack.collectAsStateWithLifecycle()
     val isPaidMain by viewModel.isPaidFeaturesEnabled.collectAsStateWithLifecycle()
     val isFlatStyleMain by viewModel.isFlatStyle.collectAsStateWithLifecycle()
+    val appLockEnabled by viewModel.appLockEnabled.collectAsStateWithLifecycle()
     val proExpiresAt by viewModel.proExpiresAt.collectAsStateWithLifecycle()
     var currentTab by remember { mutableStateOf(AppTab.DASHBOARD) }
     // Show SMS Scan only on the very first install, not on every launch
@@ -523,7 +685,10 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 20.sp,
                                 letterSpacing = 0.5.sp,
-                                color = c.text
+                                color = c.text,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
                             )
                         }
                         // ── Notification bell ─────────────────────────────────
@@ -651,6 +816,15 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                     },
                                     onClick = {}
                                 )
+                                // Flat Style + App Lock toggles — Material3's DropdownMenuItem
+                                // always enforces its own ~48dp minimum touch-target height
+                                // internally (applied AFTER any externally-supplied
+                                // heightIn/contentPadding), which is why shrinking those alone
+                                // didn't remove the gap between these two rows. Overriding
+                                // LocalMinimumInteractiveComponentSize to 0.dp here (same fix
+                                // already used elsewhere in this file) actually lets them
+                                // shrink to their real content height.
+                                androidx.compose.runtime.CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                                 // Flat style toggle
                                 DropdownMenuItem(
                                     text = {
@@ -671,9 +845,51 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                             )
                                         }
                                     },
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                                     onClick = { viewModel.setFlatStyle(!isFlatStyleMain) }
                                 )
+                                // App Lock (biometric) toggle
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Icon(Icons.Default.Fingerprint, contentDescription = null, tint = if (appLockEnabled) c.accent else c.textSecondary, modifier = Modifier.size(16.dp))
+                                                Text("App Lock", color = c.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                            }
+                                            Switch(
+                                                checked = appLockEnabled,
+                                                onCheckedChange = { enable ->
+                                                    if (!enable) {
+                                                        viewModel.setAppLockEnabled(false)
+                                                    } else {
+                                                        // Only turn it on if the device actually has a usable
+                                                        // fingerprint/face lock enrolled — otherwise the user
+                                                        // would enable it and then never be able to get back in.
+                                                        try {
+                                                            val allowed = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
+                                                            if (BiometricManager.from(context).canAuthenticate(allowed) == BiometricManager.BIOMETRIC_SUCCESS) {
+                                                                viewModel.setAppLockEnabled(true)
+                                                            } else {
+                                                                Toast.makeText(context, "Set up a fingerprint or face lock in your device settings first.", Toast.LENGTH_LONG).show()
+                                                            }
+                                                        } catch (e: Exception) {
+                                                            Toast.makeText(context, "Couldn't check biometric availability: ${e.message ?: "unknown error"}", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                },
+                                                colors = SwitchDefaults.colors(checkedThumbColor = c.accent, checkedTrackColor = c.accent.copy(0.4f)),
+                                                modifier = Modifier.scale(0.8f)
+                                            )
+                                        }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    onClick = {}
+                                )
+                                } // end CompositionLocalProvider(LocalMinimumInteractiveComponentSize)
                                 HorizontalDivider(color = c.divider)
                                 DropdownMenuItem(
                                     text = {
@@ -1010,20 +1226,17 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                     .fillMaxHeight(0.75f)
                     .align(Alignment.Center),
                 shape = RoundedCornerShape(16.dp),
-                color = c.surface,
+                color = c.bg,
                 tonalElevation = 4.dp
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Header — uses the SAME surface color as the body (previously the header
-                    // explicitly used c.bg while the body used c.surface; on the default
-                    // light/dark themes c.bg has a distinct blue-gray tint vs c.surface's
-                    // neutral white/near-black, which made the header look like a separate
-                    // "light blue" bar sitting on top of the body. One consistent color reads
-                    // correctly across every theme, including Gold/Jade/Sand.
+                    // Header — explicitly uses c.bg, same as the body below, so there's one
+                    // consistent color for the whole panel on every theme (including dark,
+                    // where c.surface reads as a washed-out/lighter shade against c.bg).
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(c.surface)
+                            .background(c.bg)
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1066,12 +1279,12 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                             expandedNotificationIds = if (isExpanded) expandedNotificationIds - notif.id else expandedNotificationIds + notif.id
                                         }
                                         .background(if (!notif.isRead) c.accent.copy(alpha = 0.07f) else Color.Transparent)
-                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.Top
                                 ) {
-                                    Surface(shape = CircleShape, color = notifIconColor.copy(alpha = 0.15f), modifier = Modifier.size(38.dp)) {
+                                    Surface(shape = CircleShape, color = notifIconColor.copy(alpha = 0.15f), modifier = Modifier.size(34.dp)) {
                                         Box(contentAlignment = Alignment.Center) {
-                                            Icon(notifIcon, contentDescription = null, tint = notifIconColor, modifier = Modifier.size(19.dp))
+                                            Icon(notifIcon, contentDescription = null, tint = notifIconColor, modifier = Modifier.size(17.dp))
                                         }
                                     }
                                     Spacer(Modifier.width(10.dp))
@@ -1093,9 +1306,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                             Spacer(Modifier.width(6.dp))
                                             Text(relativeTimeText(notif.timestamp), fontSize = 10.sp, color = c.textSecondary)
                                         }
-                                        Spacer(Modifier.height(2.dp))
                                         Text(notif.message, fontSize = 12.sp, color = c.textSecondary, maxLines = if (isExpanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
-                                        Spacer(Modifier.height(2.dp))
                                         Text(
                                             SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(notif.timestamp)),
                                             fontSize = 10.sp, color = c.textTertiary
@@ -10495,15 +10706,16 @@ fun RestoreBackupDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = null,
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // ── Icon header ────────────────────────────────────────────
+    // Switched from a plain AlertDialog (whose auto-sized width made the "Cancel" +
+    // "Browse File" action row wrap its text on narrower screens) to the app's standard
+    // AdaptiveEditorDialog frame — same fixed-width card + footer action row used by every
+    // other redesigned dialog, which gives the buttons a predictable width and never wraps.
+    AdaptiveEditorDialog(
+        title = "Import Backup",
+        onDismiss = onDismiss,
+        content = {
+            // ── Icon header ────────────────────────────────────────────
+            Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(
                     modifier = Modifier
                         .size(64.dp)
@@ -10518,96 +10730,79 @@ fun RestoreBackupDialog(
                         modifier = Modifier.size(32.dp)
                     )
                 }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "Import Backup",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = c.text
-                )
+                Spacer(Modifier.height(10.dp))
                 Text(
                     "Restore from a CSV or JSON backup file",
                     fontSize = 12.sp,
-                    color = c.textSecondary,
-                    modifier = Modifier.padding(top = 2.dp)
+                    color = c.textSecondary
                 )
+            }
 
-                Spacer(Modifier.height(14.dp))
+            HorizontalDivider(color = c.text.copy(0.08f))
 
-                // ── What gets restored ─────────────────────────────────────
-                Text(
-                    "WHAT GETS RESTORED",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = c.text.copy(0.4f),
-                    modifier = Modifier.align(Alignment.Start)
-                )
-                Spacer(Modifier.height(10.dp))
-                listOf(
-                    Triple(Icons.Default.AccountBalanceWallet,        "Accounts",     "All wallets recreated with their types"),
-                    Triple(Icons.AutoMirrored.Filled.ReceiptLong,     "Transactions", "All records with date, amount, category"),
-                    Triple(Icons.Default.PieChart,                    "Budgets",      "Monthly limits and expected income targets"),
-                    Triple(Icons.Default.MergeType,                   "Existing Data","Preserved — only missing records are added")
-                ).forEachIndexed { idx, (icon, title, sub) ->
-                    val tint = if (idx == 3) c.expense else c.accent
-                    val bg   = if (idx == 3) c.expense.copy(0.1f) else c.accent.copy(0.08f)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 5.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .background(bg, RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text)
-                            Text(sub,   fontSize = 11.sp, color = c.textSecondary)
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(14.dp))
-                HorizontalDivider(color = c.text.copy(0.08f))
-                Spacer(Modifier.height(16.dp))
-
-                // ── Action buttons ────────────────────────────────────────
+            // ── What gets restored ─────────────────────────────────────
+            Text(
+                "WHAT GETS RESTORED",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = c.text.copy(0.4f)
+            )
+            listOf(
+                Triple(Icons.Default.AccountBalanceWallet,        "Accounts",     "All wallets recreated with their types"),
+                Triple(Icons.AutoMirrored.Filled.ReceiptLong,     "Transactions", "All records with date, amount, category"),
+                Triple(Icons.Default.PieChart,                    "Budgets",      "Monthly limits and expected income targets"),
+                Triple(Icons.Default.Rule,                        "Category Rules","Merchant → category rules too, if it's a JSON backup"),
+                Triple(Icons.Default.MergeType,                   "Existing Data","Preserved — only missing records are added")
+            ).forEachIndexed { idx, (icon, title, sub) ->
+                val tint = if (idx == 4) c.expense else c.accent
+                val bg   = if (idx == 4) c.expense.copy(0.1f) else c.accent.copy(0.08f)
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text.copy(0.7f)),
-                        border = BorderStroke(1.dp, c.text.copy(0.15f))
-                    ) { Text("Cancel") }
-
-                    Button(
-                        onClick = { openDocLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "application/json", "*/*")) },
-                        modifier = Modifier.weight(2f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = c.expense,
-                            contentColor = c.text
-                        ),
-                        shape = RoundedCornerShape(10.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .background(bg, RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Browse File", fontWeight = FontWeight.Bold)
+                        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text)
+                        Text(sub,   fontSize = 11.sp, color = c.textSecondary)
                     }
                 }
             }
         },
-        confirmButton = {},
-        containerColor = c.surface,
-        shape = RoundedCornerShape(20.dp)
+        actions = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = c.text.copy(0.7f)),
+                    border = BorderStroke(1.dp, c.text.copy(0.15f))
+                ) { Text("Cancel") }
+
+                Button(
+                    onClick = { openDocLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "application/json", "*/*")) },
+                    modifier = Modifier.weight(2f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = c.expense,
+                        contentColor = c.text
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Browse File", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
     )
 }
 
@@ -11105,12 +11300,27 @@ fun AccountCenterSettingsDialog(
 
             // ── Account visibility ─────────────────────────────────
             Text("ACCOUNT VISIBILITY", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.textSecondary, letterSpacing = 0.8.sp)
+            // Wrapped in its own tightly-spaced Column — otherwise each account row was a
+            // direct child of the dialog's content Column and inherited its 12dp spacedBy,
+            // which looked like way too much air between accounts.
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             accounts.forEach { acc ->
                 val visible = !hiddenAccountIds.contains(acc.id)
+                // Each account's real type color (matching the color used everywhere else
+                // in the app for this account type), just dimmed when hidden — instead of
+                // every account looking identical (generic accent/textTertiary tint).
+                val acctColor = when (acc.type) {
+                    "CASH" -> c.income
+                    "BANK" -> Color(0xFF3B82F6)
+                    "CREDIT_CARD" -> c.expense
+                    "DEBIT_CARD" -> Color(0xFF0EA5E9)
+                    "WALLET" -> Color(0xFFFF9800)
+                    else -> c.accent
+                }
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(shape = CircleShape, color = (if (visible) c.accent else c.textTertiary).copy(alpha = 0.15f), modifier = Modifier.size(34.dp)) {
+                    Surface(shape = CircleShape, color = acctColor.copy(alpha = if (visible) 0.15f else 0.08f), modifier = Modifier.size(34.dp)) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(walletIconFor(acc.name, acc.type), contentDescription = null, tint = if (visible) c.accent else c.textTertiary, modifier = Modifier.size(16.dp))
+                            Icon(walletIconFor(acc.name, acc.type), contentDescription = null, tint = acctColor.copy(alpha = if (visible) 1f else 0.4f), modifier = Modifier.size(16.dp))
                         }
                     }
                     Spacer(Modifier.width(10.dp))
@@ -11122,6 +11332,7 @@ fun AccountCenterSettingsDialog(
                         colors = switchColors
                     )
                 }
+            }
             }
             HorizontalDivider(color = c.divider)
 

@@ -192,6 +192,73 @@ class SmsParserTest {
         assertEquals("INCOME", result.type)
     }
 
+    @Test fun `Zomato Money wallet credit is not excluded by balance-expiry text`() {
+        // Real-world gap: "This balance expires on ..." is routine T&C text on wallet
+        // top-up SMS, not a "your balance is about to expire" reminder — it was being
+        // matched by the "balance expire" hard-exclusion and silently dropped entirely.
+        val result = SmsParser.parseOffline(
+            "Rs. 7.14 added to Zomato Money (on mobile ending with **1234). This balance expires on 21 Aug 2026.",
+            "CX-ZOMATO-S"
+        )
+        assertNotNull(result)
+        assertEquals(7.14, result!!.amount, 0.01)
+        assertEquals("INCOME", result.type)
+        assertEquals("ZOMATO_WALLET", result.accountRef)
+    }
+
+    @Test fun `NeuCoins credit still parses after merging into the unified wallet list`() {
+        val result = SmsParser.parseOffline(
+            "100 NeuCoins credited to your account for your recent purchase. Check details on the Tata Neu app.",
+            "VM-TATAN-S"
+        )
+        assertNotNull(result)
+        assertEquals(100.0, result!!.amount, 0.01)
+        assertEquals("INCOME", result.type)
+        assertEquals("NEUCOINS_WALLET", result.accountRef)
+        assertEquals(ExpenseCategory.COINS, result.category)
+    }
+
+    @Test fun `Apay wallet credit still parses after merging into the unified wallet list`() {
+        val result = SmsParser.parseOffline(
+            "Rs.50.00 credited to your Apay Wallet.",
+            "VM-APAYX-S"
+        )
+        assertNotNull(result)
+        assertEquals(50.0, result!!.amount, 0.01)
+        assertEquals("INCOME", result.type)
+        assertEquals("APAY_WALLET", result.accountRef)
+    }
+
+    @Test fun `Unlisted wallet is still recognized via the generic added-to fallback`() {
+        // No curated INDIA_WALLETS entry exists for "Swiggy Money" — this must still create
+        // a real, correctly-named wallet account via the generic fallback instead of being
+        // silently dropped, the same class of bug that affected Zomato Money.
+        val result = SmsParser.parseOffline(
+            "Rs. 25.00 added to Swiggy Money (on mobile ending with **9876).",
+            "VM-SWIGG-S"
+        )
+        assertNotNull(result)
+        assertEquals(25.0, result!!.amount, 0.01)
+        assertEquals("INCOME", result.type)
+        assertEquals("GENERIC_WALLET:Swiggy Money", result.accountRef)
+        assertEquals("Swiggy Money", SmsParser.walletDisplayNameForRef(result.accountRef!!))
+    }
+
+    @Test fun `Generic wallet fallback also handles 'Added X to Name' word order`() {
+        // Real-world gap: Swiggy phrases it "Added Rs.X to Name" (verb first, amount in
+        // between) rather than Zomato's "Rs.X added to Name" (amount first) — the fallback
+        // was anchored on the literal substring "added to", which only the Zomato ordering
+        // contains contiguously, so this word order was silently excluded entirely.
+        val result = SmsParser.parseOffline(
+            "Added Rs. 25.00  to Swiggy Money (on mobile ending with **9876).",
+            "AC-SWIGG-S"
+        )
+        assertNotNull(result)
+        assertEquals(25.0, result!!.amount, 0.01)
+        assertEquals("INCOME", result.type)
+        assertEquals("GENERIC_WALLET:Swiggy Money", result.accountRef)
+    }
+
     // ─── Credit Card: Expense ─────────────────────────────────────────────────
 
     @Test fun `SBI credit card spend parses merchant and amount`() {

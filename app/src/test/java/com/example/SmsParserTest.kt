@@ -204,6 +204,44 @@ class SmsParserTest {
         assertEquals(7.14, result!!.amount, 0.01)
         assertEquals("INCOME", result.type)
         assertEquals("ZOMATO_WALLET", result.accountRef)
+        // The expiry date ("21 Aug 2026") must NOT be picked up as the transaction date —
+        // it's unrelated T&C text, not when the credit actually happened.
+        assertNull(result.parsedTimestamp)
+    }
+
+    @Test fun `Zomato Money expiry date does not override the real SMS-received time`() {
+        // Regression: the body has no genuine transaction date, only a future "balance
+        // expires on 21 Aug 2026" date — parsedTimestamp must stay null so the caller falls
+        // back to the actual SMS-received timestamp instead of using the expiry date.
+        val receivedTime = 1_700_000_000_000L // an arbitrary fixed reference timestamp
+        val result = SmsParser.parseOffline(
+            "Rs. 7.14 added to Zomato Money (on mobile ending with **5452). This balance expires on 21 Aug 2026.\n\n" +
+                "View balance: http://zoma.to/ZOMATO/ap/xqzv/zomatomoney -ZOMATO",
+            "CX-ZOMATO-S",
+            receivedTime
+        )
+        assertNotNull(result)
+        assertEquals("ZOMATO_WALLET", result!!.accountRef)
+        assertNull(result.parsedTimestamp)
+    }
+
+    @Test fun `Zomato Money payment captures the updated wallet balance for balance sync`() {
+        // Real-world gap: a payment OUT of the wallet ("Payment of Rs.X ... is successful.
+        // Updated balance: Rs.Y.") was correctly parsed as an EXPENSE transaction, but the
+        // trailing "Updated balance" was never captured — parseIndianWallet had no equivalent
+        // of the main pipeline's trailing avl-balance extraction, so the wallet's tracked
+        // balance was never synced to the SMS-reported figure.
+        val result = SmsParser.parseOffline(
+            "Payment of Rs. 7.85 from Zomato Money Balance is successful. Updated balance: Rs. 0.00. " +
+                "Contact zomatomoneysupport@zomato.com for queries.",
+            "CX-ZOMATO-S"
+        )
+        assertNotNull(result)
+        assertEquals(7.85, result!!.amount, 0.01)
+        assertEquals("EXPENSE", result.type)
+        assertEquals("ZOMATO_WALLET", result.accountRef)
+        assertNotNull(result.availableBalance)
+        assertEquals(0.0, result.availableBalance!!, 0.01)
     }
 
     @Test fun `NeuCoins credit still parses after merging into the unified wallet list`() {
@@ -257,6 +295,69 @@ class SmsParserTest {
         assertEquals(25.0, result!!.amount, 0.01)
         assertEquals("INCOME", result.type)
         assertEquals("GENERIC_WALLET:Swiggy Money", result.accountRef)
+    }
+
+    @Test fun `Generic wallet fallback handles rupee symbol amount-first format`() {
+        // BookMyShow Wallet is not in the curated list — different currency symbol (₹
+        // instead of Rs./INR) and a "Cash" suffix instead of "Money"/"Wallet".
+        val result = SmsParser.parseOffline(
+            "₹40 added to BookMyShow Wallet. Balance: ₹190.",
+            "VM-BMSHOW-S"
+        )
+        assertNotNull(result)
+        assertEquals(40.0, result!!.amount, 0.01)
+        assertEquals("INCOME", result.type)
+        assertEquals("GENERIC_WALLET:BookMyShow Wallet", result.accountRef)
+    }
+
+    @Test fun `Generic wallet fallback handles INR verb-first format with trailing text`() {
+        val result = SmsParser.parseOffline(
+            "Added INR 60 to PVR Cash successfully. Enjoy your movie!",
+            "AX-PVR-T"
+        )
+        assertNotNull(result)
+        assertEquals(60.0, result!!.amount, 0.01)
+        assertEquals("INCOME", result.type)
+        assertEquals("GENERIC_WALLET:PVR Cash", result.accountRef)
+    }
+
+    @Test fun `Generic wallet fallback skips possessive 'your' before the wallet name`() {
+        // Some wallets phrase it "added to your Name" instead of bare "added to Name" — the
+        // lowercase "your" must not stop the capital-letter name capture from finding the
+        // actual wallet brand right after it. Uses "MakeMyTrip Wallet" (not in the curated
+        // INDIA_WALLETS list) so this genuinely exercises the generic fallback rather than
+        // being intercepted earlier by a curated entry (e.g. "Ola Money" is curated and would
+        // never reach this fallback at all).
+        val result = SmsParser.parseOffline(
+            "Rs.30 added to your MakeMyTrip Wallet account on 24 Jul.",
+            "JD-MMT-S"
+        )
+        assertNotNull(result)
+        assertEquals(30.0, result!!.amount, 0.01)
+        assertEquals("INCOME", result.type)
+        assertEquals("GENERIC_WALLET:MakeMyTrip Wallet", result.accountRef)
+    }
+
+    @Test fun `Generic wallet fallback handles a three-word wallet name`() {
+        val result = SmsParser.parseOffline(
+            "Rs.15 added to Big Bazaar Cash (Balance Rs.115).",
+            "BK-BBAZAAR-S"
+        )
+        assertNotNull(result)
+        assertEquals(15.0, result!!.amount, 0.01)
+        assertEquals("INCOME", result.type)
+        assertEquals("GENERIC_WALLET:Big Bazaar Cash", result.accountRef)
+    }
+
+    @Test fun `Generic wallet fallback handles format with no parenthetical balance text`() {
+        val result = SmsParser.parseOffline(
+            "Rs.20 added to Dominos Wallet on 24 Jul 2026.",
+            "AX-DOMINO-S"
+        )
+        assertNotNull(result)
+        assertEquals(20.0, result!!.amount, 0.01)
+        assertEquals("INCOME", result.type)
+        assertEquals("GENERIC_WALLET:Dominos Wallet", result.accountRef)
     }
 
     // ─── Credit Card: Expense ─────────────────────────────────────────────────

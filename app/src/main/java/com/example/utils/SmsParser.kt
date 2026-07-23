@@ -467,13 +467,23 @@ object SmsParser {
             else                                                   -> ExpenseCategory.SHOPPING
         }
 
+        // Extract appended wallet balance so the same "Balance Sync" snapshot mechanism used
+        // for regular bank transactions also applies to wallets — e.g. "Payment of Rs.7.85
+        // from Zomato Money Balance is successful. Updated balance: Rs. 0.00." must update the
+        // wallet's tracked balance to 0.00, not just record the Rs.7.85 payment on its own.
+        val walletBalance = Pattern.compile(
+            "(?:avl|avail\\.?|available|updated|current|remaining)?\\s*\\bbal(?:ance)?\\b\\s*(?:is)?\\s*:?\\s*(?:inr|rs\\.?|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)",
+            Pattern.CASE_INSENSITIVE
+        ).let { pat -> val m = pat.matcher(cleanBody); if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null }
+
         return SmsParsingResult(
             title = title,
             amount = amount,
             category = category,
             type = type,
             accountRef = wallet.ref,
-            parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp)
+            parsedTimestamp = extractTimestampFromSms(cleanBody, smsTimestamp),
+            availableBalance = walletBalance
         )
     }
 
@@ -505,7 +515,9 @@ object SmsParser {
         if (amount <= 0.0) return null
         // Case-SENSITIVE on purpose — the capital-letter requirement is what keeps this from
         // matching generic lowercase phrasing that isn't actually naming a wallet/brand.
-        val nameMatcher = Pattern.compile("\\bto\\s+([A-Z][a-zA-Z]+(?:\\s+[A-Z][a-zA-Z]+){0,2})\\b").matcher(cleanBody)
+        // An optional lowercase "your"/"the" filler word is skipped (not captured) since some
+        // wallets phrase it "added to your Ola Money account" rather than bare "to Ola Money".
+        val nameMatcher = Pattern.compile("\\bto\\s+(?:your\\s+|the\\s+)?([A-Z][a-zA-Z]+(?:\\s+[A-Z][a-zA-Z]+){0,2})\\b").matcher(cleanBody)
         if (!nameMatcher.find()) return null
         val walletName = (nameMatcher.group(1) ?: "").trim()
         if (walletName.length < 3) return null
@@ -692,6 +704,20 @@ object SmsParser {
 
     private fun extractTimestampFromSms(body: String, referenceTimestamp: Long? = null): Long? {
         val lower = body.lowercase()
+
+        // Some SMS mention an unrelated future date alongside the real transaction — most
+        // commonly wallet "balance expiry" T&C text ("This balance expires on 21 Aug 2026.")
+        // that has nothing to do with when the credit actually happened. Skip any date match
+        // whose nearby preceding context names it as an expiry/validity date rather than the
+        // actual transaction date, so those messages fall through (return null) and the
+        // caller uses the real SMS-received time instead.
+        fun isExpiryContextDate(matchStart: Int): Boolean {
+            val ctxStart = maxOf(0, matchStart - 30)
+            val ctx = body.substring(ctxStart, matchStart).lowercase()
+            return ctx.contains("expir") || ctx.contains("valid till") || ctx.contains("valid until") ||
+                ctx.contains("valid upto") || ctx.contains("valid up to")
+        }
+
         // Match formats DD-MM-YYYY, DD/MM/YYYY, DD-MM-YY, DD/MM/YY
         val datePattern = Pattern.compile("\\b(\\d{1,2})[-/](\\d{1,2})[-/](\\d{2,4})\\b")
         val matcher = datePattern.matcher(body)
@@ -700,16 +726,22 @@ object SmsParser {
         var month = -1
         var year = -1
         
-        if (matcher.find()) {
+        var matchedNumericDate = false
+        while (matcher.find()) {
+            if (isExpiryContextDate(matcher.start())) continue
             day = matcher.group(1)?.toIntOrNull() ?: -1
             month = matcher.group(2)?.toIntOrNull() ?: -1
             val rawYear = matcher.group(3)?.toIntOrNull() ?: -1
             year = if (rawYear in 0..99) rawYear + 2000 else rawYear
-        } else {
+            matchedNumericDate = true
+            break
+        }
+        if (!matchedNumericDate) {
             // Match formats DD-MMM-YYYY or DD-MMM-YY e.g. 29-May-2026 or 15-May-26
             val textMonthPattern = Pattern.compile("\\b(\\d{1,2})[-/\\s]?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[-/\\s]?(\\d{2,4})\\b", Pattern.CASE_INSENSITIVE)
             val textMatcher = textMonthPattern.matcher(body)
-            if (textMatcher.find()) {
+            while (textMatcher.find()) {
+                if (isExpiryContextDate(textMatcher.start())) continue
                 day = textMatcher.group(1)?.toIntOrNull() ?: -1
                 val mStr = textMatcher.group(2)?.lowercase() ?: ""
                 month = when (mStr) {
@@ -719,6 +751,7 @@ object SmsParser {
                 }
                 val rawYear = textMatcher.group(3)?.toIntOrNull() ?: -1
                 year = if (rawYear in 0..99) rawYear + 2000 else rawYear
+                break
             }
         }
         

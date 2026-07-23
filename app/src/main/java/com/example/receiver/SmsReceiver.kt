@@ -249,6 +249,38 @@ class SmsReceiver : BroadcastReceiver() {
                                 }
                             }
 
+                            // If this SMS ALSO reported an appended available balance (e.g.
+                            // "Avl Bal Rs.X", "Bal: INR X") alongside the regular transaction,
+                            // create/refresh a Balance Sync snapshot too — mirrors the bulk
+                            // SMS-scan import path (FinanceViewModel), which already did this;
+                            // this live single-SMS receiver previously only created a Balance
+                            // Sync for PURE balance-notification SMS (isBalanceUpdate == true),
+                            // silently skipping this for every live-received regular
+                            // transaction that happened to also report its resulting balance.
+                            if (balanceSyncEnabled && parsed.availableBalance != null && linkedAcc != null && linkedAcc.type != "CREDIT_CARD") {
+                                val bsTs = targetTime + 1L
+                                val existingSync = dao.getExactBalanceUpdate(linkedAcc.name, bsTs)
+                                val shouldInsert = if (existingSync != null) {
+                                    val sameValue = Math.abs(existingSync.amount - parsed.availableBalance) < 0.01
+                                    if (!sameValue) dao.deleteTransactionById(existingSync.id)
+                                    !sameValue
+                                } else true
+                                if (shouldInsert) {
+                                    val snapTx = TransactionEntry(
+                                        title = "Balance Sync",
+                                        amount = parsed.availableBalance,
+                                        category = "",
+                                        type = "BALANCE_UPDATE",
+                                        smsSender = sender,
+                                        smsBody = body,
+                                        timestamp = bsTs,
+                                        note = "[Acc: ${linkedAcc.name}]"
+                                    )
+                                    dao.insertTransaction(snapTx)
+                                    saveReceiverFingerprint(context, "Balance Sync|${parsed.availableBalance}|BALANCE_UPDATE|$bsTs")
+                                }
+                            }
+
                             withContext(Dispatchers.Main) {
                                 val direction = if (parsed.type == "INCOME") "Income" else "Expense"
                                 Toast.makeText(

@@ -430,7 +430,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     var showProUpgradeDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
     var showNotificationsPanel by remember { mutableStateOf(false) }
-    var selectedNotification by remember { mutableStateOf<com.example.viewmodel.AppNotification?>(null) }
+    var expandedNotificationIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
 
     val toastMessage = viewModel.toastMessage
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
@@ -1014,11 +1014,16 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                 tonalElevation = 4.dp
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Header
+                    // Header — uses the SAME surface color as the body (previously the header
+                    // explicitly used c.bg while the body used c.surface; on the default
+                    // light/dark themes c.bg has a distinct blue-gray tint vs c.surface's
+                    // neutral white/near-black, which made the header look like a separate
+                    // "light blue" bar sitting on top of the body. One consistent color reads
+                    // correctly across every theme, including Gold/Jade/Sand.
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(c.bg)
+                            .background(c.surface)
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1049,40 +1054,58 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                     } else {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
                             items(notifications, key = { it.id }) { notif ->
-                                val df = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
+                                val isExpanded = notif.id in expandedNotificationIds
+                                val (notifIcon, notifIconColor) = notificationIconFor(notif.title)
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { selectedNotification = notif }
-                                        .background(if (!notif.isRead) c.accent.copy(alpha = 0.10f) else Color.Transparent)
-                                        .then(
-                                            if (!notif.isRead) Modifier.drawWithContent {
-                                                drawContent()
-                                                drawRect(color = androidx.compose.ui.graphics.Color(0xFF2196F3), size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height))
-                                            } else Modifier
-                                        )
-                                        .padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+                                        // Expand the message IN PLACE instead of opening a
+                                        // second popup on top of this panel — the panel stays
+                                        // open the whole time.
+                                        .clickable {
+                                            expandedNotificationIds = if (isExpanded) expandedNotificationIds - notif.id else expandedNotificationIds + notif.id
+                                        }
+                                        .background(if (!notif.isRead) c.accent.copy(alpha = 0.07f) else Color.Transparent)
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.Top
                                 ) {
+                                    Surface(shape = CircleShape, color = notifIconColor.copy(alpha = 0.15f), modifier = Modifier.size(38.dp)) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(notifIcon, contentDescription = null, tint = notifIconColor, modifier = Modifier.size(19.dp))
+                                        }
+                                    }
+                                    Spacer(Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(notif.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (!notif.isRead) c.accent else c.text)
+                                            Text(
+                                                notif.title,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = c.text,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false)
+                                            )
                                             if (!notif.isRead) {
-                                                Spacer(Modifier.width(6.dp))
+                                                Spacer(Modifier.width(5.dp))
                                                 Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(c.accent))
                                             }
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(relativeTimeText(notif.timestamp), fontSize = 10.sp, color = c.textSecondary)
                                         }
-                                        Text(notif.message, fontSize = 12.sp, color = c.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                        Text(df.format(Date(notif.timestamp)), fontSize = 10.sp, color = c.textSecondary, modifier = Modifier.padding(top = 2.dp))
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(notif.message, fontSize = 12.sp, color = c.textSecondary, maxLines = if (isExpanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(notif.timestamp)),
+                                            fontSize = 10.sp, color = c.textTertiary
+                                        )
                                     }
-                                    IconButton(onClick = { viewModel.deleteNotification(notif.id) }, modifier = Modifier.size(32.dp)) {
-                                        Icon(Icons.Default.Close, contentDescription = "Delete", tint = c.textSecondary, modifier = Modifier.size(14.dp))
+                                    IconButton(onClick = { viewModel.deleteNotification(notif.id) }, modifier = Modifier.padding(start = 4.dp).size(28.dp)) {
+                                        Icon(Icons.Default.Close, contentDescription = "Delete", tint = c.textTertiary, modifier = Modifier.size(13.dp))
                                     }
                                 }
-                                HorizontalDivider(
-                                    color = if (!notif.isRead) c.accent.copy(alpha = 0.15f) else c.divider,
-                                    thickness = 0.5.dp
-                                )
+                                HorizontalDivider(color = c.divider, thickness = 0.5.dp, modifier = Modifier.padding(start = 62.dp))
                             }
                         }
                     }
@@ -1090,34 +1113,6 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             }
         } // close outer Box
         }
-    }
-
-    // ── Notification detail popup ───────────────────────────────────────────
-    selectedNotification?.let { notif ->
-        val df = SimpleDateFormat("dd MMM yyyy, hh:mm:ss a", Locale.getDefault())
-        AlertDialog(
-            onDismissRequest = { selectedNotification = null },
-            containerColor = c.cardBg,
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Info, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(notif.title, fontWeight = FontWeight.Bold, color = c.text, fontSize = 15.sp)
-                }
-            },
-            text = {
-                Column {
-                    Text(notif.message, color = c.text, fontSize = 14.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text(df.format(Date(notif.timestamp)), fontSize = 11.sp, color = c.textSecondary)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { selectedNotification = null }) {
-                    Text("OK", color = c.accent)
-                }
-            }
-        )
     }
 
 }
@@ -3404,7 +3399,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                 Spacer(Modifier.height(1.dp))
                                 Text("Period: $periodLabelA", fontSize = 11.sp, color = c.textSecondary)
                             }
-                            IconButton(onClick = { categoryDetailItem = null; expandedNotesTxId = null }, modifier = Modifier.padding(end = 3.dp).size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
+                            IconButton(onClick = { categoryDetailItem = null; expandedNotesTxId = null }, modifier = Modifier.padding(end = 5.dp).size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
                                 Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
                             }
                         }
@@ -4601,6 +4596,9 @@ val suitableIconsList = listOf(
     "vacation" to Icons.Default.BeachAccess,
     "beauty" to Icons.Default.Spa,
     "cab" to Icons.Default.LocalTaxi,
+    "loan_emi" to Icons.Default.CreditScore,
+    "lend" to Icons.Default.CallMade,
+    "borrowed_money" to Icons.Default.CallReceived,
     "others" to Icons.Default.Category
 )
 
@@ -4667,6 +4665,9 @@ fun iconLabel(key: String): String = when (key) {
     "vacation" -> "Vacation"
     "beauty" -> "Beauty"
     "cab" -> "Cab"
+    "loan_emi" -> "Loan/EMI"
+    "lend" -> "Lend"
+    "borrowed_money" -> "Borrowed"
     "others" -> "Others"
     else -> key.split("_").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }.take(9)
 }
@@ -4750,7 +4751,12 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     }
     val budgetCategoryNames = activeBudgets.map { it.category.lowercase() }.toSet()
 
-    // Initialize / reset order: budget-set categories first (alpha), then others (alpha)
+    // Initialize / reset order: budget-set categories first (alpha), then others (alpha).
+    // Runs synchronously during composition (not a LaunchedEffect) so the very first frame
+    // already has the correct order — deferring this to an effect would flash an empty/
+    // stale list for one frame every time a category is added/renamed. This is safe now
+    // that the underlying spurious-rename bug (which used to make a category's name drift
+    // every time its color was edited, repeatedly re-triggering this block) is fixed.
     if (categoryOrderKeys.isEmpty() ||
         categoryOrderKeys.any { key -> baseCategories.none { it.name == key } } ||
         baseCategories.any { cat -> cat.name !in categoryOrderKeys }) {
@@ -4770,6 +4776,23 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
             val withBudget = baseCategories.filter { budgetCategoryNames.contains(it.name.lowercase()) }.sortedBy { it.displayName }
             val withoutBudget = baseCategories.filter { !budgetCategoryNames.contains(it.name.lowercase()) }.sortedBy { it.displayName }
             (withBudget + withoutBudget).map { it.name }
+        }
+    }
+
+    // Keep the invariant "all budgeted keys form a contiguous block before all unbudgeted
+    // keys" in sync with the CURRENT budget assignments. Without this, a category that just
+    // got a budget assigned (or lost one) stays wherever it was left in the flat order list
+    // — e.g. it could still be sitting deep in the unbudgeted portion from when it was first
+    // merged in alphabetically — and only jumps to the Budgeted section visually (since that
+    // split is recomputed fresh every time from activeBudgets), landing in a seemingly random
+    // position relative to the OTHER already-budgeted categories. This preserves each
+    // category's relative order within its own group — only the group boundary moves — and
+    // is a no-op once already partitioned correctly, so it's safe to run every recomposition.
+    if (categoryOrderKeys.isNotEmpty()) {
+        val repartitioned = categoryOrderKeys.filter { budgetCategoryNames.contains(it.lowercase()) } +
+            categoryOrderKeys.filter { !budgetCategoryNames.contains(it.lowercase()) }
+        if (repartitioned != categoryOrderKeys) {
+            categoryOrderKeys = repartitioned
         }
     }
 
@@ -5466,7 +5489,8 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 newName = cleanName,
                                 iconName = selectedIconName,
                                 colorHex = selectedColorHex,
-                                type = cat.type
+                                type = cat.type,
+                                previousDisplayName = cat.displayName
                             )
                         } else {
                             viewModel.customizeStandardCategory(
@@ -5724,7 +5748,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 Spacer(Modifier.height(1.dp))
                                 Text("Period: $monthLabel", fontSize = 11.sp, color = c.textSecondary)
                             }
-                            IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.padding(end = 3.dp).size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
+                            IconButton(onClick = { showBudgetCategoryDetailFor = null }, modifier = Modifier.padding(end = 5.dp).size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))) {
                                 Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
                             }
                         }
@@ -5799,9 +5823,28 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         if (limitDetail > 0) {
                             Surface(color = if (c.isBorderless) Color.Transparent else c.cardBg, shape = RoundedCornerShape(14.dp), border = if (!c.isBorderless) BorderStroke(1.dp, c.border) else null, modifier = Modifier.fillMaxWidth()) {
                                 Column(modifier = Modifier.padding(if (c.isBorderless) PaddingValues(vertical = 8.dp) else PaddingValues(16.dp)), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Icon(Icons.Default.CalendarToday, null, tint = c.accent, modifier = Modifier.size(14.dp))
-                                        Text("Daily Breakdown (Day $dayOfMonth of $daysInMonth)", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
+                                    // Day-of-month progress — how far through the month we
+                                    // are (time elapsed), distinct from the spend-vs-budget
+                                    // bar above so it can't be confused with it.
+                                    val monthProgressFraction = (dayOfMonth.toFloat() / daysInMonth.toFloat()).coerceIn(0f, 1f)
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Icon(Icons.Default.CalendarToday, null, tint = c.accent, modifier = Modifier.size(14.dp))
+                                            Text("Daily Breakdown (Day $dayOfMonth of $daysInMonth)", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
+                                        }
+                                        Text(
+                                            "${String.format(Locale.getDefault(), "%.0f", monthProgressFraction * 100)}%",
+                                            fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3B82F6)
+                                        )
+                                    }
+                                    Box(modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(c.divider)) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth(monthProgressFraction)
+                                                .fillMaxHeight()
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(Color(0xFF3B82F6))
+                                        )
                                     }
                                     HorizontalDivider(color = c.divider)
                                     // 3-column: avg spent / daily target / left per day — equal, centered
@@ -5815,7 +5858,15 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                             Text("daily target", fontSize = 10.sp, color = c.textSecondary, textAlign = TextAlign.Center)
                                         }
                                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                                            Text("₹${amtFmt.format(dailyAllowanceLeft.coerceAtLeast(0.0))}", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = if (dailyAllowanceLeft < 0) c.expense else c.income, textAlign = TextAlign.Center)
+                                            // 3-tier color: red once nothing is left, dark yellow while
+                                            // what's left is still below the daily target (cutting it
+                                            // close), green when comfortably at/above target.
+                                            val leftPerDayColor = when {
+                                                dailyAllowanceLeft <= 0 -> c.expense
+                                                dailyAllowanceLeft < expectedDailyBudget -> Color(0xFFB8860B)
+                                                else -> c.income
+                                            }
+                                            Text("₹${amtFmt.format(dailyAllowanceLeft.coerceAtLeast(0.0))}", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = leftPerDayColor, textAlign = TextAlign.Center)
                                             Text(if (dailyAllowanceLeft < 0) "over budget" else "left/day", fontSize = 10.sp, color = c.textSecondary, textAlign = TextAlign.Center)
                                         }
                                     }
@@ -6914,7 +6965,6 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
     val smsScanMonthsBack by viewModel.smsScanMonthsBack.collectAsStateWithLifecycle()
     val isSmsParsing by viewModel.isSmsParsing.collectAsStateWithLifecycle()
     val isWalletPfScanning by viewModel.isWalletPfScanning.collectAsStateWithLifecycle()
-    val enableBalanceSync by viewModel.enableBalanceSync.collectAsStateWithLifecycle()
     var hasReadSmsPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED)
     }
@@ -7054,14 +7104,14 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                             val selected = smsScanMonthsBack == months
                             Surface(
                                 onClick = { viewModel.setSmsScanMonthsBack(months) },
-                                color = if (selected) c.accent.copy(alpha = 0.15f) else c.border,
+                                color = if (selected) c.accent.copy(alpha = 0.15f) else c.surfaceVariant,
                                 shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, if (selected) c.accent else Color(0xFF2D3748)),
+                                border = BorderStroke(1.dp, if (selected) c.accent else c.border),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 ShrinkingSingleLineText(
                                     text = label,
-                                    color = if (selected) c.accent else c.textSecondary,
+                                    color = if (selected) c.accent else c.text,
                                     initialFontSize = 11f,
                                     minFontSize = 7f,
                                     modifier = Modifier
@@ -7074,81 +7124,43 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-                    var showBalSyncInfo by remember { mutableStateOf(false) }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Button(
-                            onClick = {
-                                if (hasReadSmsPermission) {
-                                    viewModel.scanDeviceSmsInbox(context, smsScanMonthsBack)
-                                } else {
-                                    requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
-                                }
-                            },
-                            enabled = !isSmsParsing,
-                            colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .testTag("scan_device_sms_button")
-                        ) {
-                            if (isSmsParsing) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    color = c.bg,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                ShrinkingSingleLineText("Scanning…", c.bg, 14f, 9f, Modifier.weight(1f), FontWeight.Bold, TextAlign.Center)
+                    Button(
+                        onClick = {
+                            if (hasReadSmsPermission) {
+                                viewModel.scanDeviceSmsInbox(context, smsScanMonthsBack)
                             } else {
-                                ShrinkingSingleLineText(
-                                    text = if (hasReadSmsPermission) "Scan Inbox" else "Enable Auto-Import",
-                                    color = c.bg,
-                                    initialFontSize = 14f,
-                                    minFontSize = 9f,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    fontWeight = FontWeight.Bold,
-                                    textAlign = TextAlign.Center
-                                )
+                                requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
                             }
-                        }
-                        // Compact Bal Sync column — label + info icon above scaled switch
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.width(68.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Bal Sync", fontSize = 9.sp, color = c.textSecondary, maxLines = 1)
-                                IconButton(onClick = { showBalSyncInfo = true }, modifier = Modifier.size(16.dp)) {
-                                    Icon(Icons.Default.Info, contentDescription = "Bal Sync info", tint = c.textSecondary, modifier = Modifier.size(10.dp))
-                                }
-                            }
-                            Switch(
-                                checked = enableBalanceSync,
-                                onCheckedChange = { viewModel.setEnableBalanceSync(it) },
-                                modifier = Modifier
-                                    .scale(0.65f)
-                                    .height(24.dp),
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = c.accent,
-                                    checkedTrackColor = c.accent.copy(alpha = 0.35f),
-                                    uncheckedThumbColor = c.textSecondary,
-                                    uncheckedTrackColor = c.divider
-                                )
+                        },
+                        enabled = !isSmsParsing,
+                        colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("scan_device_sms_button")
+                    ) {
+                        if (isSmsParsing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = c.bg,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            ShrinkingSingleLineText("Scanning…", c.bg, 14f, 9f, Modifier, FontWeight.Bold, TextAlign.Center)
+                        } else {
+                            Icon(Icons.Default.Sms, contentDescription = null, tint = c.bg, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            ShrinkingSingleLineText(
+                                text = if (hasReadSmsPermission) "Scan Inbox" else "Enable Auto-Import",
+                                color = c.bg,
+                                initialFontSize = 14f,
+                                minFontSize = 9f,
+                                modifier = Modifier,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
                             )
                         }
-                    }
-                    if (showBalSyncInfo) {
-                        AlertDialog(
-                            onDismissRequest = { showBalSyncInfo = false },
-                            title = { Text("Balance Sync", fontWeight = FontWeight.Bold) },
-                            text = { Text("Reads bank balance SMS to anchor your account's current balance, fixing any drift from manual entries. When enabled, the reported balance is stored as a snapshot and only transactions after that point affect your running balance.") },
-                            confirmButton = { TextButton(onClick = { showBalSyncInfo = false }) { Text("Got it") } }
-                        )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     // Scan Wallets button (PF tracking removed)
@@ -7169,16 +7181,16 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                         if (isWalletPfScanning) {
                             CircularProgressIndicator(modifier = Modifier.size(14.dp), color = c.accent, strokeWidth = 2.dp)
                             Spacer(Modifier.width(6.dp))
-                            ShrinkingSingleLineText("Scanning…", c.accent, 14f, 9f, Modifier.weight(1f), FontWeight.SemiBold, TextAlign.Center)
+                            ShrinkingSingleLineText("Scanning…", c.accent, 14f, 9f, Modifier, FontWeight.SemiBold, TextAlign.Center)
                         } else {
-                            Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = c.accent, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
                             ShrinkingSingleLineText(
                                 text = if (hasReadSmsPermission) "Scan Wallets" else "Enable Auto-Import",
                                 color = c.accent,
                                 initialFontSize = 14f,
                                 minFontSize = 9f,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier,
                                 fontWeight = FontWeight.SemiBold,
                                 textAlign = TextAlign.Center
                             )
@@ -7247,9 +7259,9 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                                         else
                                             selectedForcePatterns + pattern
                                     },
-                                    color = if (selected) c.accent.copy(alpha = 0.18f) else c.divider,
+                                    color = if (selected) c.income.copy(alpha = 0.18f) else c.surfaceVariant,
                                     shape = RoundedCornerShape(6.dp),
-                                    border = BorderStroke(if (selected) 1.dp else 0.dp, if (selected) c.accent.copy(alpha = 0.45f) else Color.Transparent),
+                                    border = BorderStroke(1.dp, if (selected) c.income.copy(alpha = 0.5f) else c.border),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Row(
@@ -7257,10 +7269,10 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        if (selected) Icon(Icons.Default.Check, contentDescription = null, tint = c.accent, modifier = Modifier.size(10.dp))
+                                        if (selected) Icon(Icons.Default.Check, contentDescription = null, tint = c.income, modifier = Modifier.size(10.dp))
                                         Spacer(Modifier.width(if (selected) 3.dp else 0.dp))
                                         Text(pattern, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
-                                            color = if (selected) c.accent else c.text,
+                                            color = if (selected) c.income else c.text,
                                             softWrap = false, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                             textAlign = TextAlign.Center)
                                     }
@@ -8537,12 +8549,17 @@ fun AddTransactionDialog(
             onDismiss = { showQuickAddCategory = false },
             onAdd = { name, type, iconName, colorHex, initialBudget ->
                 val cleanName = name.trim()
-                viewModel.addCustomCategory(cleanName, iconName, colorHex, type)
+                showQuickAddCategory = false
+                // Switch selection only once the category is actually written and visible
+                // globally (this dialog's own `customCats` flow, the Budgets screen, and
+                // every other picker all observe the same DB-backed flow) — avoids a brief
+                // "nothing selected" flash from racing the async write.
+                viewModel.addCustomCategory(cleanName, iconName, colorHex, type, onComplete = {
+                    categorySelection = cleanName
+                })
                 if (type == "EXPENSE" && initialBudget > 0.0) {
                     viewModel.saveBudget(cleanName, cleanName, initialBudget)
                 }
-                categorySelection = cleanName
-                showQuickAddCategory = false
             }
         )
     }
@@ -8739,7 +8756,13 @@ fun EditTransactionDialog(
             TextButton(
                 onClick = {
                     val dAmt = amountStr.toDoubleOrNull() ?: 0.0
-                    if ((if (editType == "BALANCE_UPDATE") dAmt >= 0.0 else dAmt > 0.0) && title.isNotBlank()) {
+                    // Balance Sync/BALANCE_UPDATE snapshots can legitimately be negative
+                    // (e.g. a Credit Card's outstanding-debt snapshot is stored as a
+                    // negative amount) — requiring >= 0.0 here silently blocked saving
+                    // ANY edit to an already-negative balance update record (even one that
+                    // only touched the title/date and never the amount), with no error
+                    // shown to the user. Any parsed amount is valid for this type.
+                    if ((if (editType == "BALANCE_UPDATE") true else dAmt > 0.0) && title.isNotBlank()) {
                         onConfirm(
                             tx.copy(
                                 title = title,
@@ -9026,12 +9049,16 @@ fun EditTransactionDialog(
             onDismiss = { showQuickAddCategory = false },
             onAdd = { name, type, iconName, colorHex, initialBudget ->
                 val cleanName = name.trim()
-                viewModel.addCustomCategory(cleanName, iconName, colorHex, type)
+                showQuickAddCategory = false
+                // Same fix as AddTransactionDialog — switch selection only after the write
+                // actually completes, so it's guaranteed globally visible immediately
+                // (Budgets screen, other pickers, etc. all read the same DB-backed flow).
+                viewModel.addCustomCategory(cleanName, iconName, colorHex, type, onComplete = {
+                    categorySelection = cleanName
+                })
                 if (type == "EXPENSE" && initialBudget > 0.0) {
                     viewModel.saveBudget(cleanName, cleanName, initialBudget)
                 }
-                categorySelection = cleanName
-                showQuickAddCategory = false
             }
         )
     }
@@ -9409,6 +9436,41 @@ private fun walletIconFor(name: String, type: String?): androidx.compose.ui.grap
         type == "CREDIT_CARD" || type == "DEBIT_CARD" || name.contains("card", ignoreCase = true) -> Icons.Default.CreditCard
         type == "WALLET" || name.contains("wallet", ignoreCase = true) -> Icons.Default.AccountBalanceWallet
         else -> Icons.Default.AccountBalanceWallet
+    }
+}
+
+/** Picks a representative icon + color for a notification based on its title, so the
+ * notification list has some visual rhythm instead of being plain text rows — mirrors how
+ * native notification centers show a per-source icon. */
+private fun notificationIconFor(title: String): Pair<androidx.compose.ui.graphics.vector.ImageVector, Color> {
+    val t = title.lowercase()
+    return when {
+        t.contains("category") -> Icons.Default.Category to Color(0xFF9C27B0)
+        t.contains("balance") -> Icons.Default.AccountBalanceWallet to Color(0xFF0EA5E9)
+        t.contains("budget") -> Icons.Default.PieChart to Color(0xFFFF9800)
+        t.contains("sms") || t.contains("import") -> Icons.Default.Sms to Color(0xFF00897B)
+        t.contains("account") -> Icons.Default.AccountBalance to Color(0xFF3B82F6)
+        t.contains("transfer") -> Icons.Default.SwapHoriz to Color(0xFF7E57C2)
+        t.contains("delet") -> Icons.Default.Delete to Color(0xFFE53935)
+        else -> Icons.Default.Notifications to Color(0xFF607D8B)
+    }
+}
+
+/** Native-feeling relative time for the notification list — "Just now" / "5m ago" / "3h ago"
+ * / "Yesterday" / an absolute short date beyond that, instead of a raw timestamp string. */
+private fun relativeTimeText(timestamp: Long): String {
+    val now = System.currentTimeMillis()
+    val diffMs = (now - timestamp).coerceAtLeast(0L)
+    val minute = 60_000L
+    val hour = 60 * minute
+    val day = 24 * hour
+    return when {
+        diffMs < minute -> "Just now"
+        diffMs < hour -> "${diffMs / minute}m ago"
+        diffMs < day -> "${diffMs / hour}h ago"
+        diffMs < 2 * day -> "Yesterday"
+        diffMs < 7 * day -> "${diffMs / day}d ago"
+        else -> SimpleDateFormat("dd MMM", Locale.getDefault()).format(Date(timestamp))
     }
 }
 
@@ -11016,163 +11078,161 @@ fun AccountCenterSettingsDialog(
 ) {
     val c = LocalAppColors.current
     var patternInput by remember { mutableStateOf("") }
+    val switchColors = SwitchDefaults.colors(
+        checkedThumbColor = c.accent,
+        checkedTrackColor = c.accent.copy(alpha = 0.45f),
+        uncheckedThumbColor = c.textSecondary,
+        uncheckedTrackColor = c.divider
+    )
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Account Center Settings", fontWeight = FontWeight.Bold, color = c.text) },
-        text = {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // CC Details toggle
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Show Credit Card Details", color = c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text("Display available limit & due amount on cards", color = c.textSecondary, fontSize = 11.sp)
-                        }
-                        Switch(
-                            checked = showCreditCardDetails,
-                            onCheckedChange = { viewModel.setShowCreditCardDetails(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = c.accent,
-                                checkedTrackColor = c.accent.copy(alpha = 0.45f),
-                                uncheckedThumbColor = c.text,
-                                uncheckedTrackColor = c.textTertiary
-                            )
-                        )
-                    }
+    AdaptiveEditorDialog(
+        title = "Account Settings",
+        onDismiss = onDismiss,
+        content = {
+            // ── Show Credit Card Details ──────────────────────────
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = CircleShape, color = c.accent.copy(alpha = 0.15f), modifier = Modifier.size(38.dp)) {
+                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.CreditCard, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp)) }
                 }
-                // Account visibility section header
-                item {
-                    Text(
-                        "ACCOUNT VISIBILITY",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = c.textSecondary,
-                        letterSpacing = 0.5.sp,
-                        modifier = Modifier.padding(top = 8.dp)
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Show Credit Card Details", color = c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("Display available limit & due amount on cards", color = c.textSecondary, fontSize = 11.sp)
+                }
+                Switch(checked = showCreditCardDetails, onCheckedChange = { viewModel.setShowCreditCardDetails(it) }, colors = switchColors)
+            }
+            HorizontalDivider(color = c.divider)
+
+            // ── Account visibility ─────────────────────────────────
+            Text("ACCOUNT VISIBILITY", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.textSecondary, letterSpacing = 0.8.sp)
+            accounts.forEach { acc ->
+                val visible = !hiddenAccountIds.contains(acc.id)
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(shape = CircleShape, color = (if (visible) c.accent else c.textTertiary).copy(alpha = 0.15f), modifier = Modifier.size(34.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(walletIconFor(acc.name, acc.type), contentDescription = null, tint = if (visible) c.accent else c.textTertiary, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text(acc.name, color = if (visible) c.text else c.textTertiary, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Switch(
+                        checked = visible,
+                        onCheckedChange = { v -> viewModel.setAccountHidden(acc.id, !v) },
+                        modifier = Modifier.scale(0.8f),
+                        colors = switchColors
                     )
                 }
-                items(accounts) { acc ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().height(36.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(acc.name, color = c.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                        Switch(
-                            checked = !hiddenAccountIds.contains(acc.id),
-                            onCheckedChange = { visible -> viewModel.setAccountHidden(acc.id, !visible) },
-                            modifier = Modifier.scale(0.8f),
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = c.accent,
-                                checkedTrackColor = c.accent.copy(alpha = 0.45f),
-                                uncheckedThumbColor = c.text,
-                                uncheckedTrackColor = c.textTertiary
-                            )
-                        )
-                    }
-                }
-                // SMS Blocklist section
-                item {
-                    Column(modifier = Modifier.padding(top = 8.dp)) {
-                        Text(
-                            "SMS IMPORT BLOCKLIST",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = c.textSecondary,
-                            letterSpacing = 1.sp
-                        )
-                        Text(
-                            "Block SMS imports by wallet name or sender. Wildcards: HDFC*, *1234, *paytm*",
-                            color = c.textSecondary,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(top = 2.dp)
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedTextField(
-                                value = patternInput,
-                                onValueChange = { patternInput = it },
-                                placeholder = { Text("e.g. HDFC*, *paytm*", color = c.text.copy(0.4f), fontSize = 12.sp) },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = c.accent,
-                                    unfocusedBorderColor = c.text.copy(0.3f),
-                                    focusedTextColor = c.text,
-                                    unfocusedTextColor = c.text
-                                ),
-                                textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
-                            )
-                            IconButton(onClick = {
-                                if (patternInput.isNotBlank()) {
-                                    viewModel.addSmsBlocklistPattern(patternInput.trim())
-                                    patternInput = ""
-                                }
-                            }) {
-                                Icon(Icons.Default.Add, contentDescription = "Add pattern", tint = c.accent)
+            }
+            HorizontalDivider(color = c.divider)
+
+            // ── SMS import blocklist ────────────────────────────────
+            Column {
+                Text("SMS IMPORT BLOCKLIST", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.textSecondary, letterSpacing = 0.8.sp)
+                Text(
+                    "Block SMS imports by wallet name or sender. Wildcards: HDFC*, *1234, *paytm*",
+                    color = c.textSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = patternInput,
+                        onValueChange = { patternInput = it },
+                        placeholder = { Text("e.g. HDFC*, *paytm*", color = c.text.copy(0.4f), fontSize = 12.sp) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = c.accent,
+                            unfocusedBorderColor = c.text.copy(0.3f),
+                            focusedTextColor = c.text,
+                            unfocusedTextColor = c.text
+                        ),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            if (patternInput.isNotBlank()) {
+                                viewModel.addSmsBlocklistPattern(patternInput.trim())
+                                patternInput = ""
                             }
-                        }
+                        },
+                        border = BorderStroke(1.dp, c.accent.copy(alpha = 0.45f)),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add pattern", tint = c.accent, modifier = Modifier.size(16.dp))
                     }
                 }
-                items(smsBlocklistPatterns.toList()) { pattern ->
+            }
+            smsBlocklistPatterns.toList().forEach { pattern ->
+                Surface(
+                    color = c.expense.copy(alpha = 0.10f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, c.expense.copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(pattern, color = c.expense, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { viewModel.removeSmsBlocklistPattern(pattern) }) {
-                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = c.expense)
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Default.Block, contentDescription = null, tint = c.expense, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(pattern, color = c.expense, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                    }
-                }
-                // Accounts blocked via the Delete Account dialog (persist even after account deleted)
-                if (blockedAccountNames.isNotEmpty()) {
-                    item {
-                        Text("BLOCKED ACCOUNTS", fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                            color = c.textSecondary, letterSpacing = 1.sp,
-                            modifier = Modifier.padding(top = 4.dp))
-                    }
-                }
-                items(blockedAccountNames.toList()) { name ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(name, color = c.expense, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            Text("Blocked from SMS import", color = c.textSecondary, fontSize = 10.sp)
-                        }
-                        IconButton(onClick = { viewModel.unblockAccountByName(name) }) {
-                            Icon(Icons.Default.Close, contentDescription = "Unblock", tint = c.expense)
-                        }
-                    }
-                }
-                if (smsBlocklistPatterns.isNotEmpty()) {
-                    item {
-                        OutlinedButton(
-                            onClick = { viewModel.deleteTransactionsMatchingBlocklist() },
-                            border = BorderStroke(1.dp, c.expense),
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = c.expense)
-                        ) {
-                            Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = c.expense)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Delete Matching Transactions", color = c.expense, fontSize = 12.sp)
+                        IconButton(onClick = { viewModel.removeSmsBlocklistPattern(pattern) }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = c.expense, modifier = Modifier.size(14.dp))
                         }
                     }
                 }
             }
+
+            // ── Accounts blocked via the Delete Account dialog (persist even after account deleted) ──
+            if (blockedAccountNames.isNotEmpty()) {
+                HorizontalDivider(color = c.divider)
+                Text("BLOCKED ACCOUNTS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.textSecondary, letterSpacing = 0.8.sp)
+                blockedAccountNames.toList().forEach { name ->
+                    Surface(
+                        color = c.expense.copy(alpha = 0.10f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, c.expense.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(name, color = c.expense, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Blocked from SMS import", color = c.textSecondary, fontSize = 10.sp)
+                            }
+                            IconButton(onClick = { viewModel.unblockAccountByName(name) }, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Unblock", tint = c.expense, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (smsBlocklistPatterns.isNotEmpty()) {
+                OutlinedButton(
+                    onClick = { viewModel.deleteTransactionsMatchingBlocklist() },
+                    border = BorderStroke(1.dp, c.expense),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = c.expense)
+                ) {
+                    Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = c.expense)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Delete Matching Transactions", color = c.expense, fontSize = 12.sp)
+                }
+            }
         },
-        confirmButton = {
+        actions = {
             Button(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth(),
@@ -11180,10 +11240,7 @@ fun AccountCenterSettingsDialog(
             ) {
                 Text("Done", fontWeight = FontWeight.Bold)
             }
-        },
-        containerColor = c.surface,
-        titleContentColor = c.text,
-        textContentColor = c.text
+        }
     )
 }
 

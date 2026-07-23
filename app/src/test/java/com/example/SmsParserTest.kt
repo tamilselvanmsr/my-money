@@ -122,6 +122,66 @@ class SmsParserTest {
         assertEquals(30210.12, result.availableBalance ?: 0.0, 0.01)
     }
 
+    @Test fun `Cash deposit SMS with 'available balance is' phrasing`() {
+        // Real-world gap: "available balance IS INR X" — the extra filler word "is" between
+        // "balance" and the currency token used to make the appended-balance regex miss entirely.
+        val result = SmsParser.parseOffline(
+            "Your account XX1234 is credited with INR 8,000.00 on 22/07/26 at 18:49:28 at BHOGANAHALLI via Cash Deposit Machine. Your available balance is INR 8,004.12",
+            "HD-HDFC-T"
+        )
+        assertNotNull(result)
+        assertEquals(8000.0, result!!.amount, 0.01)
+        assertEquals("INCOME", result.type)
+        assertEquals(8004.12, result.availableBalance ?: 0.0, 0.01)
+    }
+
+    @Test fun `Cash deposit SMS with bare 'Bal-colon' phrasing`() {
+        // Real-world gap: a bare "Bal:" with no avl/available qualifier, and a colon right
+        // before the amount — neither was previously allowed by the appended-balance regex.
+        val result = SmsParser.parseOffline(
+            "Deposited! INR 8,000.00 in HDFC Bank A/c XX1234 On 22/07/26 18:49:28 At BHOGANAHALLI Via Cash Deposit Machine Bal: INR 8,004.12",
+            "HD-HDFC-T"
+        )
+        assertNotNull(result)
+        assertEquals(8000.0, result!!.amount, 0.01)
+        assertEquals("INCOME", result.type)
+        assertEquals(8004.12, result.availableBalance ?: 0.0, 0.01)
+    }
+
+    @Test fun `Avl Bal with colon before currency still extracts balance`() {
+        val result = SmsParser.parseOffline(
+            "Rs. 500.00 debited from your HDFC Bank A/c XX9872 via UPI. Avl Bal: Rs 4,500.00",
+            "HD-HDFC-T"
+        )
+        assertNotNull(result)
+        assertEquals(4500.0, result!!.availableBalance ?: 0.0, 0.01)
+    }
+
+    @Test fun `Small decimal amount is not misread as a time (7-00 must not become 07-00)`() {
+        // Real-world bug: a plain 2-decimal amount like "7.00" has the exact same shape as
+        // a bare "H.MM" time (no seconds, no am/pm), so it was being misread as 07:00 and
+        // silently overriding the actual SMS-received time-of-day.
+        val refCal = java.util.Calendar.getInstance().apply {
+            set(2026, java.util.Calendar.JULY, 21, 14, 32, 10)
+        }
+        val result = SmsParser.parseOffline(
+            "Dear UPI user A/C X5300 debited by 7.00 on date 21 Jul26 trf to BOOPATHI THANGAM Refno 620278336395 If not u? call-1800111109 for other services-18001234-SBI",
+            "VM-SBI-S",
+            refCal.timeInMillis
+        )
+        assertNotNull(result)
+        assertEquals(7.0, result!!.amount, 0.01)
+        assertNotNull(result.parsedTimestamp)
+        val resultCal = java.util.Calendar.getInstance().apply { timeInMillis = result.parsedTimestamp!! }
+        // Date comes from the SMS body (21 Jul 2026); time-of-day must fall back to the
+        // actual reference/received time (14:32:10) — NOT 07:00 derived from the amount.
+        assertEquals(2026, resultCal.get(java.util.Calendar.YEAR))
+        assertEquals(java.util.Calendar.JULY, resultCal.get(java.util.Calendar.MONTH))
+        assertEquals(21, resultCal.get(java.util.Calendar.DAY_OF_MONTH))
+        assertEquals(14, resultCal.get(java.util.Calendar.HOUR_OF_DAY))
+        assertEquals(32, resultCal.get(java.util.Calendar.MINUTE))
+    }
+
     @Test fun `SBI credit with account reference`() {
         val result = SmsParser.parseOffline(
             "Dear SBI Customer, your A/C XXXXXX5678 is credited Rs.3,250.00 on 10-06-26 by UPI.",

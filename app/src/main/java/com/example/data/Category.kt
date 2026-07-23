@@ -46,7 +46,9 @@ enum class ExpenseCategory(
     SPORT("Sport",                     Icons.Default.SportsSoccer,    Color(0xFF8BC34A)),
     GYM("Gym",                         Icons.Default.FitnessCenter,   Color(0xFF455A64)),
     RECHARGE("Recharge",               Icons.Default.Smartphone,      Color(0xFF7986CB)),
-    DEBT("Debt / Loan",                Icons.Default.CreditCard,      Color(0xFF5D4037)),
+    DEBT("Debt",                       Icons.Default.CreditCard,      Color(0xFF5D4037)),
+    LOAN_EMI("Loan / EMI",              Icons.Default.CreditScore,     Color(0xFF6D4C41)),
+    LEND("Lend",                       Icons.Default.CallMade,        Color(0xFFD84315)),
     FUEL("Fuel",                       Icons.Default.LocalGasStation, Color(0xFFF44336)),
     CLOTHES("Clothes",                 Icons.Default.Checkroom,       Color(0xFFC2185B)),
     SHOES("Shoes & Footwear",          Icons.AutoMirrored.Filled.DirectionsRun,   Color(0xFF5C6BC0)),
@@ -76,6 +78,7 @@ enum class ExpenseCategory(
     REWARDS("Rewards",                 Icons.Default.MilitaryTech,    Color(0xFF76FF03), "INCOME"),
     COINS("Coins",                     Icons.Default.Savings,         Color(0xFFFBC02D), "INCOME"),
     UPI("UPI",                         Icons.Default.QrCode,          Color(0xFF0EA5E9), "INCOME"),
+    BORROWED_MONEY("Borrowed Money",   Icons.Default.CallReceived,    Color(0xFF43A047), "INCOME"),
     INCOME_OTHERS("Other Income",       Icons.Default.Category,        Color(0xFF607D8B), "INCOME");
 
     companion object {
@@ -204,6 +207,12 @@ object CategoryResolver {
             "salary"            -> Icons.Default.AttachMoney
             "creditcard"        -> Icons.Default.CreditCard
             "debt"              -> Icons.Default.CreditCard
+            "creditscore"       -> Icons.Default.CreditScore
+            "loan_emi"          -> Icons.Default.CreditScore
+            "callmade"          -> Icons.Default.CallMade
+            "lend"              -> Icons.Default.CallMade
+            "callreceived"      -> Icons.Default.CallReceived
+            "borrowed_money"    -> Icons.Default.CallReceived
             "payments"          -> Icons.Default.Payments
             "pocket_money"      -> Icons.Default.Payments
             "savings"           -> Icons.Default.Savings
@@ -302,7 +311,17 @@ object CategoryResolver {
                 !it.iconName.startsWith("hidden:") &&
                 it.iconName != "hidden"
         }
-        if (custom != null) return buildFromCustom(custom)
+        if (custom != null) {
+            // Must resolve canonicalEnumName here exactly like getAll() does — otherwise
+            // buildFromCustom() defaults it to null, which makes it take the "pure custom
+            // addition" branch even for a standard-category override, showing the RAW
+            // stored key (e.g. "DEBT") as the display name instead of falling back to the
+            // enum's proper display name ("Debt"). This was the cause of standard categories
+            // showing their uppercase DB key once they'd ever been customized (icon/color
+            // only, no rename).
+            val standardMatch = ExpenseCategory.entries.firstOrNull { it.name.equals(custom.name, ignoreCase = true) }
+            return buildFromCustom(custom, canonicalEnumName = standardMatch?.name)
+        }
 
         // Fall through to built-in
         val standard = ExpenseCategory.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }

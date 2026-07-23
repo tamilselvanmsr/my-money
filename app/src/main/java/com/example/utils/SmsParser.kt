@@ -151,9 +151,13 @@ object SmsParser {
         // 12. Payee / title
         val title = extractPayeeTitle(cleanBody, lowerBody, body, type, bankName)
         // Extract appended available balance for ALL transaction types (income, expense, transfer).
-        // Banks often append "Avl Bal Rs.X" or "Available Balance Rs.X" after debit/credit SMS.
+        // Banks phrase this many different ways — "Avl Bal Rs.X", "Available Balance Rs.X",
+        // "Your available balance IS INR X" (extra filler word), "Bal: INR X" (bare, no
+        // avl/available qualifier), "Avl Bal: INR X" (colon before the amount). The
+        // avl/available prefix and the word "is" are now optional, and an optional colon is
+        // allowed right before the currency token, to cover all of the above.
         val avlBalance = Pattern.compile(
-            "(?:avl|avail\\.?|available)\\s+bal(?:ance)?\\s+(?:inr|rs\\.?|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)",
+            "(?:avl|avail\\.?|available)?\\s*\\bbal(?:ance)?\\b\\s*(?:is)?\\s*:?\\s*(?:inr|rs\\.?|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)",
             Pattern.CASE_INSENSITIVE
         ).let { pat -> val m = pat.matcher(cleanBody); if (m.find()) m.group(1)?.replace(",", "")?.toDoubleOrNull() else null }
 
@@ -689,14 +693,25 @@ object SmsParser {
             var minute = refCal.get(java.util.Calendar.MINUTE)
             var second = refCal.get(java.util.Calendar.SECOND)
             
-            // Match formats HH:MM:SS, HH:MM, HH.MM AM/PM
-            val timePattern = Pattern.compile("\\b(\\d{1,2})[:.](\\d{2})(?:[:.](\\d{2}))?\\s*(am|pm)?\\b", Pattern.CASE_INSENSITIVE)
+            // Match formats HH:MM:SS, HH:MM, HH.MM AM/PM — but a bare "H.MM" (period, no
+            // seconds, no am/pm) is indistinguishable from a plain 2-decimal money amount
+            // like "7.00", which was being misread as time 07:00 (amount and time share the
+            // exact same shape). Colon-separated times are unambiguous (amounts never use
+            // ":") so always allowed; period-separated times are only trusted when they carry
+            // extra evidence they're really a clock time (a seconds group, or an am/pm
+            // marker) — otherwise we fall through and keep the actual SMS-received time.
+            val timePattern = Pattern.compile(
+                "\\b(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*(am|pm)?\\b" +
+                "|\\b(\\d{1,2})\\.(\\d{2})(?:\\.(\\d{2})|\\s*(am|pm))\\b",
+                Pattern.CASE_INSENSITIVE
+            )
             val timeMatcher = timePattern.matcher(body)
             if (timeMatcher.find()) {
-                var h = timeMatcher.group(1)?.toIntOrNull() ?: 12
-                val m = timeMatcher.group(2)?.toIntOrNull() ?: 0
-                val s = timeMatcher.group(3)?.toIntOrNull() ?: 0
-                val ampm = timeMatcher.group(4)?.lowercase()
+                val colonMatched = timeMatcher.group(1) != null
+                var h = (if (colonMatched) timeMatcher.group(1) else timeMatcher.group(5))?.toIntOrNull() ?: 12
+                val m = (if (colonMatched) timeMatcher.group(2) else timeMatcher.group(6))?.toIntOrNull() ?: 0
+                val s = (if (colonMatched) timeMatcher.group(3) else timeMatcher.group(7))?.toIntOrNull() ?: 0
+                val ampm = (if (colonMatched) timeMatcher.group(4) else timeMatcher.group(8))?.lowercase()
                 
                 if (ampm != null) {
                     if (ampm == "pm" && h < 12) h += 12

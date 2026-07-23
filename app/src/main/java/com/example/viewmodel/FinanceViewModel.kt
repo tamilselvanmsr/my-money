@@ -34,6 +34,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.atomic.AtomicLong
 
 /** In-app notification surfaced in the bell-icon popup. */
 data class AppNotification(
@@ -43,6 +44,18 @@ data class AppNotification(
     val timestamp: Long = System.currentTimeMillis(),
     val isRead: Boolean = false
 )
+
+/**
+ * Generates a strictly increasing, collision-free id for [AppNotification].
+ * Plain `System.currentTimeMillis()` was used before — several notifications created within
+ * the same millisecond (e.g. a batch SMS scan firing multiple alerts back-to-back) could get
+ * the EXACT same id, which crashed the notification list's LazyColumn (`items(..., key =
+ * { it.id })` requires unique keys and throws `IllegalArgumentException` on a duplicate).
+ * Seeding from the current time keeps ids sortable/roughly chronological; the counter
+ * guarantees no two calls ever produce the same value even when called back-to-back.
+ */
+private val notificationIdSeq = AtomicLong(System.currentTimeMillis() * 1000)
+private fun nextNotificationId(): Long = notificationIdSeq.incrementAndGet()
 
 /** Represents a backup file available for restore. */
 data class BackupItem(
@@ -154,12 +167,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // ── Balance sync scan toggle ───────────────────────────────────────────────
-    private val _enableBalanceSync = MutableStateFlow(prefs.getBoolean("enable_balance_sync", true))
-    val enableBalanceSync: StateFlow<Boolean> = _enableBalanceSync.asStateFlow()
-    fun setEnableBalanceSync(v: Boolean) {
-        _enableBalanceSync.value = v
-        prefs.edit().putBoolean("enable_balance_sync", v).apply()
-    }
+    // Previously user-toggleable from the Auto-Scan Hub screen; now always on by default
+    // with no UI opt-out (kept as a StateFlow, rather than replacing every `enableBalanceSync
+    // .value` call site with a literal `true`, so nothing else needs to change).
+    val enableBalanceSync: StateFlow<Boolean> = MutableStateFlow(true).asStateFlow()
 
     // ── Running balance overlay on transaction records ─────────────────────────
     private val _showRunningBalance = MutableStateFlow(prefs.getBoolean("show_running_balance", false))
@@ -647,7 +658,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun addCustomCategory(name: String, iconName: String, colorHex: String, type: String = "EXPENSE") {
+    fun addCustomCategory(name: String, iconName: String, colorHex: String, type: String = "EXPENSE", onComplete: () -> Unit = {}) {
         viewModelScope.launch {
             if (name.isBlank()) return@launch
             val trimmed = name.trim()
@@ -658,21 +669,45 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             repository.insertCustomCategory(cat)
             _toastMessage.emit("Category '$trimmed' added successfully!")
             addNotification("Category Added", "New category '$trimmed' ($type) created.")
+            // Fired only after the write is committed — callers use this to switch the
+            // picker's selection to the new category instead of doing it synchronously
+            // (which used to race the async DB write / Room Flow emission and could
+            // briefly show "nothing selected", or occasionally miss the update entirely).
+            onComplete()
         }
     }
 
-    fun updateCustomCategory(id: Int, oldName: String, newName: String, iconName: String, colorHex: String, type: String = "EXPENSE") {
+    /**
+     * @param previousDisplayName The name as it was actually SHOWN to the user before this
+     *   edit (i.e. what the name field was pre-filled with). For a standard-category override
+     *   this is the display name (e.g. "Debt / Loan"), which is deliberately different from
+     *   [oldName] (always the stable canonical DB key, e.g. "DEBT"). Comparing the new name
+     *   against [oldName] alone was wrong: since a standard category's canonical key and its
+     *   display name are NEVER spelled the same, every icon/color-only edit (where the user
+     *   never touches the name field, so [newName] == [previousDisplayName] == old display
+     *   name) was being misdetected as a rename to the full display name — which corrupted the
+     *   stored key (it no longer matched the enum, so the category silently duplicated/detached
+     *   from its budget) and produced a bogus "renamed X → Y" notification.
+     */
+    fun updateCustomCategory(id: Int, oldName: String, newName: String, iconName: String, colorHex: String, type: String = "EXPENSE", previousDisplayName: String = oldName) {
         viewModelScope.launch {
             if (newName.isBlank()) return@launch
-            val resolvedName = newName.trim()  // always use the name exactly as typed
+            val resolvedName = newName.trim()
             val iconNameWithType = "$iconName:$type"
-            val cat = CustomCategory(id = id, name = resolvedName, iconName = iconNameWithType, colorHex = colorHex)
+            val isActualRename = !resolvedName.equals(previousDisplayName, ignoreCase = true)
+            // If the user didn't actually change the name, keep the DB row's name EXACTLY as
+            // it was (oldName) — never let an icon/color-only save drift the stored key.
+            val storedName = if (isActualRename) resolvedName else oldName
+            val cat = CustomCategory(id = id, name = storedName, iconName = iconNameWithType, colorHex = colorHex)
             repository.insertCustomCategory(cat)
-            if (!resolvedName.equals(oldName, ignoreCase = true)) {
+            if (isActualRename) {
                 repository.updateCategoryReferences(oldName, resolvedName)
+                _toastMessage.emit("Category renamed to '$resolvedName' and updated.")
+                addNotification("Category Updated", "Category renamed: '$oldName' → '$resolvedName'.")
+            } else {
+                _toastMessage.emit("Category '$resolvedName' updated successfully!")
+                addNotification("Category Updated", "Category '$resolvedName' color/icon updated.")
             }
-            _toastMessage.emit("Category '$resolvedName' updated successfully!")
-            addNotification("Category Updated", "Category renamed: '$oldName' → '$resolvedName'.")
         }
     }
 
@@ -1012,7 +1047,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private fun loadPersistedNotifications(): List<AppNotification> = try {
         val json = prefs.getString("app_notifications_json", null) ?: return emptyList()
         val arr = org.json.JSONArray(json)
-        (0 until arr.length()).mapNotNull { i ->
+        val loaded = (0 until arr.length()).mapNotNull { i ->
             val o = arr.getJSONObject(i)
             AppNotification(
                 id        = o.getLong("id"),
@@ -1022,7 +1057,22 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 isRead    = o.optBoolean("isRead", false)
             )
         }
+        // Repair any duplicate ids already on disk from before ids were made
+        // collision-free (see nextNotificationId()) — a duplicate key would otherwise still
+        // crash the notification list's LazyColumn even after the generator itself is fixed,
+        // since this only prevents NEW collisions, not ones already persisted.
+        val seenIds = HashSet<Long>()
+        var hadDuplicates = false
+        val deduped = loaded.map { n ->
+            if (!seenIds.add(n.id)) {
+                hadDuplicates = true
+                n.copy(id = nextNotificationId())
+            } else n
+        }
+        if (hadDuplicates) persistNotifications(deduped)
+        deduped
     } catch (_: Exception) { emptyList() }
+
 
     private fun persistNotifications(list: List<AppNotification>) {
         try {
@@ -1043,7 +1093,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun addNotification(title: String, message: String) {
         try {
             _notifications.update { prev ->
-                val updated = listOf(AppNotification(id = System.currentTimeMillis(), title = title, message = message)) + prev
+                val updated = listOf(AppNotification(id = nextNotificationId(), title = title, message = message)) + prev
                 val capped = updated.take(200)
                 persistNotifications(capped)
                 capped

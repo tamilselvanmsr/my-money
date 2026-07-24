@@ -445,7 +445,7 @@ private fun AppLockGate(viewModel: FinanceViewModel, content: @Composable () -> 
                         override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                             try {
                                 unlockedThisSession = true
-                            } catch (e: Exception) {
+                            } catch (e: Throwable) {
                                 Toast.makeText(context, "Unlock error: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
                         }
@@ -458,7 +458,7 @@ private fun AppLockGate(viewModel: FinanceViewModel, content: @Composable () -> 
                                 ) {
                                     Toast.makeText(context, "Authentication error: $errString", Toast.LENGTH_SHORT).show()
                                 }
-                            } catch (_: Exception) {}
+                            } catch (_: Throwable) {}
                         }
                         // Called when a biometric was read but didn't match — the system prompt
                         // already tells the user to try again, nothing else to do here.
@@ -484,7 +484,11 @@ private fun AppLockGate(viewModel: FinanceViewModel, content: @Composable () -> 
                     ).show()
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Broadened from Exception to Throwable — a library/Fragment-lifecycle
+            // incompatibility (e.g. androidx.biometric internals) can surface as an Error
+            // subtype (NoSuchMethodError, LinkageError, etc.), which `catch (e: Exception)`
+            // does NOT catch, letting it crash the whole app instead of just this feature.
             Toast.makeText(context, "App Lock error: ${e.message ?: "unknown error"}", Toast.LENGTH_SHORT).show()
         }
     }
@@ -492,7 +496,28 @@ private fun AppLockGate(viewModel: FinanceViewModel, content: @Composable () -> 
     if (!appLockEnabled || unlockedThisSession) {
         content()
     } else {
-        LaunchedEffect(Unit) { launchBiometricPrompt() }
+        // Wait for the window to actually have focus before auto-launching the biometric
+        // prompt. Without this, returning from ANY other system Activity (a permission
+        // dialog, the SAF folder picker, etc.) re-enters this locked branch immediately —
+        // since that transition already re-locks the app via the ON_STOP observer above —
+        // and firing a brand-new BiometricPrompt the instant this branch (re-)composes,
+        // before the window has regained focus, was crashing the app on that return trip.
+        // This affected ANY feature that briefly hands focus to another Activity while App
+        // Lock is enabled (folder picker, SMS permission request, etc.), not just app startup.
+        val view = LocalView.current
+        var hasWindowFocus by remember { mutableStateOf(view.hasWindowFocus()) }
+        DisposableEffect(view) {
+            val listener = android.view.ViewTreeObserver.OnWindowFocusChangeListener { focused ->
+                hasWindowFocus = focused
+            }
+            view.viewTreeObserver.addOnWindowFocusChangeListener(listener)
+            onDispose { view.viewTreeObserver.removeOnWindowFocusChangeListener(listener) }
+        }
+        LaunchedEffect(hasWindowFocus) {
+            if (hasWindowFocus) {
+                launchBiometricPrompt()
+            }
+        }
         val c = LocalAppColors.current
         val hasFaceUnlockUi = remember {
             try { context.packageManager.hasSystemFeature(PackageManager.FEATURE_FACE) } catch (_: Exception) { false }
@@ -541,6 +566,98 @@ private fun AppLockGate(viewModel: FinanceViewModel, content: @Composable () -> 
 }
 
 /**
+ * Full-screen, non-dismissible consent screen shown exactly once on the very first launch
+ * (gated by [FinanceViewModel.isFirstLaunch]/markAppLaunched), before the user ever reaches
+ * the SMS Scan tab. Explains on-device processing + what SMS permission is used for; the
+ * user must tap "I Agree & Continue" to proceed — no back-press or tap-outside dismissal,
+ * so it can never be skipped by accident.
+ */
+@Composable
+private fun FirstRunConsentDialog(onAgree: () -> Unit) {
+    val c = LocalAppColors.current
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false
+        )
+    ) {
+        EdgeToEdgeDialogWindowEffect(isDarkBackground = c.isDark)
+        Surface(modifier = Modifier.fillMaxSize(), color = c.bg) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .safeDrawingPadding()
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(24.dp))
+                Surface(shape = CircleShape, color = c.accent.copy(alpha = 0.15f), modifier = Modifier.size(72.dp)) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Security, contentDescription = null, tint = c.accent, modifier = Modifier.size(36.dp))
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
+                Text("Welcome to AutoLedger", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = c.text, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Before you get started, please read how AutoLedger handles your data.",
+                    fontSize = 13.sp, color = c.textSecondary, textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(28.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(18.dp), modifier = Modifier.fillMaxWidth()) {
+                    ConsentBullet(
+                        Icons.Default.PhoneAndroid,
+                        "100% On-Device Processing",
+                        "Every SMS is parsed entirely on your phone using offline pattern matching. Nothing is uploaded, and no internet connection is ever used to read your messages."
+                    )
+                    ConsentBullet(
+                        Icons.Default.Sms,
+                        "SMS Permission",
+                        "AutoLedger asks for SMS permission solely to detect bank/wallet transaction messages and auto-track your spending. It is never used for anything else."
+                    )
+                    ConsentBullet(
+                        Icons.Default.Lock,
+                        "Your Data Stays Yours",
+                        "All records are stored locally in this app's private database. You can revoke SMS access anytime from your device Settings without losing any existing data."
+                    )
+                }
+                Spacer(Modifier.height(32.dp))
+                Button(
+                    onClick = onAgree,
+                    colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp)
+                ) {
+                    Text("I Agree & Continue", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+                Spacer(Modifier.height(20.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConsentBullet(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, desc: String) {
+    val c = LocalAppColors.current
+    Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
+        Surface(shape = CircleShape, color = c.accent.copy(alpha = 0.12f), modifier = Modifier.size(36.dp)) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp))
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.text)
+            Spacer(Modifier.height(2.dp))
+            Text(desc, fontSize = 12.sp, color = c.textSecondary, lineHeight = 16.sp)
+        }
+    }
+}
+
+/**
  * Root app shell — owns the Scaffold (top bar, bottom navigation bar, FAB)
  * and the HorizontalPager that drives tab navigation between the 5 main screens.
  * Also owns app-level overlays: Add Transaction, CSV Export, Backup, Restore, Pro Upgrade.
@@ -558,11 +675,13 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     val appLockEnabled by viewModel.appLockEnabled.collectAsStateWithLifecycle()
     val proExpiresAt by viewModel.proExpiresAt.collectAsStateWithLifecycle()
     var currentTab by remember { mutableStateOf(AppTab.DASHBOARD) }
-    // Show SMS Scan only on the very first install, not on every launch
+    var showFirstRunConsent by remember { mutableStateOf(false) }
+    var triggerAutoSmsPermissionRequest by remember { mutableStateOf(false) }
+    // Show a one-time full-screen consent dialog on the very first install. Only after the
+    // user taps "I Agree & Continue" do we mark the app as launched and jump to SMS Scan.
     LaunchedEffect(Unit) {
         if (viewModel.isFirstLaunch()) {
-            viewModel.markAppLaunched()
-            currentTab = AppTab.AUTO_SCAN
+            showFirstRunConsent = true
         }
     }
     // Gesture drawing: disabled by default; double-tap title to toggle.
@@ -1087,7 +1206,11 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                     AppTab.BUDGETS   -> BudgetsScreen(viewModel, budgetsListState)
                     AppTab.ANALYTICS -> AnalyticsScreen(viewModel, analyticsListState)
                     AppTab.ACCOUNT   -> AccountScreen(viewModel, accountsListState)
-                    AppTab.AUTO_SCAN -> AutoScanHubScreen(viewModel, smsScanListState)
+                    AppTab.AUTO_SCAN -> AutoScanHubScreen(
+                        viewModel, smsScanListState,
+                        autoRequestSmsPermission = triggerAutoSmsPermissionRequest,
+                        onAutoRequestConsumed = { triggerAutoSmsPermissionRequest = false }
+                    )
                 }
             }
 
@@ -1279,16 +1402,16 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                             expandedNotificationIds = if (isExpanded) expandedNotificationIds - notif.id else expandedNotificationIds + notif.id
                                         }
                                         .background(if (!notif.isRead) c.accent.copy(alpha = 0.07f) else Color.Transparent)
-                                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                                        .padding(horizontal = 14.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.Top
                                 ) {
-                                    Surface(shape = CircleShape, color = notifIconColor.copy(alpha = 0.15f), modifier = Modifier.size(34.dp)) {
+                                    Surface(shape = CircleShape, color = notifIconColor.copy(alpha = 0.15f), modifier = Modifier.size(30.dp)) {
                                         Box(contentAlignment = Alignment.Center) {
-                                            Icon(notifIcon, contentDescription = null, tint = notifIconColor, modifier = Modifier.size(17.dp))
+                                            Icon(notifIcon, contentDescription = null, tint = notifIconColor, modifier = Modifier.size(15.dp))
                                         }
                                     }
                                     Spacer(Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
                                                 notif.title,
@@ -1316,7 +1439,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                         Icon(Icons.Default.Close, contentDescription = "Delete", tint = c.textTertiary, modifier = Modifier.size(13.dp))
                                     }
                                 }
-                                HorizontalDivider(color = c.divider, thickness = 0.5.dp, modifier = Modifier.padding(start = 62.dp))
+                                HorizontalDivider(color = c.divider, thickness = 0.5.dp, modifier = Modifier.padding(start = 58.dp))
                             }
                         }
                     }
@@ -1324,6 +1447,18 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             }
         } // close outer Box
         }
+    }
+
+    // ── First-run consent dialog ─────────────────────────────────────────────
+    if (showFirstRunConsent) {
+        FirstRunConsentDialog(
+            onAgree = {
+                viewModel.markAppLaunched()
+                showFirstRunConsent = false
+                currentTab = AppTab.AUTO_SCAN
+                triggerAutoSmsPermissionRequest = true
+            }
+        )
     }
 
 }
@@ -5923,7 +6058,27 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         val progressColor = budgetProgressColor(percentUsed, c)
         val totalBudgetedSpend = monthExpenses.filter { tx -> activeBudgets.any { it.category.equals(tx.category, ignoreCase = true) } }.sumOf { it.amount }
         val ofTotalPct = if (totalBudgetedSpend > 0) (catSpendDetail / totalBudgetedSpend * 100) else 0.0
-        val calDetail = remember { Calendar.getInstance() }
+        // The Daily Breakdown must reflect the MONTH BEING VIEWED (rawMonthYear), not always
+        // today's real date — previously this always used Calendar.getInstance() (now), so
+        // viewing a past month's category detail still showed the current month's day-of-month
+        // and a progress bar based on today, instead of showing that past month as fully elapsed.
+        val calDetail = remember(rawMonthYear) {
+            val cal = Calendar.getInstance()
+            val target = try { SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(rawMonthYear) } catch (e: Exception) { null }
+            if (target != null) {
+                val targetCal = Calendar.getInstance().apply { time = target }
+                val now = Calendar.getInstance()
+                val isCurrentMonth = targetCal.get(Calendar.YEAR) == now.get(Calendar.YEAR) &&
+                    targetCal.get(Calendar.MONTH) == now.get(Calendar.MONTH)
+                cal.time = targetCal.time
+                when {
+                    isCurrentMonth -> cal.set(Calendar.DAY_OF_MONTH, now.get(Calendar.DAY_OF_MONTH))
+                    targetCal.before(now) -> cal.set(Calendar.DAY_OF_MONTH, cal.getActualMaximum(Calendar.DAY_OF_MONTH))
+                    else -> cal.set(Calendar.DAY_OF_MONTH, 1)
+                }
+            }
+            cal
+        }
         val daysInMonth = calDetail.getActualMaximum(Calendar.DAY_OF_MONTH)
         val dayOfMonth = calDetail.get(Calendar.DAY_OF_MONTH)
         val daysRemaining = (daysInMonth - dayOfMonth).coerceAtLeast(1)
@@ -6074,7 +6229,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                             // close), green when comfortably at/above target.
                                             val leftPerDayColor = when {
                                                 dailyAllowanceLeft <= 0 -> c.expense
-                                                dailyAllowanceLeft < expectedDailyBudget -> Color(0xFFB8860B)
+                                                dailyAllowanceLeft < expectedDailyBudget -> Color(0xFFFFA000)
                                                 else -> c.income
                                             }
                                             Text("₹${amtFmt.format(dailyAllowanceLeft.coerceAtLeast(0.0))}", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = leftPerDayColor, textAlign = TextAlign.Center)
@@ -7156,10 +7311,16 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = rememberLazyListState()) {
+fun AutoScanHubScreen(
+    viewModel: FinanceViewModel,
+    listState: LazyListState = rememberLazyListState(),
+    autoRequestSmsPermission: Boolean = false,
+    onAutoRequestConsumed: () -> Unit = {}
+) {
     val c = LocalAppColors.current
     val isPaid by viewModel.isPaidFeaturesEnabled.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var showSmsPermissionSettingsPrompt by remember { mutableStateOf(false) }
     var manualSmsSender by remember { mutableStateOf("") }
     var manualSmsBody by remember { mutableStateOf("") }
     var customPatternInput by remember { mutableStateOf("") }
@@ -7193,8 +7354,63 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
         if (hasReadSmsPermission) {
             Toast.makeText(context, "SMS access enabled. Tap \"Scan Inbox\" to import messages.", Toast.LENGTH_LONG).show()
         } else {
-            Toast.makeText(context, "SMS read permission is required for inbox import.", Toast.LENGTH_SHORT).show()
+            // Denied (or the system silently no-op'd, e.g. a restricted-settings block on
+            // sideloaded apps) — offer a direct path to the app's Settings page instead of
+            // just a Toast the user can't act on.
+            showSmsPermissionSettingsPrompt = true
         }
+    }
+    // Wrapping the actual .launch() call: some devices/OS versions throw synchronously here
+    // (e.g. a restricted-settings block, or a transient Activity/window state issue) instead
+    // of just returning a denial through the normal callback — previously unguarded, that
+    // crashed the whole app the instant this button was tapped.
+    fun safeRequestSmsPermission() {
+        try {
+            requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
+        } catch (e: Throwable) {
+            Toast.makeText(context, "Couldn't open the permission dialog: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+        }
+    }
+    // Auto-launch the SMS permission request once, right after the user agrees to the
+    // first-run consent screen — so they land here already mid-flow instead of having to
+    // find and tap "Enable Auto-Import" themselves.
+    LaunchedEffect(autoRequestSmsPermission) {
+        if (autoRequestSmsPermission) {
+            if (!hasSmsPermissions) {
+                safeRequestSmsPermission()
+            }
+            onAutoRequestConsumed()
+        }
+    }
+    if (showSmsPermissionSettingsPrompt) {
+        AlertDialog(
+            onDismissRequest = { showSmsPermissionSettingsPrompt = false },
+            containerColor = c.surface,
+            title = { Text("SMS Permission Needed", fontWeight = FontWeight.Bold, color = c.text) },
+            text = {
+                Text(
+                    "AutoLedger needs SMS access to automatically track your transactions.\n\n" +
+                    "If no permission prompt appeared, or you already denied it, open App Settings \u2192 Permissions and allow SMS manually.\n\n" +
+                    "On some phones, apps installed outside the Play Store also need \"Allow restricted settings\" turned on first \u2014 tap the \u22ee menu on the App Info screen to find it.",
+                    color = c.textSecondary, fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showSmsPermissionSettingsPrompt = false
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = android.net.Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg)
+                ) { Text("Open Settings", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSmsPermissionSettingsPrompt = false }) { Text("Not now", color = c.textSecondary) }
+            }
+        )
     }
     val merchantRules by viewModel.merchantCategoryRules.collectAsStateWithLifecycle()
     val customCatsForMerchant by viewModel.allCustomCategories.collectAsStateWithLifecycle()
@@ -7340,7 +7556,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                             if (hasReadSmsPermission) {
                                 viewModel.scanDeviceSmsInbox(context, smsScanMonthsBack)
                             } else {
-                                requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
+                                safeRequestSmsPermission()
                             }
                         },
                         enabled = !isSmsParsing,
@@ -7380,7 +7596,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                             if (hasReadSmsPermission) {
                                 viewModel.scanWalletsPfInbox(context, smsScanMonthsBack)
                             } else {
-                                requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
+                                safeRequestSmsPermission()
                             }
                         },
                         enabled = !isWalletPfScanning,
@@ -7564,7 +7780,7 @@ fun AutoScanHubScreen(viewModel: FinanceViewModel, listState: LazyListState = re
                                     smsScanMonthsBack
                                 )
                             } else {
-                                requestSmsLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
+                                safeRequestSmsPermission()
                             }
                         },
                         enabled = !isSmsParsing,
@@ -10091,13 +10307,24 @@ fun BackupDialog(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
         if (uri != null) {
-            // Persist read/write permission across reboots
-            val flags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            context.contentResolver.takePersistableUriPermission(uri, flags)
-            val path = uri.toString()
-            viewModel.setCustomBackupPath(path)
-            Toast.makeText(context, "Backup folder updated!", Toast.LENGTH_SHORT).show()
+            try {
+                // Persist read/write permission across reboots. Some devices/OS versions
+                // don't actually grant every flag we ask for on the returned URI, which makes
+                // this throw a SecurityException — previously unguarded, it crashed the app
+                // immediately after picking a folder.
+                val flags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(uri, flags)
+                val path = uri.toString()
+                viewModel.setCustomBackupPath(path)
+                Toast.makeText(context, "Backup folder updated!", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(
+                    context,
+                    "Couldn't get persistent access to that folder: ${e.message ?: "unknown error"}. Try a different folder.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
@@ -10306,7 +10533,13 @@ fun BackupDialog(
 
                             // Choose folder button (replaces manual path text input)
                             Button(
-                                onClick = { folderPickerLauncher.launch(null) },
+                                onClick = {
+                                    try {
+                                        folderPickerLauncher.launch(null)
+                                    } catch (e: Throwable) {
+                                        Toast.makeText(context, "Couldn't open the folder picker: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+                                    }
+                                },
                                 colors = ButtonDefaults.buttonColors(containerColor = c.accent),
                                 shape = RoundedCornerShape(8.dp),
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),

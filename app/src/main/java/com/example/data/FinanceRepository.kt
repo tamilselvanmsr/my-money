@@ -147,6 +147,14 @@ class FinanceRepository(private val financeDao: FinanceDao) {
     }
 
     suspend fun getAccountByRef(ref: String): Account? {
+        // Wallet refs (e.g. "ZOMATO_WALLET", "GENERIC_WALLET:Swiggy Money") are stored with
+        // lastFour = null on their Account row (see FinanceViewModel.ensureAccountExists) —
+        // a lastFour lookup can never match them. Resolve by the wallet's display name
+        // instead so callers passing a wallet ref (e.g. Balance Sync creation) actually find
+        // the account rather than silently getting null every time.
+        com.example.utils.SmsParser.walletDisplayNameForRef(ref)?.let { displayName ->
+            return financeDao.getAccountByName(displayName)
+        }
         return financeDao.getAccountByLastFour(ref)
             ?: if (ref.length == 3) financeDao.getAccountByLastFourSuffix(ref) else null
     }

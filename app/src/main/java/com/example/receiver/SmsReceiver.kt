@@ -181,10 +181,13 @@ class SmsReceiver : BroadcastReceiver() {
                             )
                         }
                         if (!isDuplicate) {
+                            val merchantRules = com.example.utils.loadMerchantCategoryRules(context)
+                            val finalCategory = com.example.utils.applyMerchantRulesToCategory(parsed.title, merchantRules)
+                                ?: parsed.category.name
                             val transaction = TransactionEntry(
                                 title = parsed.title,
                                 amount = parsed.amount,
-                                category = parsed.category.name,
+                                category = finalCategory,
                                 type = parsed.type,
                                 smsSender = sender,
                                 smsBody = body,

@@ -33,6 +33,47 @@ private fun incRefFromNote(note: String?): String? {
     return "\\[IncRef: ([^\\]]+)\\]".toRegex().find(note ?: "")?.groupValues?.getOrNull(1)
 }
 
+/** Wildcard matching: `zerodha*` = startsWith, `*paytm*` = contains, `*nova` = endsWith, else = contains. */
+fun matchesMerchantPattern(title: String, pattern: String): Boolean {
+    val lower = title.lowercase().trim()
+    val p = pattern.lowercase().trim()
+    return when {
+        p.startsWith("*") && p.endsWith("*") && p.length > 2 -> lower.contains(p.substring(1, p.length - 1))
+        p.startsWith("*") -> lower.endsWith(p.substring(1))
+        p.endsWith("*") -> lower.startsWith(p.dropLast(1))
+        else -> lower.contains(p)
+    }
+}
+
+/**
+ * Loads the user's saved Merchant -> Category rules directly from SharedPreferences.
+ * Used by the live [com.example.receiver.SmsReceiver] (a BroadcastReceiver with no ViewModel
+ * access) so background-received SMS get the same category overrides that FinanceViewModel's
+ * Scan Inbox / Scan Wallets buttons already apply — previously only those in-app scans
+ * consulted the rules, so live SMS silently ignored active Merchant -> Category rules.
+ */
+fun loadMerchantCategoryRules(context: android.content.Context): List<Pair<String, String>> {
+    val prefs = context.getSharedPreferences("finance_settings", android.content.Context.MODE_PRIVATE)
+    val json = prefs.getString("merchant_category_rules", "[]") ?: "[]"
+    return try {
+        val arr = org.json.JSONArray(json)
+        (0 until arr.length()).map { i ->
+            val obj = arr.getJSONObject(i)
+            obj.getString("pattern") to obj.getString("category")
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+}
+
+/** Returns the overriding category name if any merchant rule matches the title, else null. */
+fun applyMerchantRulesToCategory(title: String, rules: List<Pair<String, String>>): String? {
+    for ((pattern, category) in rules) {
+        if (matchesMerchantPattern(title, pattern)) return category
+    }
+    return null
+}
+
 fun isDuplicateImportedTransaction(
     existing: TransactionEntry,
     incomingSmsBody: String,

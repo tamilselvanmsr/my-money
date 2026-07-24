@@ -2070,20 +2070,23 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                             matchedCount++
                         }
-                        // PF passbook balance sync — disabled (wallets-only mode)
-                        /*
-                        if (parsed.title == "PF Contribution" && parsed.availableBalance != null &&
-                            enableBalanceSync.value && !matchesSmsBlocklistPattern(walletName)) {
-                            val pfAcc = repository.getAccountByRef(parsed.accountRef ?: "")
+                        // Wallet/PF balance sync — creates a Balance Sync snapshot whenever the
+                        // SMS reported the resulting balance (e.g. wallet "Updated balance: Rs.X"
+                        // on a payment, or the PF passbook running total). Previously this only
+                        // covered "PF Contribution" and was disabled entirely, so ordinary wallet
+                        // transactions (Zomato Money, Paytm, etc.) that mention their post-transaction
+                        // balance never synced the wallet's tracked balance at all.
+                        if (parsed.availableBalance != null && enableBalanceSync.value && !matchesSmsBlocklistPattern(walletName)) {
+                            val walAcc = repository.getAccountByRef(parsed.accountRef ?: "")
                                 ?: allAccounts.value.find { it.name == walletName }
-                            if (pfAcc != null) {
-                                val inserted = createBalanceAdjustIfNeeded(pfAcc, parsed.availableBalance!!, targetTime + 1, body, sender, projectedTransactions)
+                            if (walAcc != null) {
+                                val inserted = createBalanceAdjustIfNeeded(walAcc, parsed.availableBalance!!, targetTime + 1, body, sender, projectedTransactions)
                                 if (inserted) {
                                     newImportedFingerprints.add("Balance Sync|${parsed.availableBalance!!}|BALANCE_UPDATE|${targetTime + 1}")
+                                    matchedCount++
                                 }
                             }
                         }
-                        */
                     }
                     cursor.close()
                 }

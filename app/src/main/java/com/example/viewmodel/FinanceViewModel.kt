@@ -107,6 +107,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         _selectedMonthYear.value = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date(time))
     }
 
+    // Selected "My Wallets" filter on the Records/Dashboard screen — kept here (rather than
+    // a plain remember{} in the composable) so it survives switching between bottom nav tabs,
+    // which disposes and later recomposes the Dashboard screen from scratch.
+    private val _selectedWalletFilter = MutableStateFlow("All")
+    val selectedWalletFilter: StateFlow<String> = _selectedWalletFilter.asStateFlow()
+
+    fun setSelectedWalletFilter(name: String) {
+        _selectedWalletFilter.value = name
+    }
+
     // Configurable options backed by persistent SharedPreferences
     private val prefs = application.getSharedPreferences("finance_settings", android.content.Context.MODE_PRIVATE)
 
@@ -1416,6 +1426,19 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun setMonthYear(monthYear: String) {
         _selectedMonthYear.value = monthYear
+        // Records/Analytics derive their date range from anchorDate, not selectedMonthYear
+        // (see getAnalyticsRange), so without also moving the anchor here, navigating the
+        // month from the Budgets screen left those two screens stuck on the old period.
+        try {
+            val parsed = SimpleDateFormat("yyyy-MM", Locale.getDefault()).parse(monthYear) ?: return
+            val currentDay = Calendar.getInstance().apply { timeInMillis = _anchorDate.value }.get(Calendar.DAY_OF_MONTH)
+            val cal = Calendar.getInstance().apply { time = parsed }
+            val maxDay = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+            cal.set(Calendar.DAY_OF_MONTH, currentDay.coerceAtMost(maxDay))
+            _anchorDate.value = cal.timeInMillis
+        } catch (e: Exception) {
+            // Keep the previous anchor if the month string can't be parsed.
+        }
     }
 
     // Transaction CRUD
@@ -1469,8 +1492,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         repository.updateAccountAvailableLimit(acc.id, acc.availableLimit + delta)
     }
 
-    /** Sets a balance snapshot for [accountName] at [targetBalance]. */
-    fun adjustAccountBalance(accountName: String, currentBalance: Double, targetBalance: Double) {
+    /** Sets a balance snapshot for [accountName] at [targetBalance], effective at [timestamp]. */
+    fun adjustAccountBalance(accountName: String, currentBalance: Double, targetBalance: Double, timestamp: Long = System.currentTimeMillis()) {
         if (Math.abs(targetBalance - currentBalance) < 0.01) return
         viewModelScope.launch {
             val tx = TransactionEntry(
@@ -1479,7 +1502,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 category = "",
                 type = "BALANCE_UPDATE",
                 note = "Snapshot \u20b9${String.format("%.2f", targetBalance)} [Acc: $accountName]",
-                timestamp = System.currentTimeMillis()
+                timestamp = timestamp
             )
             repository.insertTransaction(tx)
             _toastMessage.emit("Balance set to \u20b9${String.format("%.2f", targetBalance)} for $accountName")

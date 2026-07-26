@@ -79,6 +79,9 @@ enum class ExpenseCategory(
     COINS("Coins",                     Icons.Default.Savings,         Color(0xFFFBC02D), "INCOME"),
     UPI("UPI",                         Icons.Default.QrCode,          Color(0xFF0EA5E9), "INCOME"),
     BORROWED_MONEY("Borrowed Money",   Icons.Default.CallReceived,    Color(0xFF43A047), "INCOME"),
+    INTEREST("Interest",               Icons.Default.ShowChart,       Color(0xFF00E5FF), "INCOME"),
+    REIMBURSEMENT("Reimbursement",     Icons.Default.CurrencyExchange, Color(0xFFFF1744), "INCOME"),
+    DIVIDEND("Dividend",               Icons.Default.Paid,            Color(0xFFAA00FF), "INCOME"),
     INCOME_OTHERS("Other Income",       Icons.Default.Category,        Color(0xFF607D8B), "INCOME");
 
     companion object {
@@ -248,6 +251,12 @@ object CategoryResolver {
             "qrcode"            -> Icons.Default.QrCode
             "upi"               -> Icons.Default.QrCode
             "income_others"     -> Icons.Default.Category
+            "showchart"         -> Icons.Default.ShowChart
+            "interest"          -> Icons.Default.ShowChart
+            "currencyexchange"  -> Icons.Default.CurrencyExchange
+            "reimbursement"     -> Icons.Default.CurrencyExchange
+            "paid"              -> Icons.Default.Paid
+            "dividend"          -> Icons.Default.Paid
 
             // Entertainment / lifestyle
             "localplay"         -> Icons.Default.LocalPlay

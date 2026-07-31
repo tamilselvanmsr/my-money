@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
+import androidx.compose.ui.graphics.toArgb
 import com.example.data.CategoryResolver
 import com.example.data.Account
 import com.example.data.CustomCategory
@@ -73,7 +74,9 @@ object PdfExporter {
                 val resolved = CategoryResolver.resolve(cat, customCategories)
                 MonthlyPdfBreakdown(
                     name  = resolved.displayName,
-                    color = Color.parseColor(String.format("#%06X", 0xFFFFFF and resolved.color.value.toInt())),
+                    // .toArgb() correctly converts a Compose Color — bit-masking .value
+                    // directly (as this used to) produced garbage that always rendered black.
+                    color = resolved.color.toArgb(),
                     total = entries.sumOf { it.amount },
                     pct   = if (totExp > 0.0) entries.sumOf { it.amount } / totExp else 0.0
                 )
@@ -144,12 +147,14 @@ object PdfExporter {
             val netColor = if (s.net >= 0) C_INC else C_EXP
             val gcColor  = if (s.closingBalance >= 0) C_ACCENT else C_EXP
             cv.drawText(s.month,                             colM[0], y, paint(9f, C_TEXT))
-            cv.drawText(fmtAmt(s.income),                   colM[1], y, paint(9f, C_INC, bold = true))
-            cv.drawText(fmtAmt(s.expense),                  colM[2], y, paint(9f, C_EXP, bold = true))
-            cv.drawText(fmtAmt(s.net),                      colM[3], y, paint(9f, netColor, bold = true))
-            cv.drawText(fmtAmt(s.closingBalance),           colM[4], y, paint(9f, gcColor, bold = true))
+            cv.drawText(fmtAmt(s.income),   colM[2] - 6f, y, paintRight(9f, C_INC, bold = true))
+            cv.drawText(fmtAmt(s.expense),  colM[3] - 6f, y, paintRight(9f, C_EXP, bold = true))
+            cv.drawText(fmtAmt(s.net),      colM[4] - 6f, y, paintRight(9f, netColor, bold = true))
+            cv.drawText(fmtAmt(s.closingBalance), PW - M - 6f, y, paintRight(9f, gcColor, bold = true))
+            // Divider drawn right below THIS row's own text (not after the y increment) so it
+            // doesn't visually drift toward the next row's content.
+            cv.drawLine(M, y + 5f, PW - M, y + 5f, p(C_DIVIDER, strokeWidth = 0.5f))
             y += 18f
-            cv.drawLine(M, y - 4f, PW - M, y - 4f, p(C_DIVIDER, strokeWidth = 0.5f))
         }
 
         // ─── ACCOUNT BALANCES TABLE ───────────────────────────────────────────
@@ -205,10 +210,10 @@ object PdfExporter {
                 }
                 cv.drawText(acc.name.take(30),   colA[0], y, paint(8.5f, C_TEXT))
                 cv.drawText(typeLabel,           colA[1], y, paint(8.5f, C_MUTED))
-                cv.drawText(fmtAmt(bal),         colA[2], y, paint(8.5f, balColor, bold = true))
-                cv.drawText("${fmtAmt(inc)} / ${fmtAmt(exp)}", colA[3], y, paint(8.5f, C_TEXT))
+                cv.drawText(fmtAmt(bal),         colA[3] - 6f, y, paintRight(8.5f, balColor, bold = true))
+                cv.drawText("${fmtAmt(inc)} / ${fmtAmt(exp)}", PW - M - 6f, y, paintRight(8.5f, C_TEXT))
+                cv.drawLine(M, y + 5f, PW - M, y + 5f, p(C_DIVIDER, strokeWidth = 0.5f))
                 y += 18f
-                cv.drawLine(M, y - 4f, PW - M, y - 4f, p(C_DIVIDER, strokeWidth = 0.5f))
             }
         }
 
@@ -235,14 +240,15 @@ object PdfExporter {
             drawLabeledBar(cv, "Expense", s.expense, (s.expense / mMax).toFloat(), M, y, PW - M * 2, C_EXP)
             y += 26f
 
-            // Category breakdown bar chart
+            // Category breakdown bar chart — show every category the month actually has
+            // spend in (was capped at 8, silently dropping categories from busier months).
             if (s.breakdown.isNotEmpty()) {
-                ensureSpace(20f + s.breakdown.take(8).size * 20f)
+                ensureSpace(20f + s.breakdown.size * 20f)
                 cv.drawRoundRect(RectF(M, y, PW - M, y + 22f), 8f, 8f, p(C_ACCENT))
                 cv.drawText("Category Breakdown", M + 10f, y + 15f, paint(10f, C_WHITE, bold = true))
                 y += 30f
-                drawCategoryBars(cv, s.breakdown.take(8), M, y, PW - M * 2)
-                y += s.breakdown.take(8).size * 20f + 10f
+                drawCategoryBars(cv, s.breakdown, M, y, PW - M * 2)
+                y += s.breakdown.size * 20f + 10f
             }
 
             // Transaction table
@@ -278,7 +284,7 @@ object PdfExporter {
                 cv.drawText(trim(resolved.displayName, 13),                     txCols[4], y, paint(8.5f, C_MUTED))
                 cv.drawText(
                     fmtAmt(if (isInc) tx.amount else -tx.amount),
-                    txCols[5], y, paint(8.5f, amtColor, bold = true)
+                    PW - M - 6f, y, paintRight(8.5f, amtColor, bold = true)
                 )
                 y += 18f
             }
@@ -360,7 +366,7 @@ object PdfExporter {
     private fun drawSummaryRow(canvas: Canvas, label: String, value: Double, y: Float, valueColor: Int) {
         canvas.drawRect(M, y - 12f, PW - M, y + 4f, p(C_TRACK))
         canvas.drawText(label, M + 8f, y, paint(9f, C_TEXT, bold = true))
-        canvas.drawText(fmtAmt(value), PW - M - 100f, y, paint(9f, valueColor, bold = true))
+        canvas.drawText(fmtAmt(value), PW - M - 8f, y, paintRight(9f, valueColor, bold = true))
     }
 
     private fun drawPageFooter(canvas: Canvas, pageNum: Int) {
@@ -381,6 +387,12 @@ object PdfExporter {
             this.color = color
             isFakeBoldText = bold
         }
+
+    // Numeric/amount cells are right-aligned to their column's right edge so a wider value
+    // (more digits) grows leftward into its own column's whitespace instead of bleeding into
+    // the next column and visually overlapping/"striking through" its text.
+    private fun paintRight(size: Float, color: Int, bold: Boolean = false): Paint =
+        paint(size, color, bold).apply { textAlign = Paint.Align.RIGHT }
 
     // ─── Utilities ────────────────────────────────────────────────────────────
 

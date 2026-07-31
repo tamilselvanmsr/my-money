@@ -81,9 +81,13 @@ private data class PendingTxItem(
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
     private val TAG = "FinanceViewModel"
     private val BACKUP_KEY = "AutoLedger_Local_Backup_AES256"
-    private val budgetAlertChannelId = "budget_alerts"
+    private val budgetAlertChannelId = "budget_alerts_v2"
     private val proStatusChannelId   = "pro_status"
-    private val backupChannelId      = "backup_status"
+    private val backupChannelId      = "backup_status_v2"
+    // Single floor for budget alerts — no separate 75/90/100% bands, just "past 75% or not".
+    private val BUDGET_ALERT_FLOOR = 0.75
+    private fun budgetAlertActiveKey(monthYear: String, category: String) = "budget_alert_${monthYear}_${category.uppercase(Locale.getDefault())}_active"
+    private fun budgetAlertLastSpentKey(monthYear: String, category: String) = "budget_alert_${monthYear}_${category.uppercase(Locale.getDefault())}_last_spent"
     private val db = FinanceDatabase.getDatabase(application)
     private val repository = FinanceRepository(db.financeDao())
     private val createdAccountsCache = mutableMapOf<String, String>()
@@ -174,6 +178,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun setShowCreditCardDetails(v: Boolean) {
         _showCreditCardDetails.value = v
         prefs.edit().putBoolean("show_credit_card_details", v).apply()
+    }
+
+    // ── Account amount decimal places (Accounts tab + visibility list) — 0/1/2 ────
+    private val _accountAmountDecimals = MutableStateFlow(prefs.getInt("account_amount_decimals", 2))
+    val accountAmountDecimals: StateFlow<Int> = _accountAmountDecimals.asStateFlow()
+    fun setAccountAmountDecimals(v: Int) {
+        _accountAmountDecimals.value = v
+        prefs.edit().putInt("account_amount_decimals", v).apply()
     }
 
     // ── Balance sync scan toggle ───────────────────────────────────────────────
@@ -441,11 +453,24 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     val merchantCategoryRules: StateFlow<List<Pair<String, String>>> = _merchantCategoryRules.asStateFlow()
 
     fun addMerchantCategoryRule(pattern: String, category: String) {
+        val trimmedPattern = pattern.trim()
+        val trimmedCategory = category.trim()
+        val existing = _merchantCategoryRules.value.firstOrNull { it.first.equals(trimmedPattern, ignoreCase = true) }
         val updated = _merchantCategoryRules.value.toMutableList()
-        updated.removeAll { it.first.equals(pattern.trim(), ignoreCase = true) }
-        updated.add(0, pattern.trim() to category.trim())
+        updated.removeAll { it.first.equals(trimmedPattern, ignoreCase = true) }
+        updated.add(0, trimmedPattern to trimmedCategory)
         _merchantCategoryRules.value = updated
         saveMerchantCategoryRules(updated)
+
+        viewModelScope.launch {
+            if (existing != null && existing.second.equals(trimmedCategory, ignoreCase = true)) {
+                _toastMessage.emit("Rule already exists: '$trimmedPattern' → $trimmedCategory")
+                addNotification("Duplicate Rule", "'$trimmedPattern' → $trimmedCategory already exists.")
+            } else {
+                _toastMessage.emit("Rule added: '$trimmedPattern' → $trimmedCategory")
+                addNotification("Merchant Rule Added", "'$trimmedPattern' → $trimmedCategory")
+            }
+        }
     }
 
     fun removeMerchantCategoryRule(pattern: String) {
@@ -548,15 +573,36 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private fun createBudgetAlertChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getApplication<Application>().getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(NotificationChannel(
-                budgetAlertChannelId, "Budget Alerts", NotificationManager.IMPORTANCE_DEFAULT
-            ).apply { description = "Alerts when monthly category budgets near or exceed limits" })
+            // Delete any stale pre-v2 channel left over from earlier app versions — Android
+            // caches a channel's importance/vibration after first creation, so just changing
+            // the NotificationChannel() call below has no effect for existing installs unless
+            // the old channel is gone. budgetAlertChannelId was bumped to "budget_alerts_v2" so
+            // every device gets a guaranteed-fresh HIGH importance channel exactly once.
+            manager.deleteNotificationChannel("budget_alerts")
+            if (manager.getNotificationChannel(budgetAlertChannelId) == null) {
+                manager.createNotificationChannel(NotificationChannel(
+                    budgetAlertChannelId, "Budget Alerts", NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Alerts when monthly category budgets near or exceed limits"
+                    enableVibration(true)
+                    vibrationPattern = longArrayOf(0, 250, 250, 250)
+                    enableLights(true)
+                })
+            }
             manager.createNotificationChannel(NotificationChannel(
                 proStatusChannelId, "Pro Status", NotificationManager.IMPORTANCE_DEFAULT
             ).apply { description = "AutoLedger Pro activation and deactivation alerts" })
-            manager.createNotificationChannel(NotificationChannel(
-                backupChannelId, "Backup Status", NotificationManager.IMPORTANCE_LOW
-            ).apply { description = "Automatic backup completion and failure alerts" })
+            // Bumped to HIGH (was LOW pre-v2) so completed/failed backups pop up as a heads-up
+            // banner the same way budget alerts do, instead of sitting silently in the shade.
+            manager.deleteNotificationChannel("backup_status")
+            if (manager.getNotificationChannel(backupChannelId) == null) {
+                manager.createNotificationChannel(NotificationChannel(
+                    backupChannelId, "Backup Status", NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Automatic backup completion and failure alerts"
+                    enableVibration(true)
+                })
+            }
         }
     }
 
@@ -569,9 +615,24 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         addNotification(title, text)
     }
 
-    /** Posts an OS-level notification for backup completion (called from BackupWorker). */
+    /** Posts an OS-level heads-up notification for backup completion/failure — mirrors
+     * postBudgetAlert so backup status is as visible as budget alerts, not just the bell. */
     fun postBackupNotification(success: Boolean, detail: String) {
-        // No-op: backup status is surfaced via addAppNotification in BackupWorker (in-app bell only)
+        val application = getApplication<Application>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(application, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        val title = if (success) "Backup Completed" else "Backup Failed"
+        val notification = NotificationCompat.Builder(application, backupChannelId)
+            .setSmallIcon(android.R.drawable.stat_sys_upload_done)
+            .setContentTitle(title)
+            .setContentText(detail)
+            .setPriority(if (success) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        NotificationManagerCompat.from(application).notify(title.hashCode(), notification)
     }
 
     private suspend fun maybeNotifyBudgetAlert(transaction: TransactionEntry, projectedTransactions: List<TransactionEntry>) {
@@ -590,18 +651,24 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
         val ratio = spent / budget.amountLimit
         val displayCategoryName = CategoryResolver.resolve(transaction.category, allCustomCategories.value).displayName
-        val thresholds = listOf(0.75 to "75%", 0.90 to "90%", 1.0 to "100%")
 
-        thresholds.forEach { (threshold, label) ->
-            val prefKey = "budget_alert_${monthYear}_${budget.category.uppercase(Locale.getDefault())}_$label"
-            if (ratio >= threshold && !prefs.getBoolean(prefKey, false)) {
-                prefs.edit().putBoolean(prefKey, true).apply()
-                postBudgetAlert(displayCategoryName, spent, budget.amountLimit, label)
+        // Single floor at 75% — no separate 75/90/100% bands. Once spend is at or past 75% of
+        // budget, alert with the ACTUAL percentage (e.g. "82%", "117%"), and keep re-alerting on
+        // every further increase (94%, 130%, 165%, ...) instead of firing three near-identical
+        // pings back to back or going silent after the first one.
+        if (ratio >= BUDGET_ALERT_FLOOR) {
+            val activeKey = budgetAlertActiveKey(monthYear, budget.category)
+            val lastSpentKey = budgetAlertLastSpentKey(monthYear, budget.category)
+            val wasActive = prefs.getBoolean(activeKey, false)
+            val lastAlertedSpent = prefs.getFloat(lastSpentKey, 0f).toDouble()
+            if (!wasActive || spent > lastAlertedSpent + 0.01) {
+                prefs.edit().putBoolean(activeKey, true).putFloat(lastSpentKey, spent.toFloat()).apply()
+                postBudgetAlert(displayCategoryName, spent, budget.amountLimit, ratio)
             }
         }
     }
 
-    private fun postBudgetAlert(categoryName: String, spent: Double, limit: Double, thresholdLabel: String) {
+    private fun postBudgetAlert(categoryName: String, spent: Double, limit: Double, ratio: Double) {
         val application = getApplication<Application>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(application, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -609,16 +676,58 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
+        // Always show the ACTUAL percentage reached (e.g. "117%"), not a fixed 75/90/100% band —
+        // a single large expense can jump straight past the 75% floor, and the user should see
+        // exactly how far over/under they are.
+        val pct = Math.round(ratio * 100).toInt()
+        val title = if (ratio >= 1.0) "Budget Exceeded" else "Budget Alert"
+        val body = if (ratio >= 1.0)
+            "$categoryName exceeded budget: $pct% used. Spent ₹${"%.2f".format(Locale.getDefault(), spent)} of ₹${"%.2f".format(Locale.getDefault(), limit)}."
+        else
+            "$categoryName reached $pct% of budget. Spent ₹${"%.2f".format(Locale.getDefault(), spent)} of ₹${"%.2f".format(Locale.getDefault(), limit)}."
+
         val notification = NotificationCompat.Builder(application, budgetAlertChannelId)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("Budget alert: $categoryName")
-            .setContentText("$categoryName reached $thresholdLabel of budget. Spent ₹${"%.2f".format(Locale.getDefault(), spent)} of ₹${"%.2f".format(Locale.getDefault(), limit)}.")
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true)
             .build()
 
-        NotificationManagerCompat.from(application).notify(categoryName.hashCode() + thresholdLabel.hashCode(), notification)
-        addNotification("Budget Alert: $categoryName", "$categoryName reached $thresholdLabel of budget — spent ₹${"%.2f".format(Locale.getDefault(), spent)} of ₹${"%.2f".format(Locale.getDefault(), limit)}.")
+        NotificationManagerCompat.from(application).notify(categoryName.hashCode() + pct, notification)
+        addNotification("Budget Alert: $categoryName", body)
+    }
+
+    /** Re-checks a category's budget status after a transaction affecting it was deleted or
+     * edited (amount lowered / recategorized away) — clears the "past 75%" alert state once
+     * spend drops back below the floor (so it can fire again if spend climbs back up later this
+     * month), and lets the user know they're back under budget after having gone over it. */
+    private suspend fun checkBudgetAfterReduction(category: String, timestampMs: Long, projectedTransactions: List<TransactionEntry>) {
+        if (category.isBlank()) return
+        val monthYear = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date(timestampMs))
+        val monthBudgets = repository.getBudgetsForMonth(monthYear).first()
+        val budget = monthBudgets.firstOrNull { it.category.equals(category, ignoreCase = true) } ?: return
+        if (budget.amountLimit <= 0.0) return
+
+        val spent = projectedTransactions.filter {
+            it.type == "EXPENSE" &&
+                it.category.equals(category, ignoreCase = true) &&
+                SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date(it.timestamp)) == monthYear
+        }.sumOf { it.amount }
+
+        val ratio = spent / budget.amountLimit
+        val displayCategoryName = CategoryResolver.resolve(category, allCustomCategories.value).displayName
+        val activeKey = budgetAlertActiveKey(monthYear, category)
+        val lastSpentKey = budgetAlertLastSpentKey(monthYear, category)
+
+        if (ratio < BUDGET_ALERT_FLOOR && prefs.getBoolean(activeKey, false)) {
+            prefs.edit().remove(activeKey).remove(lastSpentKey).apply()
+            addNotification(
+                "Budget Reduced: $displayCategoryName",
+                "$displayCategoryName is back under ${(BUDGET_ALERT_FLOOR * 100).toInt()}% of budget — spent ₹${"%.2f".format(Locale.getDefault(), spent)} of ₹${"%.2f".format(Locale.getDefault(), budget.amountLimit)}."
+            )
+        }
     }
 
     private fun getNextOccurenceDate(time: Long, frequency: String): Long {
@@ -785,7 +894,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         balance: Double,
         type: String,
         lastFour: String? = null,
-        openingBalanceTimestamp: Long = System.currentTimeMillis()
+        openingBalanceTimestamp: Long = System.currentTimeMillis(),
+        iconName: String? = null
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             if (name.isBlank()) return@launch
@@ -795,7 +905,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 _toastMessage.emit("Wallet named '$cleanName' already exists!")
                 return@launch
             }
-            val acc = Account(name = cleanName, balance = 0.0, type = type.uppercase(), lastFour = lastFour?.trim())
+            val acc = Account(name = cleanName, balance = 0.0, type = type.uppercase(), lastFour = lastFour?.trim(), iconName = iconName)
             repository.insertAccount(acc)
             if (balance != 0.0) {
                 repository.insertTransaction(
@@ -813,11 +923,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun updateAccount(account: Account) {
+    fun updateAccount(account: Account, previousAccount: Account? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.updateAccount(account)
             _toastMessage.emit("Account configurations updated.")
-            addNotification("Account Updated", "Configuration for '${account.name}' (${account.type}) saved.")
+            val changes = if (previousAccount != null) {
+                buildList {
+                    if (previousAccount.name != account.name)
+                        add("Name: '${previousAccount.name}' → '${account.name}'")
+                    if (previousAccount.type != account.type)
+                        add("${account.name} Type: ${previousAccount.type} → ${account.type}")
+                    if (previousAccount.lastFour != account.lastFour)
+                        add("${account.name} Last 4 digits: ${previousAccount.lastFour ?: "—"} → ${account.lastFour ?: "—"}")
+                    if (Math.abs(previousAccount.creditLimit - account.creditLimit) > 0.01)
+                        add("${account.name} Credit Limit: ₹${String.format("%.2f", previousAccount.creditLimit)} → ₹${String.format("%.2f", account.creditLimit)}")
+                    if (previousAccount.showCreditLimitBalance != account.showCreditLimitBalance)
+                        add("${account.name} Limit-Based Balance: ${previousAccount.showCreditLimitBalance} → ${account.showCreditLimitBalance}")
+                    if (previousAccount.iconName != account.iconName)
+                        add("${account.name} Icon: ${previousAccount.iconName ?: "default"} → ${account.iconName ?: "default"}")
+                }
+            } else emptyList()
+            val message = if (changes.isNotEmpty()) changes.joinToString("\n") else "Configuration for '${account.name}' (${account.type}) saved."
+            addNotification("Account Updated", message)
         }
     }
 
@@ -845,10 +972,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             createdAccountsCache.clear() // prevent stale cache from blocking account recreation
             val acc = repository.getAccountById(accountId)
-            repository.deleteAccount(accountId)
             val accName = acc?.name ?: accountId
-            _toastMessage.emit("Account and its records deleted.")
-            addNotification("Account Deleted", "Account '$accName' and its records were deleted.")
+            // Mirrors the cascade-delete note pattern used in FinanceRepository.deleteAccount.
+            val recordCount = if (acc != null) allTransactions.value.count { it.note?.contains("[Acc: ${acc.name}]") == true } else 0
+            repository.deleteAccount(accountId)
+            val recordsText = if (recordCount == 1) "1 record" else "$recordCount records"
+            _toastMessage.emit("Account deleted — $recordsText also removed.")
+            addNotification("Account Deleted", "Account '$accName' deleted along with $recordsText.")
         }
     }
 
@@ -1315,14 +1445,17 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     }
                     if (dest != null) {
                         addNotification("$mode Backup", "Saved: $fileName\nCloud: $dest")
+                        postBackupNotification(true, "Saved: $fileName ($dest)")
                     } else {
                         addNotification("$mode Backup", "Saved: $fileName\nFolder: $folderName")
+                        postBackupNotification(true, "Saved: $fileName ($folderName)")
                     }
                 } else {
                     val folder = getBackupFolder(false, "")
                     folder.mkdirs()
                     java.io.File(folder, fileName).writeText(content, Charsets.UTF_8)
                     addNotification("$mode Backup", "Saved: $fileName\nPath: ${folder.absolutePath}")
+                    postBackupNotification(true, "Saved: $fileName")
                 }
 
                 val now = System.currentTimeMillis()
@@ -1333,6 +1466,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 withContext(Dispatchers.Main) { onComplete(true, null) }
             } catch (e: Exception) {
                 Log.e(TAG, "executeBackupNow failed: ${e.message}", e)
+                postBackupNotification(false, e.message ?: "Unknown error")
                 withContext(Dispatchers.Main) { onComplete(false, e.message) }
             }
         }
@@ -1444,8 +1578,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     // Transaction CRUD
     fun addTransaction(title: String, amount: Double, categoryName: String, type: String, note: String? = null, timestamp: Long = System.currentTimeMillis()) {
         viewModelScope.launch {
+            // No payee/merchant typed — fall back to "<Category> Log" (e.g. "Food Log") instead
+            // of leaving the record with a blank title.
+            val resolvedTitle = title.ifBlank { "${CategoryResolver.resolve(categoryName, allCustomCategories.value).displayName} Log" }
             val tx = TransactionEntry(
-                title = title,
+                title = resolvedTitle,
                 amount = amount,
                 category = categoryName,
                 type = type,
@@ -1459,7 +1596,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             // Mark as newly-added so the Records list shows the same "NEW" badge used for
             // freshly-imported SMS transactions — manual entries deserve the same cue.
             _recentlyImportedFingerprints.value = setOf("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
-            _toastMessage.emit("Added: $title ($type)")
+            _toastMessage.emit("Added: $resolvedTitle ($type)")
         }
     }
 
@@ -1512,20 +1649,35 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun updateTransaction(tx: TransactionEntry, applyToSameMerchant: Boolean = false) {
         viewModelScope.launch {
-            // Reverse old CC limit effect, then apply new one after update
             val oldTx = allTransactions.value.find { it.id == tx.id }
-            if (oldTx != null) adjustCcAvailableLimit(oldTx.note, oldTx.amount, oldTx.type, reverse = true, txTimestamp = oldTx.timestamp)
-            repository.updateTransaction(tx)
-            adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
+            // Marking a transaction as DUPLICATE only means "ignore its income/expense effect"
+            // (computeWalletBalances already excludes DUPLICATE type from wallet totals) — it
+            // must NOT also reverse the CC available limit. That limit is often set directly
+            // from an authoritative CC Payment/Summary SMS value (not just a computed delta),
+            // so subtracting the transaction's amount from it here was wrongly rolling back an
+            // otherwise-correct available limit whenever a CC Payment record got marked duplicate.
+            val markingAsDuplicate = tx.type == "DUPLICATE" && oldTx?.type != "DUPLICATE"
+            if (markingAsDuplicate) {
+                repository.updateTransaction(tx)
+                _toastMessage.emit("Marked as Duplicate")
+                addNotification("Marked as Duplicate", "${tx.title}: ₹${String.format("%.2f", tx.amount)} excluded from totals")
+            } else {
+                // Reverse old CC limit effect, then apply new one after update
+                if (oldTx != null) adjustCcAvailableLimit(oldTx.note, oldTx.amount, oldTx.type, reverse = true, txTimestamp = oldTx.timestamp)
+                repository.updateTransaction(tx)
+                adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
+            }
             // Auto-categorize all transactions with the same payee title (only when user opts in)
             if (applyToSameMerchant && tx.category.isNotBlank() && tx.title.isNotBlank()) {
                 repository.recategorizeByTitle(tx.title, tx.category, tx.id)
             }
-            maybeNotifyBudgetAlert(tx, allTransactions.value.map { if (it.id == tx.id) tx else it })
-            _toastMessage.emit("Updated transaction details")
+            val projectedAfterEdit = allTransactions.value.map { if (it.id == tx.id) tx else it }
+            maybeNotifyBudgetAlert(tx, projectedAfterEdit)
+            if (oldTx != null) checkBudgetAfterReduction(oldTx.category, oldTx.timestamp, projectedAfterEdit)
+            if (!markingAsDuplicate) _toastMessage.emit("Updated transaction details")
 
             // Build a human-readable diff notification for what actually changed.
-            if (oldTx != null) {
+            if (oldTx != null && !markingAsDuplicate) {
                 val sdf = SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
                 val changes = buildList<String> {
                     if (!oldTx.title.equals(tx.title, ignoreCase = true))
@@ -1553,7 +1705,34 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             // Reverse CC limit effect before deleting
             val tx = allTransactions.value.find { it.id == txId }
             if (tx != null) adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = true, txTimestamp = tx.timestamp)
+
+            // A CC Summary's "Balance Sync" snapshot carries the account's creditLimit/
+            // availableLimit as note tags (see ccSnapshotTags) because those fields live on
+            // the Account row, not derived from transaction history — deleting the snapshot
+            // alone previously left them stuck at the just-deleted values with no way back.
+            // Restore them from whichever CC-tagged snapshot is now the latest remaining one.
+            val ccTags = if (tx != null && tx.type == "BALANCE_UPDATE" && tx.title == "Balance Sync") {
+                com.example.utils.parseCcSnapshotTags(tx.note)
+            } else null
             repository.deleteTransaction(txId)
+            if (tx != null && tx.type == "EXPENSE") {
+                checkBudgetAfterReduction(tx.category, tx.timestamp, allTransactions.value.filter { it.id != txId })
+            }
+            if (ccTags != null && tx != null) {
+                val accountName = tx.getAccountName()
+                val acc = repository.getAccountByName(accountName)
+                val remaining = allTransactions.value
+                    .filter { it.id != txId && it.type == "BALANCE_UPDATE" && it.title == "Balance Sync" && it.getAccountName() == accountName }
+                    .maxByOrNull { it.timestamp }
+                val prevTags = remaining?.let { com.example.utils.parseCcSnapshotTags(it.note) }
+                if (acc != null && prevTags != null) {
+                    repository.updateAccountCreditLimit(acc.id, prevTags.first)
+                    repository.updateAccountAvailableLimit(acc.id, prevTags.second)
+                    _toastMessage.emit("Deleted — CC limits reverted to the previous statement for ${acc.name}")
+                    addNotification("CC Limits Reverted", "${acc.name}: Credit Limit → ₹${String.format("%.2f", prevTags.first)}, Available → ₹${String.format("%.2f", prevTags.second)} (after deleting a newer statement)")
+                    return@launch
+                }
+            }
             _toastMessage.emit("Deleted transaction")
         }
     }
@@ -1934,6 +2113,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     linkedAcc = repository.getAccountByRef(parsed.accountRef)
                                 }
                                 if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
+                                    val prevCreditLimit = linkedAcc.creditLimit
+                                    val prevAvailableLimit = linkedAcc.availableLimit
                                     parsed.availableLimit?.let { repository.updateAccountAvailableLimit(linkedAcc.id, it) }
                                     parsed.totalCreditLimit?.let { repository.updateAccountCreditLimit(linkedAcc.id, it) }
                                     // Write a negative-outstanding snapshot so computeWalletBalances
@@ -1945,9 +2126,21 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                         // Only delete+recreate when the snapshot amount changed.
                                         val existingAmount = repository.getLatestBalanceSyncAmount(linkedAcc.name)
                                         if (existingAmount == null || Math.abs(existingAmount - snapshot) >= 0.01) {
-                                            repository.deleteAllBalanceSyncForAccount(linkedAcc.name)
-                                            // Use actual SMS received date, NOT the parsed statement date from the body
-                                            if (createBalanceAdjustIfNeeded(linkedAcc, snapshot, smsDate, body, sender, projectedTransactions)) {
+                                            val prevDue = (prevCreditLimit - prevAvailableLimit).coerceAtLeast(0.0)
+                                            val newDue = (creditLimit - availLimit).coerceAtLeast(0.0)
+                                            // Use actual SMS received date, NOT the parsed statement date from the body.
+                                            // createBalanceAdjustIfNeeded only replaces a snapshot at this EXACT
+                                            // timestamp — it no longer wipes the account's entire snapshot history
+                                            // (previously via deleteAllBalanceSyncForAccount), which was corrupting
+                                            // every past period's running balance the next time it was viewed.
+                                            if (createBalanceAdjustIfNeeded(
+                                                linkedAcc, snapshot, smsDate, body, sender, projectedTransactions,
+                                                extraNoteTags = com.example.utils.ccSnapshotTags(creditLimit, availLimit),
+                                                notificationOverride = "CC Limits Updated" to
+                                                    "${linkedAcc.name}: Credit Limit \u20b9${"%.2f".format(prevCreditLimit)} \u2192 \u20b9${"%.2f".format(creditLimit)}, " +
+                                                        "Available \u20b9${"%.2f".format(prevAvailableLimit)} \u2192 \u20b9${"%.2f".format(availLimit)}, " +
+                                                        "Due \u20b9${"%.2f".format(prevDue)} \u2192 \u20b9${"%.2f".format(newDue)}"
+                                            )) {
                                                 newImportedFingerprints.add("Balance Sync|${snapshot}|BALANCE_UPDATE|$smsDate")
                                                 matchedCount++
                                             }
@@ -2141,19 +2334,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         timestamp: Long,
         smsBody: String,
         sender: String,
-        projectedTransactions: MutableList<TransactionEntry>
+        projectedTransactions: MutableList<TransactionEntry>,
+        extraNoteTags: String = "",
+        notificationOverride: Pair<String, String>? = null
     ): Boolean {
-        // Dedup: if there's already a Balance Sync near this timestamp, check its amount.
-        // Same amount → genuine duplicate, skip.  Different amount → stale/wrong entry: replace it.
-        val existing = repository.getExactBalanceUpdate(account.name, timestamp)
-        if (existing != null) {
-            if (Math.abs(existing.amount - reportedBalance) < 0.01) return false  // exact same value
-            repository.deleteTransaction(existing.id)  // stale entry with wrong amount — replace below
-        }
-
-        // Store the ABSOLUTE reported balance as a point-in-time snapshot.
-        // computeWalletBalances will use this as the starting balance and only apply
-        // transactions that arrived AFTER this timestamp — no diff calculation needed.
+        // Check + replace/insert run inside one Room transaction (see
+        // FinanceDao.upsertBalanceSync) so a concurrent import path racing to write the same
+        // snapshot can't slip past this check and create a duplicate Balance Sync row.
         val tx = TransactionEntry(
             title = "Balance Sync",
             amount = reportedBalance,
@@ -2162,11 +2349,17 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             smsSender = sender,
             smsBody = smsBody,
             timestamp = timestamp,
-            note = "[Acc: ${account.name}]"
+            note = "[Acc: ${account.name}]$extraNoteTags"
         )
-        repository.insertTransaction(tx)
+        val inserted = repository.upsertBalanceSync(account.name, timestamp, tx)
+        if (!inserted) return false
+
         projectedTransactions.add(tx)
-        addNotification("Balance Sync", "Balance updated for ${account.name}: ₹${String.format("%.2f", reportedBalance)}")
+        if (notificationOverride != null) {
+            addNotification(notificationOverride.first, notificationOverride.second)
+        } else {
+            addNotification("Balance Sync", "Balance updated for ${account.name}: ₹${String.format("%.2f", reportedBalance)}")
+        }
         return true
     }
 
@@ -2398,6 +2591,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 )
                                 repository.insertTransaction(tx)
                                 adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
+                                // A CC Payment SMS (e.g. "PAYMENT OF Rs.X RECEIVED...") reports the exact
+                                // resulting available limit — apply it directly instead of relying solely on
+                                // the delta above, which can drift from the bank's own authoritative figure.
+                                if (parsed.availableLimit != null) {
+                                    val ccAcct = repository.getAccountByName(walletName)
+                                    if (ccAcct != null && ccAcct.type == "CREDIT_CARD") {
+                                        repository.updateAccountAvailableLimit(ccAcct.id, parsed.availableLimit)
+                                    }
+                                }
                                 newImportedFingerprints.add("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
                                 projectedTransactions.add(tx)
                                 // Track import details for notification
@@ -2497,13 +2699,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         val creditLimit = parsed.totalCreditLimit ?: limitAcc.creditLimit
                         if (creditLimit > 0) {
                             val snapshot = availLimit - creditLimit  // negative = outstanding debt
-                            // Delete any stale CC snapshot first — new statement supersedes all previous
-                            repository.deleteAllBalanceSyncForAccount(limitAcc.name)
-                            // Use current time for manual imports — NOT the parsed statement date from the body
+                            // `limitAcc` was fetched before the updates above, so it still holds
+                            // the PREVIOUS values — used for the before/after notification below.
+                            val prevCreditLimit = limitAcc.creditLimit
+                            val prevAvailableLimit = limitAcc.availableLimit
+                            val prevDue = (prevCreditLimit - prevAvailableLimit).coerceAtLeast(0.0)
+                            val newDue = (creditLimit - availLimit).coerceAtLeast(0.0)
+                            // Use current time for manual imports — NOT the parsed statement date from the
+                            // body. createBalanceAdjustIfNeeded only replaces a snapshot at this EXACT
+                            // timestamp — it no longer wipes the account's entire snapshot history
+                            // (previously via deleteAllBalanceSyncForAccount), which was corrupting every
+                            // past period's running balance the next time it was viewed.
                             val projected = mutableListOf<TransactionEntry>()
-                            createBalanceAdjustIfNeeded(limitAcc, snapshot, System.currentTimeMillis(), smsBody, sender, projected)
+                            createBalanceAdjustIfNeeded(
+                                limitAcc, snapshot, System.currentTimeMillis(), smsBody, sender, projected,
+                                extraNoteTags = com.example.utils.ccSnapshotTags(creditLimit, availLimit),
+                                notificationOverride = "CC Limits Updated" to
+                                    "${limitAcc.name}: Credit Limit \u20b9${"%.2f".format(prevCreditLimit)} \u2192 \u20b9${"%.2f".format(creditLimit)}, " +
+                                        "Available \u20b9${"%.2f".format(prevAvailableLimit)} \u2192 \u20b9${"%.2f".format(availLimit)}, " +
+                                        "Due \u20b9${"%.2f".format(prevDue)} \u2192 \u20b9${"%.2f".format(newDue)}"
+                            )
                         }
-                        _toastMessage.emit("CC limits + balance snapshot updated for ${limitAcc.name}: Due ₹${String.format("%.2f", (limitAcc.creditLimit - (parsed.availableLimit ?: limitAcc.availableLimit)).coerceAtLeast(0.0))}")
+                        _toastMessage.emit("CC limits + balance snapshot updated for ${limitAcc.name}: Due ₹${String.format("%.2f", (creditLimit - availLimit).coerceAtLeast(0.0))}")
                     } else if (enableBalanceSync.value && parsed.availableBalance != null) {
                         // Regular bank balance SMS: create Balance Sync when Bal Sync is ON
                         val projected = mutableListOf<TransactionEntry>()

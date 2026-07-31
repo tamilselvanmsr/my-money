@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -1388,58 +1389,84 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                             }
                         }
                     } else {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(notifications, key = { it.id }) { notif ->
+                        // Explicit lineHeight (not the theme default, which is disproportionately
+                        // tall for a 12sp label) + trim removes both the leading/trailing font
+                        // padding AND the oversized gap between wrapped lines within the message.
+                        val notifMessageStyle = LocalTextStyle.current.copy(
+                            fontSize = 12.sp,
+                            lineHeight = 15.sp,
+                            platformStyle = PlatformTextStyle(includeFontPadding = false),
+                            lineHeightStyle = LineHeightStyle(alignment = LineHeightStyle.Alignment.Center, trim = LineHeightStyle.Trim.Both)
+                        )
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            itemsIndexed(notifications, key = { _, item -> item.id }) { index, notif ->
                                 val isExpanded = notif.id in expandedNotificationIds
                                 val (notifIcon, notifIconColor) = notificationIconFor(notif.title)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        // Expand the message IN PLACE instead of opening a
-                                        // second popup on top of this panel — the panel stays
-                                        // open the whole time.
-                                        .clickable {
-                                            expandedNotificationIds = if (isExpanded) expandedNotificationIds - notif.id else expandedNotificationIds + notif.id
-                                        }
-                                        .background(if (!notif.isRead) c.accent.copy(alpha = 0.07f) else Color.Transparent)
-                                        .padding(horizontal = 14.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.Top
-                                ) {
-                                    Surface(shape = CircleShape, color = notifIconColor.copy(alpha = 0.15f), modifier = Modifier.size(30.dp)) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(notifIcon, contentDescription = null, tint = notifIconColor, modifier = Modifier.size(15.dp))
-                                        }
-                                    }
-                                    Spacer(Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                notif.title,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp,
-                                                color = c.text,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false)
-                                            )
-                                            if (!notif.isRead) {
-                                                Spacer(Modifier.width(5.dp))
-                                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(c.accent))
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            // Expand the message IN PLACE instead of opening a
+                                            // second popup on top of this panel — the panel stays
+                                            // open the whole time.
+                                            .clickable {
+                                                expandedNotificationIds = if (isExpanded) expandedNotificationIds - notif.id else expandedNotificationIds + notif.id
                                             }
-                                            Spacer(Modifier.width(6.dp))
-                                            Text(relativeTimeText(notif.timestamp), fontSize = 10.sp, color = c.textSecondary)
+                                            .background(if (!notif.isRead) c.accent.copy(alpha = 0.07f) else Color.Transparent)
+                                            .padding(horizontal = 4.dp)
+                                            .padding(top = 3.dp, bottom = 6.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Surface(shape = CircleShape, color = notifIconColor.copy(alpha = 0.15f), modifier = Modifier.padding(top = 5.dp).size(32.dp)) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(notifIcon, contentDescription = null, tint = notifIconColor, modifier = Modifier.size(16.dp))
+                                            }
                                         }
-                                        Text(notif.message, fontSize = 12.sp, color = c.textSecondary, maxLines = if (isExpanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
-                                        Text(
-                                            SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(notif.timestamp)),
-                                            fontSize = 10.sp, color = c.textTertiary
-                                        )
+                                        Spacer(Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    notif.title,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = c.text,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false)
+                                                )
+                                                if (!notif.isRead) {
+                                                    Spacer(Modifier.width(5.dp))
+                                                    Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(c.accent))
+                                                }
+                                                Spacer(Modifier.width(6.dp))
+                                                Text(relativeTimeText(notif.timestamp), fontSize = 10.sp, color = c.textSecondary)
+                                            }
+                                            Spacer(Modifier.height(4.dp))
+                                            Text(
+                                                notif.message,
+                                                style = notifMessageStyle,
+                                                color = c.textSecondary,
+                                                maxLines = if (isExpanded) Int.MAX_VALUE else 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Spacer(Modifier.height(4.dp))
+                                            Text(
+                                                SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(notif.timestamp)),
+                                                fontSize = 10.sp, color = c.textTertiary
+                                            )
+                                        }
+                                        IconButton(onClick = { viewModel.deleteNotification(notif.id) }, modifier = Modifier.padding(start = 4.dp).size(28.dp)) {
+                                            Icon(Icons.Default.Close, contentDescription = "Delete", tint = c.textTertiary, modifier = Modifier.size(13.dp))
+                                        }
                                     }
-                                    IconButton(onClick = { viewModel.deleteNotification(notif.id) }, modifier = Modifier.padding(start = 4.dp).size(28.dp)) {
-                                        Icon(Icons.Default.Close, contentDescription = "Delete", tint = c.textTertiary, modifier = Modifier.size(13.dp))
+                                    if (index < notifications.lastIndex) {
+                                        HorizontalDivider(color = c.divider, thickness = 0.5.dp, modifier = Modifier.padding(start = 42.dp))
                                     }
                                 }
-                                HorizontalDivider(color = c.divider, thickness = 0.5.dp, modifier = Modifier.padding(start = 58.dp))
                             }
                         }
                     }
@@ -1491,12 +1518,16 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     val recentlyImportedFingerprints by viewModel.recentlyImportedFingerprints.collectAsStateWithLifecycle()
     val showRunningBalance by viewModel.showRunningBalance.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val decFormat = DecimalFormat("₹#,##0.00")
+    val accountAmountDecimals by viewModel.accountAmountDecimals.collectAsStateWithLifecycle()
+    val decFormat = remember(accountAmountDecimals) {
+        DecimalFormat(if (accountAmountDecimals <= 0) "₹#,##0" else "₹#,##0." + "0".repeat(accountAmountDecimals))
+    }
 
     // Backed by the ViewModel (not a plain remember{}) so the selection survives switching
     // away from and back to this tab, which disposes/recomposes this screen from scratch.
     val selectedWallet by viewModel.selectedWalletFilter.collectAsStateWithLifecycle()
     var selectedTxForEdit by remember { mutableStateOf<TransactionEntry?>(null) }
+    var allRecordsNotesExpanded by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var searchFilter by remember { mutableStateOf("All") }
     var isSearchExpanded by remember { mutableStateOf(false) }
@@ -2024,13 +2055,36 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
             // Horizontal Wallet microcards mimicking AutoLedger custom wallets selector
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "MY WALLETS",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        letterSpacing = 1.sp,
-                        color = c.textSecondary
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "MY WALLETS",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            letterSpacing = 1.sp,
+                            color = c.textSecondary
+                        )
+                        val recordsHasNotes = remember(visibleTransactions) { visibleTransactions.any { userNoteFrom(it.note).isNotBlank() } }
+                        if (recordsHasNotes) {
+                            IconButton(
+                                onClick = {
+                                    allRecordsNotesExpanded = !allRecordsNotesExpanded
+                                    Toast.makeText(context, if (allRecordsNotesExpanded) "Showing notes" else "Notes hidden", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    if (allRecordsNotesExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore,
+                                    contentDescription = if (allRecordsNotesExpanded) "Hide all notes" else "Show all notes",
+                                    tint = if (allRecordsNotesExpanded) c.accent else c.textSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
 
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -2067,27 +2121,16 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     .testTag("wallet_selector_$name")
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
-                                    Icon(
-                                        imageVector = when {
-                                            name == "Cash Wallet" -> Icons.Default.Money
-                                            name == "Bank Account" -> Icons.Default.AccountBalance
-                                            name == "Credit Card" -> Icons.Default.CreditCard
-                                            name == "Digital Wallet" -> Icons.Default.AccountBalanceWallet
-                                            else -> {
-                                                val acType = accounts.find { it.name == name }?.type ?: ""
-                                                when(acType) {
-                                                    "CASH" -> Icons.Default.Money
-                                                    "BANK" -> Icons.Default.AccountBalance
-                                                    "CREDIT_CARD" -> Icons.Default.CreditCard
-                                                    "WALLET" -> Icons.Default.AccountBalanceWallet
-                                                    else -> Icons.Default.AllInclusive
-                                                }
-                                            }
-                                        },
-                                        contentDescription = name,
-                                        tint = walletTypeColor,
-                                        modifier = Modifier.size(22.dp)
-                                    )
+                                    if (name == "All") {
+                                        Icon(imageVector = Icons.Default.AllInclusive, contentDescription = name, tint = walletTypeColor, modifier = Modifier.size(22.dp))
+                                    } else {
+                                        WalletIconGlyph(
+                                            iconKey = accounts.find { it.name == name }?.iconName,
+                                            fallback = walletIconFor(name, walletAccType.ifEmpty { null }, accounts.find { it.name == name }?.iconName),
+                                            tint = walletTypeColor,
+                                            size = 22.dp
+                                        )
+                                    }
                                     Spacer(modifier = Modifier.height(10.dp))
                                     Text(
                                         text = name,
@@ -2338,11 +2381,11 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                             "WALLET"      -> Color(0xFFFF9800)
                                             else          -> c.textSecondary
                                         }
-                                        val acctIcon = walletIconFor(name, acctType.takeIf { it.isNotEmpty() })
+                                        val acctIcon = walletIconFor(name, acctType.takeIf { it.isNotEmpty() }, acctObj?.iconName)
                                         DropdownMenuItem(
                                             text = {
                                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                    Icon(acctIcon, contentDescription = null, modifier = Modifier.size(16.dp), tint = acctColor)
+                                                    WalletIconGlyph(iconKey = acctObj?.iconName, fallback = acctIcon, tint = acctColor, size = 16.dp)
                                                     Text(name, fontSize = 13.sp,
                                                         color = if (selected) acctColor else c.text,
                                                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
@@ -2515,8 +2558,9 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                 isTransfer -> Icons.Default.SwapHoriz
                                 else -> resolvedCat.icon
                             }
-                            val acctIcon = walletIconFor(tx.getAccountName(), null)
-                            val acctType = accounts.find { it.name == tx.getAccountName() }?.type ?: ""
+                            val acctForRow = accounts.find { it.name == tx.getAccountName() }
+                            val acctIcon = walletIconFor(tx.getAccountName(), acctForRow?.type, acctForRow?.iconName)
+                            val acctType = acctForRow?.type ?: ""
                             val acctColor = when (acctType) {
                                 "CASH"        -> c.income
                                 "BANK"        -> Color(0xFF3B82F6)
@@ -2527,6 +2571,8 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                             }
                             val txFingerprint = "${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}"
                             val isNewlyImported = recentlyImportedFingerprints.contains(txFingerprint)
+                            val recordUserNote = userNoteFrom(tx.note)
+                            val recordHasNote = recordUserNote.isNotBlank()
                             Surface(
                                 shape = if (c.isBorderless) RoundedCornerShape(4.dp) else RoundedCornerShape(14.dp),
                                 color = c.cardBg,
@@ -2537,6 +2583,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     .clickable { selectedTxForEdit = tx }
                                     .testTag("transaction_item_${tx.id}")
                             ) {
+                            Column {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -2597,7 +2644,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    Icon(imageVector = acctIcon, contentDescription = null, tint = acctColor, modifier = Modifier.size(9.dp))
+                                                    WalletIconGlyph(iconKey = acctForRow?.iconName, fallback = acctIcon, tint = acctColor, size = 9.dp)
                                                     Spacer(modifier = Modifier.width(4.dp))
                                                     Text(
                                                         text = chipText,
@@ -2662,11 +2709,11 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                 ) {
-                                                    Icon(
-                                                        imageVector = acctIcon,
-                                                        contentDescription = null,
+                                                    WalletIconGlyph(
+                                                        iconKey = acctForRow?.iconName,
+                                                        fallback = acctIcon,
                                                         tint = acctColor,
-                                                        modifier = Modifier.size(9.dp)
+                                                        size = 9.dp
                                                     )
                                                     Text(
                                                         text = tx.getAccountName(),
@@ -2746,6 +2793,17 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                                     }
                                 }
                             }
+                            if (allRecordsNotesExpanded && recordHasNote) {
+                                HorizontalDivider(color = c.divider)
+                                Text(
+                                    recordUserNote,
+                                    fontSize = 11.sp,
+                                    color = c.text.copy(alpha = 0.85f),
+                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                            } // end Column wrapping Row + note
                             } // end Surface card
                             if (c.isBorderless && txIdx < txList.size - 1) {
                                 HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
@@ -3008,6 +3066,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
     val rawMonthYear by viewModel.selectedMonthYear.collectAsStateWithLifecycle()
     val anchorTime by viewModel.anchorDate.collectAsStateWithLifecycle()
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
+    val accountAmountDecimals by viewModel.accountAmountDecimals.collectAsStateWithLifecycle()
 
     var timeFilter by remember { mutableStateOf("MONTHLY") }
     val selectedModeIdx by viewModel.selectedAnalyticsModeIdx.collectAsStateWithLifecycle()
@@ -3406,6 +3465,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         breakdownLabel = "CATEGORY WISE BREAKDOWN",
                         percentSuffix = "of expenses",
                         emptyMessage = "No expense data available for this period.",
+                        decimalPlaces = accountAmountDecimals,
                         onCategoryTap = { cat ->
                             val txs = overviewTransactions.filter { it.category.equals(cat.category.name, ignoreCase = true) }
                             categoryDetailItem = cat to txs
@@ -3423,6 +3483,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         breakdownLabel = "INCOME BREAKDOWN",
                         percentSuffix = "of income",
                         emptyMessage = "No income data available for this period.",
+                        decimalPlaces = accountAmountDecimals,
                         onCategoryTap = { cat ->
                             val txs = overviewTransactions.filter { it.category.equals(cat.category.name, ignoreCase = true) }
                             categoryDetailItem = cat to txs
@@ -3440,6 +3501,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         showIncome = false,
                         accent = c.expense,
                         emptyMessage = "No expense flow available for this period.",
+                        decimalPlaces = accountAmountDecimals,
                         onDayClick = { point ->
                             val cal = java.util.Calendar.getInstance().apply { timeInMillis = point.dateMillis }
                             val dayTxns = categoryFilteredTxns.filter { tx ->
@@ -3464,6 +3526,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         showIncome = true,
                         accent = c.income,
                         emptyMessage = "No income flow available for this period.",
+                        decimalPlaces = accountAmountDecimals,
                         onDayClick = { point ->
                             val cal = java.util.Calendar.getInstance().apply { timeInMillis = point.dateMillis }
                             val dayTxns = categoryFilteredTxns.filter { tx ->
@@ -3483,6 +3546,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                 item {
                     AnalyticsAccountSection(
                         accountStats = accountStats,
+                        decimalPlaces = accountAmountDecimals,
                         onAccountTap = { stats ->
                             // Include inbound transfers too (destination == this account) —
                             // previously only transactions where this account was the SOURCE
@@ -3502,7 +3566,9 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
 
     // Account breakdown detail dialog
     accountDetailItem?.let { (stats, txList) ->
-        val decFormat = remember { DecimalFormat("₹#,##0.00") }
+        val decFormat = remember(accountAmountDecimals) {
+            DecimalFormat(if (accountAmountDecimals <= 0) "₹#,##0" else "₹#,##0." + "0".repeat(accountAmountDecimals))
+        }
         val amtFormatter = remember { java.text.DecimalFormat("#,##0.00") }
         val dateFormatter = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
         var expandedAccountNoteIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
@@ -3544,7 +3610,8 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
         val expensePct = if (totalExpenseAllAccounts > 0) (stats.expense / totalExpenseAllAccounts * 100) else 0.0
         val incomePct = if (totalIncomeAllAccounts > 0) (stats.income / totalIncomeAllAccounts * 100) else 0.0
         val acctType = allAccountsForAnalytics.find { it.name == stats.accountName }?.type ?: ""
-        val acctIcon = walletIconFor(stats.accountName, acctType.ifEmpty { null })
+        val acctIconKey = allAccountsForAnalytics.find { it.name == stats.accountName }?.iconName
+        val acctIcon = walletIconFor(stats.accountName, acctType.ifEmpty { null }, acctIconKey)
         val acctColor = when (acctType) {
             "CASH" -> c.income; "BANK" -> Color(0xFF3B82F6); "CREDIT_CARD" -> c.expense
             "DEBIT_CARD" -> Color(0xFF0EA5E9); "WALLET" -> Color(0xFFFF9800); else -> stats.color
@@ -3590,7 +3657,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         // ── Header: icon + name + income/expense/net ─────────
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                             Surface(shape = CircleShape, color = acctColor.copy(alpha = 0.15f), modifier = Modifier.size(56.dp)) {
-                                Box(contentAlignment = Alignment.Center) { Icon(acctIcon, null, tint = acctColor, modifier = Modifier.size(28.dp)) }
+                                Box(contentAlignment = Alignment.Center) { WalletIconGlyph(iconKey = acctIconKey, fallback = acctIcon, tint = acctColor, size = 28.dp) }
                             }
                             Spacer(Modifier.width(14.dp))
                             Column(modifier = Modifier.weight(1f)) {
@@ -3746,7 +3813,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                                 color = if (dayNet >= 0) c.income else c.expense
                                             )
                                         }
-                                        HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
+                                        if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
                                     }
                                     Column(
                                         verticalArrangement = Arrangement.spacedBy(if (c.isBorderless) 0.dp else 2.dp),
@@ -3855,7 +3922,9 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
 
     // Flow day breakdown dialog — shown when a calendar day is tapped in flow modes
     flowDayItem?.let { (point, txList) ->
-        val decFormat = remember { DecimalFormat("₹#,##0.00") }
+        val decFormat = remember(accountAmountDecimals) {
+            DecimalFormat(if (accountAmountDecimals <= 0) "₹#,##0" else "₹#,##0." + "0".repeat(accountAmountDecimals))
+        }
         val sdf = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
         val accent = if (txList.firstOrNull()?.type == "INCOME") c.income else c.expense
         var expandedFlowNoteIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
@@ -3900,6 +3969,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                             val resolvedCat = CategoryResolver.resolve(tx.category, customCats)
                             val accountName = tx.getAccountName()
                             val acctType = allAccountsForAnalytics.find { it.name == accountName }?.type ?: ""
+                            val acctIconOverride = allAccountsForAnalytics.find { it.name == accountName }?.iconName
                             val acctColor = when (acctType) { "CASH" -> c.income; "BANK" -> Color(0xFF3B82F6); "CREDIT_CARD" -> c.expense; "DEBIT_CARD" -> Color(0xFF0EA5E9); "WALLET" -> Color(0xFFFF9800); else -> c.textSecondary }
                             val userNote = userNoteFrom(tx.note)
                             val hasNote = userNote.isNotBlank()
@@ -3939,7 +4009,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                                 // Account chip — same style as the Overview category-detail popup.
                                                 Surface(color = acctColor.copy(0.12f), shape = RoundedCornerShape(4.dp)) {
                                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
-                                                        Icon(walletIconFor(accountName, acctType.ifEmpty { null }), null, tint = acctColor, modifier = Modifier.size(10.dp))
+                                                        WalletIconGlyph(iconKey = acctIconOverride, fallback = walletIconFor(accountName, acctType.ifEmpty { null }, acctIconOverride), tint = acctColor, size = 10.dp)
                                                         Text(accountName, fontSize = 9.sp, color = acctColor, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                     }
                                                 }
@@ -4090,7 +4160,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                                 fontSize = 11.sp, fontWeight = FontWeight.Bold, color = catAmtColor
                                             )
                                         }
-                                        HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
+                                        if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
                                     }
                                     Column(
                                         verticalArrangement = Arrangement.spacedBy(if (c.isBorderless) 0.dp else 2.dp),
@@ -4099,6 +4169,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                         dayTxs.forEachIndexed { idx, tx ->
                                             val accountName = tx.getAccountName()
                                             val acctType = allAccountsForAnalytics.find { it.name == accountName }?.type ?: ""
+                                            val acctIconOverride = allAccountsForAnalytics.find { it.name == accountName }?.iconName
                                             val acctColor = when (acctType) { "CASH" -> c.income; "BANK" -> Color(0xFF3B82F6); "CREDIT_CARD" -> c.expense; "DEBIT_CARD" -> Color(0xFF0EA5E9); "WALLET" -> Color(0xFFFF9800); else -> c.textSecondary }
                                             val userNote = userNoteFrom(tx.note); val hasNote = userNote.isNotBlank()
                                             val isExpanded = expandedNotesTxId == -1 || expandedNotesTxId == tx.id
@@ -4114,7 +4185,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                                 Surface(color = acctColor.copy(0.12f), shape = RoundedCornerShape(4.dp)) {
                                                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
-                                                                        Icon(walletIconFor(accountName, acctType.ifEmpty { null }), null, tint = acctColor, modifier = Modifier.size(10.dp))
+                                                                        WalletIconGlyph(iconKey = acctIconOverride, fallback = walletIconFor(accountName, acctType.ifEmpty { null }, acctIconOverride), tint = acctColor, size = 10.dp)
                                                                         Text(accountName, fontSize = 9.sp, color = acctColor, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                                     }
                                                                 }
@@ -4184,11 +4255,12 @@ private fun AnalyticsOverviewSection(
     breakdownLabel: String,
     percentSuffix: String,
     emptyMessage: String,
+    decimalPlaces: Int = 2,
     onCategoryTap: ((DisplayCategorySpend) -> Unit)? = null
 ) {
     val c = LocalAppColors.current
     var activeSectorIndex by remember(categoryTotals, totalLabel) { mutableStateOf(-1) }
-    val decFormat = remember { DecimalFormat("₹#,##0.00") }
+    val decFormat = remember(decimalPlaces) { DecimalFormat(if (decimalPlaces <= 0) "₹#,##0" else "₹#,##0." + "0".repeat(decimalPlaces)) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Surface(
@@ -4511,10 +4583,11 @@ private fun AnalyticsFlowSection(
     showIncome: Boolean,
     accent: Color,
     emptyMessage: String,
+    decimalPlaces: Int = 2,
     onDayClick: ((AnalyticsFlowPoint) -> Unit)? = null
 ) {
     val c = LocalAppColors.current
-    val decFormat = remember { DecimalFormat("₹#,##0.00") }
+    val decFormat = remember(decimalPlaces) { DecimalFormat(if (decimalPlaces <= 0) "₹#,##0" else "₹#,##0." + "0".repeat(decimalPlaces)) }
     val pointValues = remember(points, showIncome) {
         points.map { if (showIncome) it.income else it.expense }
     }
@@ -4799,10 +4872,11 @@ private fun AnalyticsFlowSection(
 @Composable
 private fun AnalyticsAccountSection(
     accountStats: List<AccountAnalyticsSummary>,
+    decimalPlaces: Int = 2,
     onAccountTap: ((AccountAnalyticsSummary) -> Unit)? = null
 ) {
     val c = LocalAppColors.current
-    val decFormat = remember { DecimalFormat("₹#,##0.00") }
+    val decFormat = remember(decimalPlaces) { DecimalFormat(if (decimalPlaces <= 0) "₹#,##0" else "₹#,##0." + "0".repeat(decimalPlaces)) }
     val maxActivity = accountStats.maxOfOrNull { maxOf(it.income, it.expense) }?.coerceAtLeast(1.0) ?: 1.0
     val yAxisValues = remember(maxActivity) {
         listOf(maxActivity, maxActivity * 0.66, maxActivity * 0.33, 0.0)
@@ -5334,14 +5408,9 @@ val categoryColorsList = listOf(
     "#00C853" to Color(0xFF00C853),  // Green Accent
     "#FFD600" to Color(0xFFFFD600),  // Yellow
     "#FF6D00" to Color(0xFFFF6D00),  // Deep Orange Accent
-    "#00BFA5" to Color(0xFF00BFA5),  // Teal Accent
     "#AA00FF" to Color(0xFFAA00FF),  // Purple Accent
-    "#2979FF" to Color(0xFF2979FF),  // Blue Accent
-    "#D81B60" to Color(0xFFD81B60),  // Pink Dark
     "#43A047" to Color(0xFF43A047),  // Green Medium
     "#FB8C00" to Color(0xFFFB8C00),  // Orange Medium
-    "#8D6E63" to Color(0xFF8D6E63),  // Brown Light
-    "#26C6DA" to Color(0xFF26C6DA),  // Cyan Light
     // ── Extra vibrant / neon shades ──────────────────────────────────────────
     "#FF1744" to Color(0xFFFF1744),  // Vivid Red
     "#F50057" to Color(0xFFF50057),  // Vivid Pink
@@ -5378,6 +5447,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     val rawMonthYear by viewModel.selectedMonthYear.collectAsStateWithLifecycle()
     val activeBudgets by viewModel.monthlyBudgets.collectAsStateWithLifecycle()
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
+    val accountsForBudget by viewModel.allAccounts.collectAsStateWithLifecycle()
 
     // Dialog setups
     var showEditCategoryDialog by remember { mutableStateOf<DisplayCategory?>(null) }
@@ -5467,7 +5537,10 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     }
     val lookup = baseCategories.associateBy { it.name }
     val standardCategoriesList = categoryOrderKeys.mapNotNull { lookup[it] }
-    val decFormat = DecimalFormat("₹#,##0.00")
+    val budgetAmountDecimals by viewModel.accountAmountDecimals.collectAsStateWithLifecycle()
+    val decFormat = remember(budgetAmountDecimals) {
+        DecimalFormat(if (budgetAmountDecimals <= 0) "₹#,##0" else "₹#,##0." + "0".repeat(budgetAmountDecimals))
+    }
 
     LazyColumn(
         state = listState,
@@ -6651,7 +6724,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                             fontSize = 11.sp, fontWeight = FontWeight.Bold, color = budgetAmtColor
                                         )
                                     }
-                                    HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
+                                    if (c.isBorderless) HorizontalDivider(color = c.flatDividerBold, thickness = if (c.isDark) 1.dp else 1.5.dp)
                                 }
                                 Column(
                                     verticalArrangement = Arrangement.spacedBy(if (c.isBorderless) 0.dp else 2.dp),
@@ -6675,7 +6748,8 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                                 if (hasNote) Icon(Icons.Default.Notes, contentDescription = "Has note", tint = if (isNoteExpanded) c.accent else c.textTertiary, modifier = Modifier.size(10.dp))
                                             }
                                             val bAccName = tx.getAccountName()
-                                            val bAccType = when {
+                                            val bAccObj = accountsForBudget.find { it.name == bAccName }
+                                            val bAccType = bAccObj?.type ?: when {
                                                 bAccName.contains("card", ignoreCase = true) || bAccName.contains("credit", ignoreCase = true) -> "CREDIT_CARD"
                                                 bAccName.contains("cash", ignoreCase = true) -> "CASH"
                                                 bAccName.contains("wallet", ignoreCase = true) -> "WALLET"
@@ -6684,7 +6758,7 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                             val bAccColor = when (bAccType) { "CASH" -> c.income; "CREDIT_CARD" -> c.expense; "WALLET" -> Color(0xFFFF9800); else -> Color(0xFF3B82F6) }
                                             Surface(color = bAccColor.copy(0.12f), shape = RoundedCornerShape(4.dp)) {
                                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
-                                                    Icon(walletIconFor(bAccName, bAccType), null, tint = bAccColor, modifier = Modifier.size(10.dp))
+                                                    WalletIconGlyph(iconKey = bAccObj?.iconName, fallback = walletIconFor(bAccName, bAccType, bAccObj?.iconName), tint = bAccColor, size = 10.dp)
                                                     Text(bAccName, fontSize = 9.sp, color = bAccColor, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                 }
                                             }
@@ -6934,6 +7008,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     val showCreditCardDetails by viewModel.showCreditCardDetails.collectAsStateWithLifecycle()
     val hiddenAccountIds by viewModel.hiddenAccountIds.collectAsStateWithLifecycle()
     val smsBlocklistPatterns by viewModel.smsBlocklistPatterns.collectAsStateWithLifecycle()
+    val accountAmountDecimals by viewModel.accountAmountDecimals.collectAsStateWithLifecycle()
     val walletsBalances = computeWalletBalances(txs, accounts, carryOverPreviousAmount)
 
     var showTransferDialog by remember { mutableStateOf(false) }
@@ -6942,7 +7017,9 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     var showAccountCenterSettings by remember { mutableStateOf(false) }
     var showAllAccountsInfo by remember { mutableStateOf(false) }
 
-    val decFormat = DecimalFormat("₹#,##0.00")
+    val decFormat = remember(accountAmountDecimals) {
+        DecimalFormat(if (accountAmountDecimals <= 0) "₹#,##0" else "₹#,##0." + "0".repeat(accountAmountDecimals))
+    }
 
     val activeAccounts = accounts.filter { !hiddenAccountIds.contains(it.id) }
     val orderedAccounts = activeAccounts
@@ -6989,6 +7066,8 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     accounts = accounts,
                     hiddenAccountIds = hiddenAccountIds,
                     showCreditCardDetails = showCreditCardDetails,
+                    accountAmountDecimals = accountAmountDecimals,
+                    walletsBalances = walletsBalances,
                     smsBlocklistPatterns = smsBlocklistPatterns,
                     blockedSmsAccountIds = blockedSmsAccountIds,
                     blockedAccountNames = blockedAccountNames,
@@ -7214,18 +7293,11 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 modifier = Modifier.padding(18.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = when(acc.type) {
-                                        "CASH" -> Icons.Default.Money
-                                        "BANK" -> Icons.Default.AccountBalance
-                                        "CREDIT_CARD" -> Icons.Default.CreditCard
-                                        "DEBIT_CARD" -> Icons.Default.CreditCard
-                                        "WALLET" -> Icons.Default.AccountBalanceWallet
-                                        else -> Icons.Default.AllInclusive
-                                    },
-                                    contentDescription = acc.type,
+                                WalletIconGlyph(
+                                    iconKey = acc.iconName,
+                                    fallback = walletIconFor(acc.name, acc.type, acc.iconName),
                                     tint = color,
-                                    modifier = Modifier.size(24.dp)
+                                    size = 24.dp
                                 )
 
                                 Spacer(modifier = Modifier.width(14.dp))
@@ -7425,8 +7497,8 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         var nameInput by remember { mutableStateOf("") }
         var baseBalanceInput by remember { mutableStateOf("") }
         var typeInput by remember { mutableStateOf("BANK") }
-        var last4Input by remember { mutableStateOf("") }
         var openingBalanceTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
+        var iconInput by remember { mutableStateOf<String?>(null) }
 
         val types = listOf("CASH", "BANK", "CREDIT_CARD", "DEBIT_CARD", "WALLET")
 
@@ -7458,15 +7530,6 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                         label = "Opening Balance Date & Time"
                     )
 
-                    OutlinedTextField(
-                        value = last4Input,
-                        onValueChange = { last4Input = it },
-                        label = { Text("Last 4 digits (optional ID)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = c.text, focusedBorderColor = c.accent),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
                     Column {
                         Text("ACCOUNT CATEGORY / TYPE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
                         Spacer(modifier = Modifier.height(4.dp))
@@ -7487,6 +7550,36 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             }
                         }
                     }
+
+                    Column {
+                        Text("ICON (OPTIONAL)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(walletIconOptions) { (key, icon, label) ->
+                                val sel = iconInput == key
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { iconInput = if (sel) null else key }
+                                        .padding(6.dp)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (sel) c.accent.copy(alpha = 0.2f) else c.text.copy(alpha = 0.05f),
+                                        border = if (sel) BorderStroke(1.5.dp, c.accent) else null,
+                                        modifier = Modifier.size(38.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            WalletIconGlyph(iconKey = key, fallback = icon, tint = if (sel) c.accent else (walletIconIntrinsicColor(key) ?: c.text.copy(alpha = 0.7f)), size = 20.dp)
+                                        }
+                                    }
+                                    Spacer(Modifier.height(3.dp))
+                                    Text(label, fontSize = 8.sp, color = if (sel) c.accent else c.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
             },
             actions = {
                 Column {
@@ -7499,8 +7592,9 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                 name = nameInput,
                                 balance = initBal,
                                 type = typeInput,
-                                lastFour = if (last4Input.isBlank()) null else last4Input,
-                                openingBalanceTimestamp = openingBalanceTimestamp
+                                lastFour = nameInput.filter { it.isDigit() }.takeLast(4).ifBlank { null },
+                                openingBalanceTimestamp = openingBalanceTimestamp,
+                                iconName = iconInput
                             )
                             showAddAccountDialog = false
                         },
@@ -7534,6 +7628,7 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
         var editType by remember(acc) { mutableStateOf(acc.type) }
         var editCreditLimit by remember(acc) { mutableStateOf(if (acc.creditLimit > 0) acc.creditLimit.toString() else "") }
         var editShowCreditLimitBalance by remember(acc) { mutableStateOf(acc.showCreditLimitBalance) }
+        var editIconName by remember(acc) { mutableStateOf(acc.iconName) }
         // Effective date/time for the balance adjustment below — defaults to now, but the
         // user can backdate it (e.g. to correctly anchor a past period's starting balance).
         var editBalanceTimestamp by remember(acc) { mutableStateOf(System.currentTimeMillis()) }
@@ -7697,6 +7792,35 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                             }
                         }
                     }
+                    Column {
+                        Text("ICON (OPTIONAL)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(walletIconOptions) { (key, icon, label) ->
+                                val sel = editIconName == key
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { editIconName = if (sel) null else key }
+                                        .padding(6.dp)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (sel) c.accent.copy(alpha = 0.2f) else c.text.copy(alpha = 0.05f),
+                                        border = if (sel) BorderStroke(1.5.dp, c.accent) else null,
+                                        modifier = Modifier.size(38.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            WalletIconGlyph(iconKey = key, fallback = icon, tint = if (sel) c.accent else (walletIconIntrinsicColor(key) ?: c.text.copy(alpha = 0.7f)), size = 20.dp)
+                                        }
+                                    }
+                                    Spacer(Modifier.height(3.dp))
+                                    Text(label, fontSize = 8.sp, color = if (sel) c.accent else c.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
             },
             actions = {
                 Column {
@@ -7713,14 +7837,16 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                     type = editType,
                                     lastFour = editName.filter { it.isDigit() }.takeLast(4).ifBlank { null },
                                     creditLimit = editCreditLimit.toDoubleOrNull() ?: acc.creditLimit,
-                                    showCreditLimitBalance = editShowCreditLimitBalance
+                                    showCreditLimitBalance = editShowCreditLimitBalance,
+                                    iconName = editIconName
                                 )
                                 val metadataChanged = updatedAcc.name != acc.name ||
                                     updatedAcc.type != acc.type ||
                                     updatedAcc.lastFour != acc.lastFour ||
                                     updatedAcc.creditLimit != acc.creditLimit ||
-                                    updatedAcc.showCreditLimitBalance != acc.showCreditLimitBalance
-                                if (metadataChanged) viewModel.updateAccount(updatedAcc)
+                                    updatedAcc.showCreditLimitBalance != acc.showCreditLimitBalance ||
+                                    updatedAcc.iconName != acc.iconName
+                                if (metadataChanged) viewModel.updateAccount(updatedAcc, previousAccount = acc)
                                 if (oldName != editName) viewModel.renameAccountTransactions(oldName, editName)
                                 selectedAccountForEdit = null
                             },
@@ -7795,13 +7921,13 @@ fun AutoScanHubScreen(
     var manualSmsSender by remember { mutableStateOf("") }
     var manualSmsBody by remember { mutableStateOf("") }
     var customPatternInput by remember { mutableStateOf("") }
-    val forcePatternOptions = listOf("txn", "debited", "credited", "spent", "paid", "received", "upi", "card", "account", "salary")
+    val forcePatternOptions = listOf("debited", "credited", "spent", "paid", "received", "sent", "upi", "card", "txn", "account", "salary")
     val suggestedForcePatterns = remember(manualSmsBody) {
         val lowerBody = manualSmsBody.lowercase()
         forcePatternOptions.filter { lowerBody.contains(it) }
     }
     // Default: only strict transactional verbs. "upi" and "card" are opt-in (too broad on their own).
-    val defaultSelectedPatterns = setOf("txn", "debited", "credited", "spent", "paid", "received", "account", "salary")
+    val defaultSelectedPatterns = setOf("debited", "credited", "spent", "paid", "received", "sent", "txn", "account", "salary")
     var selectedForcePatterns by remember { mutableStateOf(defaultSelectedPatterns) }
     var customPatterns by remember { mutableStateOf(emptyList<String>()) }
     // 1 = this month only, 2 = last + this month, 3 = last 3 months (calendar start-of-month boundaries)
@@ -8464,29 +8590,25 @@ fun AutoScanHubScreen(
                     if (merchantRules.isNotEmpty()) {
                         HorizontalDivider(color = c.divider)
                         Text("Active Rules (${merchantRules.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.textSecondary)
-                        merchantRules.forEach { (pattern, category) ->
-                            Surface(
-                                color = c.bg,
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, Color(0xFF2D3748)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                            merchantRules.forEachIndexed { idx, (pattern, category) ->
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(pattern, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = c.accent)
-                                        Text("→ $category", fontSize = 11.sp, color = c.textSecondary)
+                                    Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(pattern, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = c.accent, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                        Text("→", fontSize = 11.sp, color = c.textTertiary, modifier = Modifier.padding(horizontal = 6.dp))
+                                        Text(category, fontSize = 12.sp, color = c.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                                     }
                                     IconButton(
                                         onClick = { viewModel.removeMerchantCategoryRule(pattern) },
-                                        modifier = Modifier.size(32.dp)
+                                        modifier = Modifier.size(28.dp)
                                     ) {
-                                        Icon(Icons.Default.Close, contentDescription = "Remove", tint = c.expense, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Close, contentDescription = "Remove", tint = c.expense, modifier = Modifier.size(14.dp))
                                     }
                                 }
+                                if (idx < merchantRules.lastIndex) HorizontalDivider(color = c.divider, thickness = 0.5.dp)
                             }
                         }
                         Spacer(modifier = Modifier.height(4.dp))
@@ -8605,9 +8727,7 @@ fun AutoScanHubScreen(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            listOf("debited", "credited", "spent", "received", "deducted", "sent", "paid",
-                                "withdrawn", "transfer", "payment", "charge", "txn", "salary",
-                                "refund", "deposited", "autopay").forEach { kw ->
+                            com.example.utils.SmsFilterUtility.INCLUSION_KEYWORDS.forEach { kw ->
                                 Surface(color = c.income.copy(alpha = 0.1f), shape = RoundedCornerShape(6.dp), modifier = Modifier.weight(1f)) {
                                     Text(kw, fontSize = 10.sp, color = c.income, fontWeight = FontWeight.SemiBold,
                                         softWrap = false, textAlign = TextAlign.Center,
@@ -8919,7 +9039,8 @@ fun AddTransactionDialog(
 
                     // Account / category shared values
                     val acctType  = accounts.find { it.name == accountSelection }?.type
-                    val acctIcon  = walletIconFor(accountSelection, acctType)
+                    val acctIconKey = accounts.find { it.name == accountSelection }?.iconName
+                    val acctIcon  = walletIconFor(accountSelection, acctType, acctIconKey)
                     val acctColor = when (acctType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "DEBIT_CARD" -> Color(0xFF0EA5E9); "WALLET" -> Color(0xFFFF9800); else -> c.accent }
                     val catIcon   = selectedCategory?.icon ?: Icons.Default.Category
                     val catColor  = selectedCategory?.color ?: c.accent
@@ -8957,14 +9078,14 @@ fun AddTransactionDialog(
                     val bsSz   = (40.dp * scale).coerceAtLeast(26.dp)
                     val amtFszBase   = if (isLandscape) 30f else 24f
                     val titleFszBase = if (isLandscape) 27f else 21f
-                    val saveFszBase  = if (isLandscape) 19f else 16f
+                    val saveFszBase  = if (isLandscape) 24f else 16f
                     // `scale` is often near its 0.55 floor in landscape (short totalH), which
                     // was crushing titleFszBase/saveFszBase back down close to their old
                     // small size despite the bigger base — these floors are raised
                     // specifically for landscape so the title/Save text actually stays big,
                     // matching the (already fixed-size, unscaled) bigger Close icon.
                     val titleFszFloor = if (isLandscape) 20f else 14f
-                    val saveFszFloor  = if (isLandscape) 15f else 11f
+                    val saveFszFloor  = if (isLandscape) 19f else 11f
 
                     // A shared, centered text style — disables extra font-padding and centers
                     // line-height so short text aligns visually with the middle of its
@@ -9169,7 +9290,7 @@ fun AddTransactionDialog(
                                 // weighted height, so the icon is bumped up a bit to stay
                                 // visually balanced against 2-line text.
                                 CustomOutlinedButton(modifier = Modifier.fillMaxWidth().weight(0.64f), borderColor = acctColor, onClick = { showWalletPicker = true }) {
-                                    Icon(acctIcon, null, tint = acctColor, modifier = Modifier.size(icSz * 1.15f))
+                                    WalletIconGlyph(iconKey = acctIconKey, fallback = acctIcon, tint = acctColor, size = icSz * 1.15f)
                                     Spacer(Modifier.width(6.dp))
                                     Text(accountSelection.ifBlank { "Account" }, fontSize = inFsz.sp, lineHeight = (inFsz + 1f).sp, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, color = c.text, style = centeredBtnTextStyle, textAlign = TextAlign.Start, modifier = Modifier.weight(1f))
                                 }
@@ -9198,7 +9319,7 @@ fun AddTransactionDialog(
                         Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(modifier = Modifier.weight(1f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 CustomOutlinedButton(modifier = Modifier.weight(1f).fillMaxHeight(), borderColor = acctColor, onClick = { showWalletPicker = true }) {
-                                    Icon(acctIcon, contentDescription = "Account", tint = acctColor, modifier = Modifier.size(icSz))
+                                    WalletIconGlyph(iconKey = acctIconKey, fallback = acctIcon, tint = acctColor, size = icSz)
                                 }
                                 CustomOutlinedButton(modifier = Modifier.weight(1f).fillMaxHeight(), borderColor = catColor, onClick = { showCategoryPicker = true }) {
                                     Icon(catIcon, contentDescription = "Category", tint = catColor, modifier = Modifier.size(icSz))
@@ -9291,12 +9412,12 @@ fun AddTransactionDialog(
                                     }
                                     Text("Log Cashflow", fontWeight = FontWeight.Bold, fontSize = (titleFszBase * scale).coerceAtLeast(titleFszFloor).sp, color = c.text, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Box(
-                                        modifier = Modifier.fillMaxHeight().clip(RoundedCornerShape(8.dp)).clickable(enabled = resolvedAmount > 0.0) {
-                                            val cleanTitle = if (title.isBlank()) "Merchant Log" else title
+                                        modifier = Modifier.fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(c.accent.copy(alpha = 0.15f)).clickable(enabled = resolvedAmount > 0.0) {
+                                            val cleanTitle = if (title.isBlank()) "${selectedCategory?.displayName ?: categorySelection} Log" else title
                                             viewModel.saveLastUsedAccount(accountSelection)
                                             viewModel.saveLastUsedCategory(transactionType, categorySelection)
                                             onConfirm(cleanTitle, resolvedAmount, categorySelection, transactionType, makeNoteWithAccount(notesStr, accountSelection), selectedTimestamp)
-                                        }.padding(horizontal = 10.dp),
+                                        }.padding(horizontal = 16.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text("Save", fontWeight = FontWeight.Bold, color = c.accent, fontSize = (saveFszBase * scale).coerceAtLeast(saveFszFloor).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -9352,7 +9473,7 @@ fun AddTransactionDialog(
                             Text("Log Cashflow", fontWeight = FontWeight.Bold, fontSize = (titleFszBase * scale).coerceAtLeast(titleFszFloor).sp, color = c.text, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Box(
                                 modifier = Modifier.fillMaxHeight().clip(RoundedCornerShape(8.dp)).clickable(enabled = resolvedAmount > 0.0) {
-                                    val cleanTitle = if (title.isBlank()) "Merchant Log" else title
+                                    val cleanTitle = if (title.isBlank()) "${selectedCategory?.displayName ?: categorySelection} Log" else title
                                     viewModel.saveLastUsedAccount(accountSelection)
                                     viewModel.saveLastUsedCategory(transactionType, categorySelection)
                                     onConfirm(cleanTitle, resolvedAmount, categorySelection, transactionType, makeNoteWithAccount(notesStr, accountSelection), selectedTimestamp)
@@ -9414,7 +9535,7 @@ fun AddTransactionDialog(
 
     if (showWalletPicker) {
         WalletSelectionDialog(
-            walletOptions = selectablesWallets.map { walletName -> walletName to (accounts.find { it.name == walletName }?.type) },
+            walletOptions = selectablesWallets.map { walletName -> Triple(walletName, accounts.find { it.name == walletName }?.type, accounts.find { it.name == walletName }?.iconName) },
             selectedWallet = accountSelection,
             onSelect = {
                 accountSelection = it
@@ -9749,6 +9870,7 @@ fun EditTransactionDialog(
                 )
 
                 val editAccType = accounts.find { it.name == accountSelection }?.type
+                val editAccIconOverride = accounts.find { it.name == accountSelection }?.iconName
                 val editAccColor = when (editAccType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "DEBIT_CARD" -> Color(0xFF0EA5E9); "WALLET" -> Color(0xFFFF9800); else -> c.accent }
                 // Fixed font size — long names WRAP to a second line instead of shrinking
                 // the font, and the button itself never grows past its 44dp height; the
@@ -9761,16 +9883,17 @@ fun EditTransactionDialog(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("From Account", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
                                 OutlinedButton(onClick = { showWalletPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, editAccColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
-                                    Icon(walletIconFor(accountSelection, editAccType), null, tint = editAccColor, modifier = Modifier.size(acctCatIconSize)); Spacer(Modifier.width(6.dp))
+                                    WalletIconGlyph(iconKey = editAccIconOverride, fallback = walletIconFor(accountSelection, editAccType, editAccIconOverride), tint = editAccColor, size = acctCatIconSize); Spacer(Modifier.width(6.dp))
                                     Text(accountSelection.ifBlank { "Account" }, fontSize = acctCatFontSize, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, color = c.text, textAlign = TextAlign.Start, modifier = Modifier.weight(1f))
                                 }
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("To Account", fontSize = 11.sp, color = c.textSecondary, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
                                 val toAccType = accounts.find { it.name == toAccountSelection }?.type
+                                val toAccIconOverride = accounts.find { it.name == toAccountSelection }?.iconName
                                 val toAccColor = when (toAccType) { "CASH" -> c.income; "BANK" -> c.accent; "CREDIT_CARD" -> c.expense; "DEBIT_CARD" -> Color(0xFF0EA5E9); "WALLET" -> Color(0xFFFF9800); else -> c.accent }
                                 OutlinedButton(onClick = { showToWalletPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, toAccColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
-                                    Icon(walletIconFor(toAccountSelection, toAccType), null, tint = toAccColor, modifier = Modifier.size(acctCatIconSize)); Spacer(Modifier.width(6.dp))
+                                    WalletIconGlyph(iconKey = toAccIconOverride, fallback = walletIconFor(toAccountSelection, toAccType, toAccIconOverride), tint = toAccColor, size = acctCatIconSize); Spacer(Modifier.width(6.dp))
                                     Text(toAccountSelection.ifBlank { "Select" }, fontSize = acctCatFontSize, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, color = c.text, textAlign = TextAlign.Start, modifier = Modifier.weight(1f))
                                 }
                             }
@@ -9781,7 +9904,7 @@ fun EditTransactionDialog(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Account", fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
                                 OutlinedButton(onClick = { showWalletPicker = true }, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, editAccColor.copy(0.4f)), modifier = Modifier.fillMaxWidth().height(44.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
-                                    Icon(walletIconFor(accountSelection, editAccType), null, tint = editAccColor, modifier = Modifier.size(acctCatIconSize)); Spacer(Modifier.width(6.dp))
+                                    WalletIconGlyph(iconKey = editAccIconOverride, fallback = walletIconFor(accountSelection, editAccType, editAccIconOverride), tint = editAccColor, size = acctCatIconSize); Spacer(Modifier.width(6.dp))
                                     Text(accountSelection.ifBlank { "Account" }, fontSize = acctCatFontSize, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, color = c.text, textAlign = TextAlign.Start, modifier = Modifier.weight(1f))
                                 }
                             }
@@ -9796,7 +9919,7 @@ fun EditTransactionDialog(
                             }
                         }
                     }
-                    else -> PickerButton("Account", accountSelection, walletIconFor(accountSelection, editAccType), editAccColor) { showWalletPicker = true }
+                    else -> PickerButton("Account", accountSelection, walletIconFor(accountSelection, editAccType, editAccIconOverride), editAccColor) { showWalletPicker = true }
                 }
 
                 OutlinedTextField(
@@ -9884,7 +10007,7 @@ fun EditTransactionDialog(
 
     if (showWalletPicker) {
         WalletSelectionDialog(
-            walletOptions = selectablesWallets.map { walletName -> walletName to (accounts.find { it.name == walletName }?.type) },
+            walletOptions = selectablesWallets.map { walletName -> Triple(walletName, accounts.find { it.name == walletName }?.type, accounts.find { it.name == walletName }?.iconName) },
             selectedWallet = accountSelection,
             onSelect = {
                 accountSelection = it
@@ -9901,7 +10024,7 @@ fun EditTransactionDialog(
 
     if (showToWalletPicker) {
         WalletSelectionDialog(
-            walletOptions = selectablesWallets.map { walletName -> walletName to (accounts.find { it.name == walletName }?.type) },
+            walletOptions = selectablesWallets.map { walletName -> Triple(walletName, accounts.find { it.name == walletName }?.type, accounts.find { it.name == walletName }?.iconName) },
             selectedWallet = toAccountSelection,
             onSelect = {
                 toAccountSelection = it
@@ -10164,7 +10287,7 @@ private fun ModernDialogFrame(
 
 @Composable
 private fun WalletSelectionDialog(
-    walletOptions: List<Pair<String, String?>>,
+    walletOptions: List<Triple<String, String?, String?>>,
     selectedWallet: String,
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -10178,7 +10301,7 @@ private fun WalletSelectionDialog(
         iconColor = c.accent,
         onDismiss = onDismiss
     ) {
-        walletOptions.forEach { (walletName, walletType) ->
+        walletOptions.forEach { (walletName, walletType, walletIconName) ->
             val active = selectedWallet == walletName
             val acctColor = when (walletType) {
                 "CASH"        -> c.income
@@ -10199,11 +10322,11 @@ private fun WalletSelectionDialog(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = walletIconFor(walletName, walletType),
-                        contentDescription = walletName,
+                    WalletIconGlyph(
+                        iconKey = walletIconName,
+                        fallback = walletIconFor(walletName, walletType, walletIconName),
                         tint = acctColor,
-                        modifier = Modifier.size(24.dp)
+                        size = 24.dp
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(walletName, color = if (active) acctColor else c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
@@ -10327,13 +10450,104 @@ private fun CategorySelectionDialog(
     }
 }
 
-private fun walletIconFor(name: String, type: String?): androidx.compose.ui.graphics.vector.ImageVector {
+/** Selectable wallet/account icons — shown in the Add/Edit Account dialog's icon picker.
+ * The chosen key is stored in [com.example.data.Account.iconName]; [walletIconFor] looks it
+ * up first, before falling back to the name/type heuristic. Material Icons has no actual
+ * brand logos for card networks, so each option uses a distinct generic icon instead. */
+val walletIconOptions: List<Triple<String, androidx.compose.ui.graphics.vector.ImageVector, String>> = listOf(
+    Triple("mastercard", Icons.Default.CreditCard, "Mastercard"),
+    Triple("visa", Icons.Default.Payment, "Visa"),
+    Triple("rupay", Icons.Default.CreditCard, "RuPay"),
+    Triple("amex", Icons.Default.CreditScore, "Amex"),
+    Triple("creditcard", Icons.Default.CreditCard, "Credit Card"),
+    Triple("debitcard", Icons.Default.Payments, "Debit Card"),
+    Triple("cash", Icons.Default.Money, "Cash"),
+    Triple("bank", Icons.Default.AccountBalance, "Bank"),
+    Triple("wallet", Icons.Default.AccountBalanceWallet, "Wallet"),
+    Triple("savings", Icons.Default.Savings, "Savings")
+)
+
+private fun iconForWalletIconName(iconName: String?): androidx.compose.ui.graphics.vector.ImageVector? =
+    if (iconName.isNullOrBlank()) null else walletIconOptions.firstOrNull { it.first == iconName }?.second
+
+private fun walletIconFor(name: String, type: String?, iconOverride: String? = null): androidx.compose.ui.graphics.vector.ImageVector {
+    iconForWalletIconName(iconOverride)?.let { return it }
     return when {
         type == "CASH" || name.contains("cash", ignoreCase = true) -> Icons.Default.Money
         type == "BANK" || name.contains("bank", ignoreCase = true) -> Icons.Default.AccountBalance
         type == "CREDIT_CARD" || type == "DEBIT_CARD" || name.contains("card", ignoreCase = true) -> Icons.Default.CreditCard
         type == "WALLET" || name.contains("wallet", ignoreCase = true) -> Icons.Default.AccountBalanceWallet
         else -> Icons.Default.AccountBalanceWallet
+    }
+}
+
+/** Fixed representative color for each icon-picker option, shown in the ICON (OPTIONAL) grid
+ * so unselected icons aren't all washed-out gray — mastercard/visa/rupay are drawn with their
+ * own fixed brand colors inside [WalletIconGlyph] already, so they don't need an entry here. */
+private fun walletIconIntrinsicColor(key: String): Color? = when (key) {
+    "amex" -> Color(0xFF2E77BB)
+    "creditcard" -> Color(0xFF8B5CF6)
+    "debitcard" -> Color(0xFF0EA5E9)
+    "cash" -> Color(0xFF16A34A)
+    "bank" -> Color(0xFF3B82F6)
+    "wallet" -> Color(0xFFFF9800)
+    "savings" -> Color(0xFF14B8A6)
+    else -> null
+}
+
+/** Renders the wallet/account icon, special-casing "mastercard" (drawn as the classic
+ * overlapping red/orange circles), "visa" (bold navy "VISA" wordmark) and "rupay" (two-tone
+ * "RuPay" wordmark) since Material Icons has no real card-network logos — every other key just
+ * falls back to [fallback]. Only kicks in when the user has actually picked one of these keys
+ * via the icon picker; the generic name/type heuristic result (passed in as [fallback]) is used
+ * otherwise. */
+@Composable
+private fun WalletIconGlyph(iconKey: String?, fallback: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
+    when (iconKey) {
+        "mastercard" -> Canvas(modifier = modifier.size(size)) {
+            val r = this.size.minDimension * 0.34f
+            val cy = this.size.height / 2f
+            val leftCx = this.size.width / 2f - r * 0.55f
+            val rightCx = this.size.width / 2f + r * 0.55f
+            drawCircle(color = Color(0xFFEB001B), radius = r, center = Offset(leftCx, cy))
+            drawCircle(color = Color(0xFFF79E1B), radius = r, center = Offset(rightCx, cy), alpha = 0.85f)
+        }
+        "visa" -> if (size < 16.dp) {
+            // The "VISA" wordmark is illegible (and effectively invisible) at the tiny 9–10dp
+            // sizes used for account chips throughout Records/Category/Budget lists — fall back
+            // to a solid brand-navy chip there instead, and only draw the wordmark when there's
+            // enough room to actually read it (icon picker, Account Details header, etc.).
+            Box(modifier = modifier.size(size).clip(RoundedCornerShape(size * 0.22f)).background(Color(0xFF1A1F71)))
+        } else {
+            Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
+                Text(
+                    "VISA",
+                    color = Color(0xFF1A1F71),
+                    fontWeight = FontWeight.Black,
+                    fontSize = (size.value * 0.34f).sp,
+                    letterSpacing = (-0.3).sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                    softWrap = false
+                )
+            }
+        }
+        "rupay" -> if (size < 20.dp) {
+            // Same legibility problem as Visa above — draw the blue/green two-tone chip instead
+            // of trying to cram "RuPay" into a near-invisible sliver of text.
+            Row(modifier = modifier.size(size).clip(RoundedCornerShape(size * 0.22f))) {
+                Box(modifier = Modifier.weight(1f).fillMaxHeight().background(Color(0xFF0B4EA2)))
+                Box(modifier = Modifier.weight(1f).fillMaxHeight().background(Color(0xFF13A538)))
+            }
+        } else {
+            Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Ru", color = Color(0xFF0B4EA2), fontWeight = FontWeight.Black, fontSize = (size.value * 0.30f).sp, letterSpacing = (-0.3).sp, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false)
+                    Text("Pay", color = Color(0xFF13A538), fontWeight = FontWeight.Black, fontSize = (size.value * 0.30f).sp, letterSpacing = (-0.3).sp, maxLines = 1, overflow = TextOverflow.Clip, softWrap = false)
+                }
+            }
+        }
+        else -> Icon(fallback, contentDescription = null, tint = tint, modifier = modifier.size(size))
     }
 }
 
@@ -10645,7 +10859,7 @@ fun ExportCsvDialog(
 ) {
     val c = LocalAppColors.current
     val context = LocalContext.current
-    val excelExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.ms-excel")) { uri ->
+    val excelExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) { uri ->
         if (uri != null) {
             context.contentResolver.openOutputStream(uri)?.use { output ->
                 output.write(viewModel.getExcelData())
@@ -10679,6 +10893,9 @@ fun ExportCsvDialog(
             ) { Text("Dismiss", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             Button(
                 onClick = {
+                    // Real OOXML .xlsx (zip container with proper worksheet/table parts) —
+                    // this now matches the actual file content and MIME type, fixing it
+                    // failing to open correctly in Google Drive's viewer.
                     val fileName = "autoledger-${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.xlsx"
                     excelExporter.launch(fileName)
                 },
@@ -10799,16 +11016,36 @@ fun BackupDialog(
         }
     }
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = { if (!isBackingUp && !isRestoring) onDismiss() },
-        title = null,
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        EdgeToEdgeDialogWindowEffect(isDarkBackground = c.isDark)
+        Surface(modifier = Modifier.fillMaxSize(), color = c.bg) {
+            Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+                Surface(shadowElevation = 6.dp, color = c.bg) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Backup & Recovery", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = c.text, modifier = Modifier.weight(1f).padding(start = 16.dp))
+                        IconButton(
+                            onClick = { if (!isBackingUp && !isRestoring) onDismiss() },
+                            modifier = Modifier.padding(end = 5.dp).size(36.dp).clip(RoundedCornerShape(10.dp)).background(c.text.copy(alpha = 0.07f))
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = c.text, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+                HorizontalDivider(color = c.text.copy(alpha = 0.15f), thickness = 1.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                 // Header
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -10829,12 +11066,6 @@ fun BackupDialog(
                         )
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Backup & Recovery",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = c.text
-                    )
                     Text(
                         "Automate, sync, or restore offline",
                         fontSize = 11.sp,
@@ -11262,7 +11493,15 @@ fun BackupDialog(
                             Text("CSV exported successfully!", fontSize = 10.sp, color = c.income, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 2.dp))
                         }
                     }
-
+                }
+                }
+                HorizontalDivider(color = c.divider)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
                     Button(
                         onClick = onDismiss,
                         modifier = Modifier.fillMaxWidth(),
@@ -11273,11 +11512,8 @@ fun BackupDialog(
                     }
                 }
             }
-        },
-        confirmButton = {},
-        containerColor = c.surface,
-        shape = RoundedCornerShape(20.dp)
-    )
+        }
+    }
 
     // ── Dialog Subcomponents (Account Selector, Warning, Progress Loader) ────────────────
 
@@ -11970,6 +12206,8 @@ fun AccountCenterSettingsDialog(
     accounts: List<Account>,
     hiddenAccountIds: Set<String>,
     showCreditCardDetails: Boolean,
+    accountAmountDecimals: Int,
+    walletsBalances: Map<String, Double>,
     smsBlocklistPatterns: Set<String>,
     blockedSmsAccountIds: Set<String>,
     blockedAccountNames: Set<String>,
@@ -11983,6 +12221,9 @@ fun AccountCenterSettingsDialog(
         uncheckedThumbColor = c.textSecondary,
         uncheckedTrackColor = c.divider
     )
+    val amountDecFormat = remember(accountAmountDecimals) {
+        DecimalFormat(if (accountAmountDecimals <= 0) "₹#,##0" else "₹#,##0." + "0".repeat(accountAmountDecimals))
+    }
 
     AdaptiveEditorDialog(
         title = "Account Settings",
@@ -11999,6 +12240,29 @@ fun AccountCenterSettingsDialog(
                     Text("Display available limit & due amount on cards", color = c.textSecondary, fontSize = 11.sp)
                 }
                 Switch(checked = showCreditCardDetails, onCheckedChange = { viewModel.setShowCreditCardDetails(it) }, colors = switchColors)
+            }
+            HorizontalDivider(color = c.divider)
+
+            // ── Amount decimal places ──────────────────────────────
+            Column {
+                Text("AMOUNT DISPLAY", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.textSecondary, letterSpacing = 0.8.sp)
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    listOf(2 to "₹0.00", 1 to "₹0.0", 0 to "₹0").forEach { (decimals, sample) ->
+                        val sel = accountAmountDecimals == decimals
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(if (sel) c.accent.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                .border(1.dp, if (sel) c.accent else c.text.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                .clickable { viewModel.setAccountAmountDecimals(decimals) }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(sample, fontSize = 12.sp, color = if (sel) c.accent else c.text, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
             HorizontalDivider(color = c.divider)
 
@@ -12024,11 +12288,20 @@ fun AccountCenterSettingsDialog(
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Surface(shape = CircleShape, color = acctColor.copy(alpha = if (visible) 0.15f else 0.08f), modifier = Modifier.size(34.dp)) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(walletIconFor(acc.name, acc.type), contentDescription = null, tint = acctColor.copy(alpha = if (visible) 1f else 0.4f), modifier = Modifier.size(16.dp))
+                            WalletIconGlyph(iconKey = acc.iconName, fallback = walletIconFor(acc.name, acc.type, acc.iconName), tint = acctColor.copy(alpha = if (visible) 1f else 0.4f), size = 16.dp)
                         }
                     }
                     Spacer(Modifier.width(10.dp))
                     Text(acc.name, color = if (visible) c.text else c.textTertiary, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        amountDecFormat.format(walletsBalances[acc.name] ?: acc.balance),
+                        color = if (visible) c.textSecondary else c.textTertiary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
                     Switch(
                         checked = visible,
                         onCheckedChange = { v -> viewModel.setAccountHidden(acc.id, !v) },

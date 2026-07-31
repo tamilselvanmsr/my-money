@@ -6,10 +6,13 @@ import java.util.regex.Pattern
 object SmsFilterUtility {
     private const val TAG = "SmsFilterUtility"
 
-    // 1. Mandatory transaction inclusion keywords
-    private val INCLUSION_KEYWORDS = listOf(
+    // 1. Mandatory transaction inclusion keywords — single source of truth, also used by
+    // SmsParser.hasTransactionKeywords() and the Auto-Scan Hub's reference card so all three
+    // can never drift out of sync with each other again.
+    val INCLUSION_KEYWORDS = listOf(
         "debited", "credited", "spent", "received", "deducted", "sent", "paid",
-        "withdrawn", "transfer", "payment", "charge", "txn", "refund", "deposited"
+        "withdrawn", "withdrew", "transfer", "payment", "charge", "txn", "refund", "deposited",
+        "salary", "autopay", "auto-pay", "added"
     )
 
     // 2. Strict exclusion keywords (including loan offers, credit line/load spam, and pre-approved/eligibility promos)

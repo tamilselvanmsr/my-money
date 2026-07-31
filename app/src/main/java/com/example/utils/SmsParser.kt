@@ -231,14 +231,7 @@ object SmsParser {
     }
 
     private fun hasTransactionKeywords(lower: String) =
-        lower.contains("debited") || lower.contains("credited") || lower.contains("spent") ||
-        lower.contains("paid") || lower.contains("received") || lower.contains("withdrawn") ||
-        lower.contains("withdrew") || lower.contains("deposited") ||          // "transferred" covered by "transfer"
-        lower.contains("transfer") || lower.contains("deducted") ||           // "charged" covered by "charge"
-        lower.contains("charge") || lower.contains("recharge successful") || lower.contains("salary") ||
-        lower.contains("added to your wallet") || lower.contains("txn") || lower.contains("payment") ||
-        lower.contains("sent") || lower.contains("refund") || lower.contains("autopay") ||
-        lower.contains("auto-pay")
+        SmsFilterUtility.INCLUSION_KEYWORDS.any { lower.contains(it) }
 
     // ─── Extraction helpers ───────────────────────────────────────────────────────
 
@@ -555,9 +548,31 @@ object SmsParser {
 
     // ─── Payee / title extraction ─────────────────────────────────────────────────
 
-    private fun extractPayeeTitle(cleanBody: String, lowerBody: String, rawBody: String, type: String, bankName: String): String {
-        // Priority 1: UPI VPA handle (e.g. jeeva@okaxis) — 2-char handles allowed
-        Pattern.compile("\\b([a-zA-Z0-9.\\-_]+@[a-zA-Z0-9]{2,})\\b").matcher(cleanBody).let { m ->
+    // Trailing fraud-warning/opt-out boilerplate ("Not you? SMS BLOCK to..., Dial 1930 for
+    // Cyber Fraud - Indian Bank") that several banks append after the real transaction info —
+    // without cutting it off first, the vendor-name fallback below can wander into it and
+    // return "Cyber Fraud" or similar nonsense instead of the actual payee. Matched
+    // structurally rather than via a fixed phrase list: either the near-universal "Not you?"
+    // rhetorical opener, or a short "call/dial/sms/contact/report ... <number>" call-to-action
+    // (block/helpline/short-code), which covers phrasing this list can't enumerate in advance.
+    private val PAYEE_BOILERPLATE_CUTOFF_REGEX = Regex(
+        "\\bnot\\s+you\\b\\s*\\??|\\b(?:sms|call|dial|contact|report)\\b[^.]{0,30}?\\d{3,}",
+        RegexOption.IGNORE_CASE
+    )
+
+    private fun stripTrailingBoilerplate(text: String): String {
+        val m = PAYEE_BOILERPLATE_CUTOFF_REGEX.find(text)
+        return if (m != null) text.substring(0, m.range.first).trimEnd() else text
+    }
+
+    private fun extractPayeeTitle(cleanBodyRaw: String, lowerBodyRaw: String, rawBodyRaw: String, type: String, bankName: String): String {
+        val cleanBody = stripTrailingBoilerplate(cleanBodyRaw)
+        val lowerBody = cleanBody.lowercase()
+        val rawBody = stripTrailingBoilerplate(rawBodyRaw)
+
+        // Priority 1: UPI VPA handle (e.g. jeeva@okaxis) — 1-char handles allowed since some
+        // banks truncate the domain in the SMS (e.g. "7010629253@p.")
+        Pattern.compile("\\b([a-zA-Z0-9.\\-_]+@[a-zA-Z0-9]{1,})\\b").matcher(cleanBody).let { m ->
             if (m.find()) return m.group(1) ?: ""
         }
 
@@ -577,7 +592,10 @@ object SmsParser {
         ).matcher(payeeBody)
         if (vendorMatcher.find()) {
             val raw = vendorMatcher.group(1)?.trim() ?: ""
-            val parts = raw.split("\\b(on|by|using|with|via|for|against|card|account|txn|ref|refno|ref\\.no|dated|at|transfer|if|call|dial|contact|help|link|click|visit|balance|bal|limit|avl|upi)\\b".toRegex())
+            // "rrn"/"utr" (reference number labels banks tack on right after the payee name,
+            // e.g. "to P UMMAR SHAFFI.RRN 621702128345") must be treated as hard boundaries
+            // too, otherwise the reference-number text bleeds into the payee title.
+            val parts = raw.split("\\b(on|by|using|with|via|for|against|card|account|txn|ref|refno|ref\\.no|rrn|utr|dated|at|transfer|if|call|dial|contact|help|link|click|visit|balance|bal|limit|avl|upi)\\b".toRegex())
             title = parts.firstOrNull()?.trim() ?: ""
         }
         title = title.replace("\\d+".toRegex(), "").trimEnd('.', ',', ':', ';').trim()
@@ -633,8 +651,7 @@ object SmsParser {
                 t.contains("eats") || t.contains("cafe") || t.contains("pizza") || t.contains("hotel") ||
                 lowerBody.contains("canteen") || lowerBody.contains("bakery") -> ExpenseCategory.FOOD
 
-            t.contains("gas") || t.contains("petrol") || t.contains("fuel") || t.contains("agencies") ||
-                lowerBody.contains("fuel station") || lowerBody.contains("petrol bunk") -> ExpenseCategory.FUEL
+            t.contains("gas") || t.contains("petrol") || t.contains("fuel") || t.contains("agencies") || lowerBody.contains("bunk") -> ExpenseCategory.FUEL
 
             t.contains("loan") || t.contains("debt") || t.contains("emi") ||
                 t.contains("credila") || lowerBody.contains("repayment") -> ExpenseCategory.DEBT
@@ -675,7 +692,7 @@ object SmsParser {
             t.contains("school") || t.contains("college") || t.contains("tuition") ||
                 t.contains("education") || t.contains("book") || t.contains("course") -> ExpenseCategory.EDUCATION
 
-            t.contains("zerodha") || t.contains("groww") || t.contains("INDMoney") -> ExpenseCategory.INVESTMENT
+            t.contains("zerodha") || t.contains("groww") || t.contains("INDMoney") || t.contains("invest") || t.contains("trading")-> ExpenseCategory.INVESTMENT
 
             t.contains("mutual fund") || t.contains("mutualfund") -> ExpenseCategory.MUTUAL_FUND
 
@@ -935,11 +952,19 @@ object SmsParser {
         // balance expires on...") which otherwise looked identical to a pure balance
         // snapshot (mentions "balance" + "ending with") and got silently misrouted here
         // instead of reaching the wallet parser as the real credit transaction it is.
+        // "sent"/"paid"/"withdrawn"/"spent"/"deducted" cover UPI "Sent Rs.X ... to PAYEE.
+        // Avl Bal Rs.Y" SMS, which were previously missing here and got wrongly swallowed
+        // as a pure balance update instead of also creating the underlying EXPENSE.
         val hasTransactionAction = lowerBody.contains("deposited") ||
             lowerBody.contains("credited") ||
             lowerBody.contains("debited") ||
             lowerBody.contains("transferred") ||
             lowerBody.contains("added") ||
+            lowerBody.contains("sent") ||
+            lowerBody.contains("paid") ||
+            lowerBody.contains("withdrawn") ||
+            lowerBody.contains("spent") ||
+            lowerBody.contains("deducted") ||
             lowerBody.contains("received")
         if (hasTransactionAction) return null
 

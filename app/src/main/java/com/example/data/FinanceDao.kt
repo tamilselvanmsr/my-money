@@ -41,6 +41,25 @@ interface FinanceDao {
 
     @Query("SELECT * FROM transactions WHERE type = 'BALANCE_UPDATE' AND title = 'Balance Sync' AND note LIKE '%[Acc: ' || :accountName || ']%' AND ABS(timestamp - :timestamp) < 1000 LIMIT 1")
     suspend fun getExactBalanceUpdate(accountName: String, timestamp: Long): TransactionEntry?
+
+    // Runs the "does a Balance Sync already exist near this timestamp?" check and the
+    // insert/replace inside one Room transaction, so two concurrent SMS-import paths (e.g.
+    // the live SmsReceiver and a background/manual Scan Inbox) processing the same message
+    // at the same time can no longer both pass the check and each insert their own duplicate
+    // snapshot — the second caller now always sees the first caller's already-committed row.
+    // Returns true if a new row was actually inserted (fresh or replacing a stale value),
+    // false if an identical snapshot already existed and nothing changed.
+    @Transaction
+    suspend fun upsertBalanceSync(accountName: String, timestamp: Long, transaction: TransactionEntry): Boolean {
+        val existing = getExactBalanceUpdate(accountName, timestamp)
+        if (existing != null) {
+            if (kotlin.math.abs(existing.amount - transaction.amount) < 0.01) return false
+            deleteTransactionById(existing.id)
+        }
+        insertTransaction(transaction)
+        return true
+    }
+
     @Query("SELECT COUNT(*) FROM transactions WHERE note LIKE '%[Acc: ' || :accountName || ']%'")
     suspend fun countTransactionsForAccount(accountName: String): Int
     // Budgets

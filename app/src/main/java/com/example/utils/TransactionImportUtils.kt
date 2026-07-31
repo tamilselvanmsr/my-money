@@ -28,6 +28,26 @@ private fun lastFourFromNoteTag(note: String?, tag: String): String? {
     return regex.find(note ?: "")?.groupValues?.getOrNull(1)
 }
 
+/**
+ * Builds the "[CCLimit: X][CCAvail: Y]" tag suffix embedded in a Credit Card Summary's
+ * "Balance Sync" snapshot note. A credit card account's [creditLimit]/[availableLimit]
+ * fields live directly on the Account row (they are NOT derived from transaction history),
+ * so if this snapshot transaction is later deleted, those fields can't be reconstructed
+ * from the remaining ledger alone — embedding both values here lets the app restore them
+ * from whatever the previous remaining CC Summary snapshot says.
+ */
+fun ccSnapshotTags(creditLimit: Double, availableLimit: Double): String =
+    "[CCLimit: $creditLimit][CCAvail: $availableLimit]"
+
+/** Extracts (creditLimit, availableLimit) from a CC Summary Balance Sync's note tags, or
+ * null if this snapshot doesn't carry them (e.g. a regular bank balance sync). */
+fun parseCcSnapshotTags(note: String?): Pair<Double, Double>? {
+    val n = note ?: return null
+    val limit = "\\[CCLimit: ([0-9.]+)]".toRegex().find(n)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+    val avail = "\\[CCAvail: ([0-9.]+)]".toRegex().find(n)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+    return if (limit != null && avail != null) limit to avail else null
+}
+
 /** Returns the value stored inside [IncRef: XXX] in a TRANSFER note, or null. */
 private fun incRefFromNote(note: String?): String? {
     return "\\[IncRef: ([^\\]]+)\\]".toRegex().find(note ?: "")?.groupValues?.getOrNull(1)

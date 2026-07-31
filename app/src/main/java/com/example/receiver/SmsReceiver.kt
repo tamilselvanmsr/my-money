@@ -77,6 +77,9 @@ class SmsReceiver : BroadcastReceiver() {
                                             ?: if (refDigits.length == 3) dao.getAccountByLastFourSuffix(refDigits) else null
                                     }
                                     if (limitAcc != null) {
+                                        val prevCreditLimit = limitAcc.creditLimit
+                                        val prevAvailableLimit = limitAcc.availableLimit
+                                        val prevDue = (prevCreditLimit - prevAvailableLimit).coerceAtLeast(0.0)
                                         parsed.availableLimit?.let { dao.updateAccountAvailableLimit(limitAcc.id, it) }
                                         parsed.totalCreditLimit?.let { dao.updateAccountCreditLimit(limitAcc.id, it) }
                                         // Create a negative-outstanding BALANCE_UPDATE snapshot (same as bank Balance Sync)
@@ -84,9 +87,6 @@ class SmsReceiver : BroadcastReceiver() {
                                         val creditLimit = parsed.totalCreditLimit ?: limitAcc.creditLimit
                                         if (creditLimit > 0) {
                                             val snapshot = availLimit - creditLimit  // negative = outstanding debt
-                                            // Delete any stale CC snapshot first — new statement supersedes all previous
-                                            dao.deleteAllBalanceSyncForAccount(limitAcc.name)
-                                            // Use actual SMS received time — NOT the parsed statement date from the body
                                             val snapTx = TransactionEntry(
                                                 title = "Balance Sync",
                                                 amount = snapshot,
@@ -95,12 +95,25 @@ class SmsReceiver : BroadcastReceiver() {
                                                 smsSender = sender,
                                                 smsBody = body,
                                                 timestamp = timestampMillis,
-                                                note = "[Acc: ${limitAcc.name}]"
+                                                note = "[Acc: ${limitAcc.name}]${com.example.utils.ccSnapshotTags(creditLimit, availLimit)}"
                                             )
-                                            dao.insertTransaction(snapTx)
+                                            // Check + replace/insert in one Room transaction — avoids a
+                                            // duplicate snapshot if this same SMS is also mid-processing
+                                            // via a concurrent Scan Inbox run.
+                                            dao.upsertBalanceSync(limitAcc.name, timestampMillis, snapTx)
+                                        }
+                                        val newDue = (creditLimit - availLimit).coerceAtLeast(0.0)
+                                        if (kotlin.math.abs(prevCreditLimit - creditLimit) > 0.01 || kotlin.math.abs(prevAvailableLimit - availLimit) > 0.01) {
+                                            appendPersistedNotification(
+                                                context,
+                                                "CC Limits Updated",
+                                                "${limitAcc.name}: Credit Limit ₹${"%.2f".format(prevCreditLimit)} → ₹${"%.2f".format(creditLimit)}, " +
+                                                    "Available ₹${"%.2f".format(prevAvailableLimit)} → ₹${"%.2f".format(availLimit)}, " +
+                                                    "Due ₹${"%.2f".format(prevDue)} → ₹${"%.2f".format(newDue)}"
+                                            )
                                         }
                                         withContext(Dispatchers.Main) {
-                                            Toast.makeText(context, "AutoLedger: CC limits updated for ${limitAcc.name}", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "AutoLedger: CC limits updated for ${limitAcc.name} (Due ₹${"%.2f".format(newDue)})", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }
@@ -114,7 +127,6 @@ class SmsReceiver : BroadcastReceiver() {
                                     listOf(digits to parsed.availableBalance)
                                 } else emptyList()
 
-                                val allTx = dao.getAllTransactions().first()
                                 for ((refDigits, bal) in pairs) {
                                     val linkedAcc = dao.getAccountByLastFour(refDigits)
                                         ?: if (refDigits.length == 3) dao.getAccountByLastFourSuffix(refDigits) else null
@@ -123,23 +135,20 @@ class SmsReceiver : BroadcastReceiver() {
                                         // so that the display formula (creditLimit + bal) gives the correct available credit.
                                         val snapshotBal = if (linkedAcc.type == "CREDIT_CARD" && linkedAcc.creditLimit > 0)
                                             bal - linkedAcc.creditLimit else bal
-                                        val isDup = allTx.any {
-                                            it.type == "BALANCE_UPDATE" &&
-                                            it.timestamp == targetTime &&
-                                            it.note?.contains("[Acc: ${linkedAcc.name}]") == true
-                                        }
-                                        if (!isDup) {
-                                            val snapTx = TransactionEntry(
-                                                title = "Balance Sync",
-                                                amount = snapshotBal,
-                                                category = "ADJUST",
-                                                type = "BALANCE_UPDATE",
-                                                smsSender = sender,
-                                                smsBody = body,
-                                                timestamp = targetTime,
-                                                note = "[Acc: ${linkedAcc.name}]"
-                                            )
-                                            dao.insertTransaction(snapTx)
+                                        val snapTx = TransactionEntry(
+                                            title = "Balance Sync",
+                                            amount = snapshotBal,
+                                            category = "ADJUST",
+                                            type = "BALANCE_UPDATE",
+                                            smsSender = sender,
+                                            smsBody = body,
+                                            timestamp = targetTime,
+                                            note = "[Acc: ${linkedAcc.name}]"
+                                        )
+                                        // Check + replace/insert in one Room transaction — avoids a
+                                        // duplicate snapshot if Scan Inbox re-processes this same SMS
+                                        // around the same time.
+                                        if (dao.upsertBalanceSync(linkedAcc.name, targetTime, snapTx)) {
                                             withContext(Dispatchers.Main) {
                                     Toast.makeText(context, "AutoLedger: Balance ₹${String.format("%.2f", bal)} → ${linkedAcc.name}", Toast.LENGTH_LONG).show()
                                             }
@@ -262,24 +271,20 @@ class SmsReceiver : BroadcastReceiver() {
                             // transaction that happened to also report its resulting balance.
                             if (balanceSyncEnabled && parsed.availableBalance != null && linkedAcc != null && linkedAcc.type != "CREDIT_CARD") {
                                 val bsTs = targetTime + 1L
-                                val existingSync = dao.getExactBalanceUpdate(linkedAcc.name, bsTs)
-                                val shouldInsert = if (existingSync != null) {
-                                    val sameValue = Math.abs(existingSync.amount - parsed.availableBalance) < 0.01
-                                    if (!sameValue) dao.deleteTransactionById(existingSync.id)
-                                    !sameValue
-                                } else true
-                                if (shouldInsert) {
-                                    val snapTx = TransactionEntry(
-                                        title = "Balance Sync",
-                                        amount = parsed.availableBalance,
-                                        category = "",
-                                        type = "BALANCE_UPDATE",
-                                        smsSender = sender,
-                                        smsBody = body,
-                                        timestamp = bsTs,
-                                        note = "[Acc: ${linkedAcc.name}]"
-                                    )
-                                    dao.insertTransaction(snapTx)
+                                val snapTx = TransactionEntry(
+                                    title = "Balance Sync",
+                                    amount = parsed.availableBalance,
+                                    category = "",
+                                    type = "BALANCE_UPDATE",
+                                    smsSender = sender,
+                                    smsBody = body,
+                                    timestamp = bsTs,
+                                    note = "[Acc: ${linkedAcc.name}]"
+                                )
+                                // Check + replace/insert in one Room transaction — avoids a
+                                // duplicate snapshot if Scan Inbox re-processes this same SMS
+                                // around the same time.
+                                if (dao.upsertBalanceSync(linkedAcc.name, bsTs, snapTx)) {
                                     saveReceiverFingerprint(context, "Balance Sync|${parsed.availableBalance}|BALANCE_UPDATE|$bsTs")
                                 }
                             }
@@ -311,6 +316,27 @@ class SmsReceiver : BroadcastReceiver() {
             // Keep at most 100 pending fingerprints to avoid unbounded growth
             val trimmed = if (existing.size > 100) existing.toList().takeLast(100).toSet() else existing
             prefs.edit().putStringSet("receiver_new_fingerprints", trimmed).apply()
+        } catch (_: Exception) {}
+    }
+
+    /** Appends an in-app notification directly to the same SharedPrefs JSON array the
+     * ViewModel's notification centre reads (`app_notifications_json`) — this receiver runs
+     * outside the ViewModel's lifecycle so it can't call `addNotification()` directly. */
+    private fun appendPersistedNotification(context: Context, title: String, message: String) {
+        try {
+            val prefs = context.getSharedPreferences("finance_settings", Context.MODE_PRIVATE)
+            val existingJson = prefs.getString("app_notifications_json", null)
+            val existingArr = if (existingJson != null) org.json.JSONArray(existingJson) else org.json.JSONArray()
+            val merged = org.json.JSONArray()
+            merged.put(org.json.JSONObject().apply {
+                put("id", System.nanoTime())
+                put("title", title)
+                put("message", message)
+                put("timestamp", System.currentTimeMillis())
+                put("isRead", false)
+            })
+            for (i in 0 until minOf(existingArr.length(), 199)) merged.put(existingArr.getJSONObject(i))
+            prefs.edit().putString("app_notifications_json", merged.toString()).apply()
         } catch (_: Exception) {}
     }
 

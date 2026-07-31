@@ -109,14 +109,45 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
             }
 
             prefs.edit().putLong("last_backup_time", System.currentTimeMillis()).apply()
+            pruneOldBackups(customPath)
             Log.i(TAG, "Auto-backup completed: $fileName")
             addAppNotification("Auto-Backup Completed", "Backup saved: $fileName")
+            postSystemNotification(true, "Backup saved: $fileName")
             Result.success()
 
         } catch (e: Exception) {
             Log.e(TAG, "Auto-backup failed: ${e.message}", e)
             addAppNotification("Auto-Backup Failed", "Backup failed: ${e.message ?: "Unknown error"}")
+            postSystemNotification(false, "Backup failed: ${e.message ?: "Unknown error"}")
             Result.failure()
+        }
+    }
+
+    /** Keeps only the newest 5 backup files, deleting older ones — mirrors
+     *  FinanceViewModel.pruneOldBackups() (the manual "Back Up Now" path), which this
+     *  scheduled auto-backup worker previously never called, so its backups just kept
+     *  accumulating forever instead of being capped like manual ones. */
+    private fun pruneOldBackups(customPath: String, maxKeep: Int = 5) {
+        try {
+            if (customPath.startsWith("content://")) {
+                val treeUri = android.net.Uri.parse(customPath)
+                val docFolder = DocumentFile.fromTreeUri(applicationContext, treeUri) ?: return
+                docFolder.listFiles()
+                    .filter { it.name?.endsWith(".json") == true || it.name?.endsWith(".csv") == true }
+                    .sortedByDescending { it.lastModified() }
+                    .drop(maxKeep)
+                    .forEach { it.delete() }
+            } else {
+                val folder = if (customPath.isNotEmpty()) java.io.File(customPath)
+                             else java.io.File(applicationContext.getExternalFilesDir(null), "Backups")
+                if (!folder.exists()) return
+                folder.listFiles { f -> f.extension == "json" || f.extension == "csv" }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.drop(maxKeep)
+                    ?.forEach { it.delete() }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "pruneOldBackups failed: ${e.message}", e)
         }
     }
 
@@ -137,6 +168,40 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
             updated.put(notif)
             for (i in 0 until minOf(existing.length(), 199)) updated.put(existing.getJSONObject(i))
             p.edit().putString("app_notifications_json", updated.toString()).apply()
+        } catch (_: Exception) {}
+    }
+
+    /** Posts a heads-up system notification for auto-backup completion/failure — this Worker
+     * runs outside the ViewModel's lifecycle so it creates/reuses its own HIGH-importance
+     * channel (same id as FinanceViewModel's, so there's only ever one "Backup Status" channel). */
+    private fun postSystemNotification(success: Boolean, detail: String) {
+        try {
+            val channelId = "backup_status_v2"
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val manager = applicationContext.getSystemService(android.app.NotificationManager::class.java)
+                if (manager.getNotificationChannel(channelId) == null) {
+                    manager.createNotificationChannel(android.app.NotificationChannel(
+                        channelId, "Backup Status", android.app.NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = "Automatic backup completion and failure alerts"
+                        enableVibration(true)
+                    })
+                }
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                androidx.core.content.ContextCompat.checkSelfPermission(applicationContext, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                return
+            }
+            val title = if (success) "Backup Completed" else "Backup Failed"
+            val notification = androidx.core.app.NotificationCompat.Builder(applicationContext, channelId)
+                .setSmallIcon(android.R.drawable.stat_sys_upload_done)
+                .setContentTitle(title)
+                .setContentText(detail)
+                .setPriority(if (success) androidx.core.app.NotificationCompat.PRIORITY_DEFAULT else androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .build()
+            androidx.core.app.NotificationManagerCompat.from(applicationContext).notify(title.hashCode(), notification)
         } catch (_: Exception) {}
     }
 }

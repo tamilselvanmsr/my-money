@@ -540,6 +540,41 @@ class SmsParserTest {
         assertFalse(result!!.title.isBlank())
     }
 
+    @Test fun `Truncated UPI handle is used as payee, not trailing fraud-warning boilerplate`() {
+        // Regression: "Not you? SMS BLOCK to..., Dial 1930 for Cyber Fraud - Indian Bank"
+        // boilerplate was previously wrongly picked up as the payee ("Cyber Fraud") because
+        // the UPI-handle regex required a 2+ char domain and this bank truncates it to 1 char.
+        val result = SmsParser.parseOffline(
+            "Indian Bank A/c *1234 debited Rs. 500.00 on 09-07-26 to 7010629253@p. UPI:655624770287. " +
+            "Not you? SMS BLOCK to 9289592895, Dial 1930 for Cyber Fraud - Indian Bank",
+            "JD-INDBK-S"
+        )
+        assertNotNull(result)
+        assertEquals("EXPENSE", result!!.type)
+        assertEquals(500.0, result.amount, 0.01)
+        assertEquals("1234", result.accountRef)
+        assertEquals("7010629253@p", result.title)
+        assertFalse("title must never contain fraud-warning boilerplate", result.title.lowercase().contains("cyber fraud"))
+    }
+
+    @Test fun `Sent-to-payee SMS with RRN and Avl Bal — EXPENSE not swallowed as pure balance update`() {
+        // Regression: "sent" was missing from tryParseBalanceUpdate's transaction-action
+        // guard, so this SMS was wrongly returned as a pure BALANCE_UPDATE (amount = the
+        // balance, not the ₹38 sent) instead of an EXPENSE with the balance also captured.
+        val result = SmsParser.parseOffline(
+            "Sent Rs.38.00 from A/c *1234 on 05-08-26 to P UMMAR SHAFFI.RRN 621702128345." +
+            "Avl Bal Rs.1791.36.Not you?SMS BLOCK to 9289592895-Indian Bank.",
+            "JD-INDBK-S"
+        )
+        assertNotNull(result)
+        assertFalse("must not be routed as a pure balance update", result!!.isBalanceUpdate)
+        assertEquals("EXPENSE", result.type)
+        assertEquals(38.0, result.amount, 0.01)
+        assertEquals("1234", result.accountRef)
+        assertEquals("P Ummar Shaffi", result.title)
+        assertEquals(1791.36, result.availableBalance ?: 0.0, 0.01)
+    }
+
     // ─── Category: EXPENSE types ─────────────────────────────────────────────
     // Each test verifies that inferCategory() maps to the correct ExpenseCategory
     // based on the extracted merchant title or lowerBody keywords.

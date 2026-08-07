@@ -352,6 +352,12 @@ object SmsParser {
         WalletDef("ZOMATO_WALLET", "Zomato Money",
             listOf("ZOMATO"),
             listOf("zomato money", "zomato wallet")),
+        WalletDef("PLUXEE_WALLET", "Pluxee",
+            listOf("PLUXEE"),
+            listOf("pluxee card", "pluxee meal", "pluxee wallet"),
+            // Pluxee Meal Wallet top-ups are an employer-provided meal benefit, not salary/
+            // cashback/rewards-points — Grants is the closest existing fit.
+            incomeCategory = ExpenseCategory.GRANTS),
         WalletDef("APAY_WALLET", "Apay Wallet",
             bodyKeywords = listOf("apay wallet", "apay balance", "using apay")),
         WalletDef("NEUCOINS_WALLET", "NeuCoins",
@@ -588,14 +594,18 @@ object SmsParser {
         // Extract vendor name via prepositions (most-specific to least-specific)
         var title = ""
         val vendorMatcher = Pattern.compile(
-            "(?:transferred to|received from|spent on|paid to|transfer to|trf to|towards|merchant|info:|from|for|at|to)\\s+([a-zA-Z0-9\\s\\.\\-\\'&_]+)"
+            "(?:transferred to|received from|spent on|paid to|transfer to|trf to|towards|merchant|info:|credited by|by|from|for|at|to)\\s+([a-zA-Z0-9\\s\\.\\-\\'&_]+)"
         ).matcher(payeeBody)
         if (vendorMatcher.find()) {
             val raw = vendorMatcher.group(1)?.trim() ?: ""
             // "rrn"/"utr" (reference number labels banks tack on right after the payee name,
             // e.g. "to P UMMAR SHAFFI.RRN 621702128345") must be treated as hard boundaries
-            // too, otherwise the reference-number text bleeds into the payee title.
-            val parts = raw.split("\\b(on|by|using|with|via|for|against|card|account|txn|ref|refno|ref\\.no|rrn|utr|dated|at|transfer|if|call|dial|contact|help|link|click|visit|balance|bal|limit|avl|upi)\\b".toRegex())
+            // too, otherwise the reference-number text bleeds into the payee title. "for" is
+            // deliberately NOT a boundary here — it legitimately appears inside real business
+            // names (e.g. "MS NEHA PG FOR LADIES"), and by this point card/amount/date noise
+            // has already been scrubbed above, so a trailing "for <reason>" is uncommon enough
+            // that keeping the fuller name is the safer default.
+            val parts = raw.split("\\b(on|by|using|with|via|against|card|account|txn|ref|refno|ref\\.no|rrn|utr|dated|at|transfer|if|call|dial|contact|help|link|click|visit|balance|bal|limit|avl|upi)\\b".toRegex())
             title = parts.firstOrNull()?.trim() ?: ""
         }
         title = title.replace("\\d+".toRegex(), "").trimEnd('.', ',', ':', ';').trim()
@@ -640,15 +650,29 @@ object SmsParser {
             lowerBody.contains("upi") || lowerBody.contains("vpa") || t.contains("upi") || t.contains("@") -> ExpenseCategory.UPI
             t.contains("pocket money") || t.contains("allowance")   -> ExpenseCategory.INCOME_OTHERS
             lowerBody.contains("salary") || t.contains("salary")    -> ExpenseCategory.SALARY
+            t.contains("dividend") || lowerBody.contains("dividend") -> ExpenseCategory.DIVIDEND
+            t.contains("interest") || lowerBody.contains("interest") -> ExpenseCategory.INTEREST
+            t.contains("provident fund") || t.contains("epf") || lowerBody.contains("provident fund") -> ExpenseCategory.PROVIDENT_FUND
+            t.contains("coin") || lowerBody.contains("coin")         -> ExpenseCategory.COINS
+            t.contains("coupon") || lowerBody.contains("coupon")     -> ExpenseCategory.COUPONS
+            t.contains("reward") || lowerBody.contains("reward")     -> ExpenseCategory.REWARDS
+            t.contains("sale") || lowerBody.contains("sale")         -> ExpenseCategory.SALE
+            t.contains("rental") || t.contains("rent received") || lowerBody.contains("house rent") -> ExpenseCategory.RENTAL
+            t.contains("grant") || lowerBody.contains("grant")       -> ExpenseCategory.GRANTS
+            t.contains("borrow") || lowerBody.contains("borrow")     -> ExpenseCategory.BORROWED_MONEY
+            t.contains("reimburse") || lowerBody.contains("reimburse") -> ExpenseCategory.REIMBURSEMENT
             else                                                     -> ExpenseCategory.INCOME_OTHERS
         }
         return when {
-            t.contains("tea") || t.contains("stall") ||
-                (amount == 10.0 || amount == 12.0 || amount == 15.0 || amount == 20.0) -> ExpenseCategory.SOFT_HOT_DRINKS
+            t.contains("tea") || t.contains("stall") || t.contains("cafe") ||
+                (amount == 10.0 || amount == 12.0 || amount == 15.0 || amount == 18.0
+                || amount == 20.0) -> ExpenseCategory.SOFT_HOT_DRINKS
 
             t.contains("starbucks") || t.contains("mcdonald") || t.contains("swiggy") ||
                 t.contains("zomato") || t.contains("food") || t.contains("restaurant") ||
-                t.contains("eats") || t.contains("cafe") || t.contains("pizza") || t.contains("hotel") ||
+                t.contains("eats") || t.contains("pizza") || t.contains("hotel") ||
+                t.contains("domino") || t.contains("kfc") || t.contains("burger king") ||
+                t.contains("subway") || t.contains("dunzo") ||
                 lowerBody.contains("canteen") || lowerBody.contains("bakery") -> ExpenseCategory.FOOD
 
             t.contains("gas") || t.contains("petrol") || t.contains("fuel") || t.contains("agencies") || lowerBody.contains("bunk") -> ExpenseCategory.FUEL
@@ -661,18 +685,30 @@ object SmsParser {
 
             t.contains("clothes") || t.contains("fashion") || t.contains("clothing") ||
                 t.contains("zara") || t.contains("readymade") || t.contains("apparel") ||
-                t.contains("trends") || t.contains("zudio") || t.contains("Levi's") ||
-                t.contains("raymond") || t.contains("texttile") -> ExpenseCategory.CLOTHES
+                t.contains("trends") || t.contains("zudio") || t.contains("levi's") ||
+                t.contains("raymond") || t.contains("texttile") ||
+                t.contains("myntra") || t.contains("ajio") || t.contains("westside") ||
+                t.contains("pantaloons") || t.contains("lifestyle") || t.contains("shoppers stop") ||
+                t.contains("max fashion") -> ExpenseCategory.CLOTHES
 
             t.contains("walmart") || t.contains("blinkit") || t.contains("zepto") ||
                 t.contains("mart") || t.contains("dmart") || t.contains("bigbasket") ||
                 t.contains("grocery") || t.contains("departmental") ||
+                t.contains("reliance fresh") || t.contains("reliance smart") ||
+                t.contains("big bazaar") || t.contains("spencer") || t.contains("star bazaar") ||
+                t.contains("nature's basket") || t.contains("easyday") ||
                 (t.contains("store") && !t.contains("playstore") && !t.contains("play store")) ||
                 lowerBody.contains("supermarket") -> ExpenseCategory.GROCERIES
 
             t.contains("uber") || t.contains("lyft") || t.contains("ola") ||
                 t.contains("rapido") || t.contains("taxi") || t.contains("cab") ||
                 t.contains("metro") || lowerBody.contains("transit") -> ExpenseCategory.TRANSPORT
+
+            t.contains("parking") || t.contains("toll") || t.contains("fastag") -> ExpenseCategory.PARKING_TOLLS
+
+            t.contains("amazon") || t.contains("flipkart") || t.contains("electro") ||
+                t.contains("techno") || t.contains("croma") ||
+                t.contains("reliance digital") || t.contains("vijay sales") || t.contains("poorvika") || t.contains("asspl") -> ExpenseCategory.ELECTRONICS
 
             t.contains("electric") || t.contains("water") || t.contains("utility") ||
                 t.contains("bill") || t.contains("recharge") || t.contains("netflix") ||
@@ -683,27 +719,33 @@ object SmsParser {
             t.contains("movie") || t.contains("cinema") || t.contains("steam") ||
                 t.contains("spotify") || t.contains("pub") || t.contains("bar") ||
                 t.contains("concert") || t.contains("game") ||
-                t.contains("playstore") || t.contains("play store") ||
-                t.contains("mall") || t.contains("theatre") -> ExpenseCategory.ENTERTAINMENT
+                t.contains("playstore") || t.contains("play store") || t.contains("theatre") ||
+                t.contains("pvr") || t.contains("inox") || t.contains("cinepolis") ||
+                t.contains("bookmyshow") -> ExpenseCategory.ENTERTAINMENT
+
+            t.contains("shopping") || t.contains("mall") -> ExpenseCategory.SHOPPING
 
             t.contains("hospital") || t.contains("pharmacy") || t.contains("medical") ||
-                t.contains("doctor") || t.contains("clinic") || lowerBody.contains("medicine") -> ExpenseCategory.HEALTHCARE
+                t.contains("doctor") || t.contains("clinic") || lowerBody.contains("medicine") ||
+                t.contains("apollo pharmacy") || t.contains("medplus") || t.contains("netmeds") ||
+                t.contains("pharmeasy") || t.contains("1mg") -> ExpenseCategory.HEALTHCARE
 
             t.contains("school") || t.contains("college") || t.contains("tuition") ||
                 t.contains("education") || t.contains("book") || t.contains("course") -> ExpenseCategory.EDUCATION
 
-            t.contains("zerodha") || t.contains("groww") || t.contains("INDMoney") || t.contains("invest") || t.contains("trading")-> ExpenseCategory.INVESTMENT
+            t.contains("zerodha") || t.contains("groww") || t.contains("indmoney") || t.contains("invest") || t.contains("trading")-> ExpenseCategory.INVESTMENT
 
             t.contains("mutual fund") || t.contains("mutualfund") -> ExpenseCategory.MUTUAL_FUND
-
-            t.contains("shopping") || t.contains("amazon") || t.contains("flipkart") ||
-                t.contains("techno") || t.contains("croma") -> ExpenseCategory.ELECTRONICS
 
             t.contains("redbus") || t.contains("irctc") || t.contains("travel") -> ExpenseCategory.TRAVEL
 
             t.contains("protein") || t.contains("powder") || t.contains("supplement") ||
                 t.contains("whey") || t.contains("nutrition") || t.contains("gym") ||
-                t.contains("fitness") || t.contains("workout") -> ExpenseCategory.GYM
+                t.contains("fitness") || t.contains("workout") || t.contains("decathlon") -> ExpenseCategory.GYM
+
+            t.contains("nykaa") || t.contains("salon") || t.contains("parlour") || t.contains("spa") -> ExpenseCategory.BEAUTY
+
+            t.contains("donation") || t.contains("donate") || t.contains("charity") || t.contains("ngo") -> ExpenseCategory.DONATION
 
             t.contains("fruit") || t.contains("market") || t.contains("banana") -> ExpenseCategory.FRUITS
 
@@ -762,8 +804,18 @@ object SmsParser {
                 day = textMatcher.group(1)?.toIntOrNull() ?: -1
                 val mStr = textMatcher.group(2)?.lowercase() ?: ""
                 month = when (mStr) {
-                    "jan" -> 1 "feb" -> 2 "mar" -> 3 "apr" -> 4 "may" -> 5 "jun" -> 6
-                    "jul" -> 7 "aug" -> 8 "sep" -> 9 "oct" -> 10 "nov" -> 11 "dec" -> 12
+                    "jan" -> 1
+                    "feb" -> 2
+                    "mar" -> 3
+                    "apr" -> 4
+                    "may" -> 5
+                    "jun" -> 6
+                    "jul" -> 7
+                    "aug" -> 8
+                    "sep" -> 9
+                    "oct" -> 10
+                    "nov" -> 11
+                    "dec" -> 12
                     else -> -1
                 }
                 val rawYear = textMatcher.group(3)?.toIntOrNull() ?: -1

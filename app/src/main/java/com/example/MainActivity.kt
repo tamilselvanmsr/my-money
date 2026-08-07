@@ -348,11 +348,40 @@ fun computeWalletBalances(
 // ═══════════════════════════════════════════════════════════════════════════
 
 class MainActivity : FragmentActivity() {
+    companion object {
+        const val EXTRA_DEEPLINK_TARGET = "deeplink_target"
+        const val EXTRA_DEEPLINK_CATEGORY = "deeplink_category"
+    }
+
+    // Plain ViewModelProvider (not the activity-ktx `by viewModels()` delegate, which isn't
+    // pulled in transitively here) — still the same singleton instance Compose's viewModel()
+    // resolves to below, since both are backed by this Activity's ViewModelStore.
+    private val financeViewModel: FinanceViewModel by lazy {
+        androidx.lifecycle.ViewModelProvider(
+            this, androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.getInstance(application)
+        )[FinanceViewModel::class.java]
+    }
+
+    /** Tapping a system notification (backup / budget alert) should jump straight to that
+     * section instead of just opening the app wherever it last was. */
+    private fun handleDeepLinkIntent(intent: android.content.Intent?) {
+        val target = intent?.getStringExtra(EXTRA_DEEPLINK_TARGET) ?: return
+        val categoryKey = intent.getStringExtra(EXTRA_DEEPLINK_CATEGORY)
+        financeViewModel.setPendingDeepLink(target, categoryKey)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDeepLinkIntent(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleDeepLinkIntent(intent)
         enableEdgeToEdge()
         setContent {
-            val vm: FinanceViewModel = viewModel()
+            val vm: FinanceViewModel = financeViewModel
             val themeMode by vm.themeMode.collectAsStateWithLifecycle()
             val isDarkPref by vm.isDarkTheme.collectAsStateWithLifecycle()
             val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -678,6 +707,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     var currentTab by remember { mutableStateOf(AppTab.DASHBOARD) }
     var showFirstRunConsent by remember { mutableStateOf(false) }
     var triggerAutoSmsPermissionRequest by remember { mutableStateOf(false) }
+    var highlightBudgetCategory by remember { mutableStateOf<String?>(null) }
     // Show a one-time full-screen consent dialog on the very first install. Only after the
     // user taps "I Agree & Continue" do we mark the app as launched and jump to SMS Scan.
     LaunchedEffect(Unit) {
@@ -713,6 +743,25 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
     var showRestoreDialog by remember { mutableStateOf(false) }
     var showNotificationsPanel by remember { mutableStateOf(false) }
     var expandedNotificationIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+
+    // Tapping a "Backup Completed/Failed" or "Budget Alert" system notification routes here —
+    // jump to the relevant tab (and, for a budget, flag which category card to blink) instead
+    // of just opening the app to wherever it last was.
+    val pendingDeepLink by viewModel.pendingDeepLink.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingDeepLink) {
+        when (val link = pendingDeepLink) {
+            is com.example.viewmodel.FinanceViewModel.PendingDeepLink.Backup -> {
+                showBackupDialog = true
+                viewModel.clearPendingDeepLink()
+            }
+            is com.example.viewmodel.FinanceViewModel.PendingDeepLink.Budget -> {
+                currentTab = AppTab.BUDGETS
+                highlightBudgetCategory = link.categoryKey
+                viewModel.clearPendingDeepLink()
+            }
+            null -> {}
+        }
+    }
 
     val toastMessage = viewModel.toastMessage
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
@@ -1204,7 +1253,11 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
             ) { page ->
                 when (appTabValues[page]) {
                     AppTab.DASHBOARD -> DashboardScreen(viewModel, dashboardListState)
-                    AppTab.BUDGETS   -> BudgetsScreen(viewModel, budgetsListState)
+                    AppTab.BUDGETS   -> BudgetsScreen(
+                        viewModel, budgetsListState,
+                        highlightCategoryKey = highlightBudgetCategory,
+                        onHighlightConsumed = { highlightBudgetCategory = null }
+                    )
                     AppTab.ANALYTICS -> AnalyticsScreen(viewModel, analyticsListState)
                     AppTab.ACCOUNT   -> AccountScreen(viewModel, accountsListState)
                     AppTab.AUTO_SCAN -> AutoScanHubScreen(
@@ -5440,7 +5493,12 @@ val categoryColorsList = listOf(
  *  - Expense / Income category tabs
  */
 @Composable
-fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememberLazyListState()) {
+fun BudgetsScreen(
+    viewModel: FinanceViewModel,
+    listState: LazyListState = rememberLazyListState(),
+    highlightCategoryKey: String? = null,
+    onHighlightConsumed: () -> Unit = {}
+) {
     val c = LocalAppColors.current
     val isPaid by viewModel.isPaidFeaturesEnabled.collectAsStateWithLifecycle()
     val txs by viewModel.allTransactions.collectAsStateWithLifecycle()
@@ -5448,6 +5506,20 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
     val activeBudgets by viewModel.monthlyBudgets.collectAsStateWithLifecycle()
     val customCats by viewModel.allCustomCategories.collectAsStateWithLifecycle(emptyList())
     val accountsForBudget by viewModel.allAccounts.collectAsStateWithLifecycle()
+
+    // Blinks the deep-linked budget card a few times so it's obvious which one triggered the
+    // notification, then clears itself so it doesn't replay on every recomposition.
+    val budgetHighlightAlpha = remember { Animatable(0f) }
+    LaunchedEffect(highlightCategoryKey) {
+        if (highlightCategoryKey != null) {
+            listState.animateScrollToItem(0)
+            repeat(3) {
+                budgetHighlightAlpha.animateTo(1f, animationSpec = tween(300))
+                budgetHighlightAlpha.animateTo(0f, animationSpec = tween(300))
+            }
+            onHighlightConsumed()
+        }
+    }
 
     // Dialog setups
     var showEditCategoryDialog by remember { mutableStateOf<DisplayCategory?>(null) }
@@ -5968,10 +6040,12 @@ fun BudgetsScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                     val percent = ratio * 100
                     val progressColor = budgetProgressColor(percent, c)
                     val remaining = limit - catSpend
+                    val isHighlighted = cat.name.equals(highlightCategoryKey, ignoreCase = true)
                     Surface(
                         color = if (c.isBorderless) Color.Transparent else if (isDragging) Color(0xFF1E3048) else c.surface,
                         shape = if (c.isBorderless) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp),
-                        border = if (c.isBorderless) null else BorderStroke(1.dp, if (isDragging) cat.color else cat.color.copy(alpha = 0.45f)),
+                        border = if (isHighlighted) BorderStroke(2.dp, c.accent.copy(alpha = 0.35f + budgetHighlightAlpha.value * 0.65f))
+                                 else if (c.isBorderless) null else BorderStroke(1.dp, if (isDragging) cat.color else cat.color.copy(alpha = 0.45f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .offset(y = if (isDragging) dragOffsetDp else 0.dp)

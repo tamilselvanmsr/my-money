@@ -267,6 +267,33 @@ class SmsParserTest {
         assertEquals("APAY_WALLET", result.accountRef)
     }
 
+    @Test fun `Pluxee Meal Wallet credit is recognized and creates a Pluxee wallet account`() {
+        val result = SmsParser.parseOffline(
+            "Your Pluxee Card has been successfully credited with Rs.4400 towards  Meal Wallet on Tue Aug 11 2026 15:45:06. " +
+            "Your current Meal Wallet balance is Rs.4400.00.",
+            "JD-Pluxee-S"
+        )
+        assertNotNull(result)
+        assertEquals(4400.0, result!!.amount, 0.01)
+        assertEquals("INCOME", result.type)
+        assertEquals("PLUXEE_WALLET", result.accountRef)
+        assertEquals(4400.0, result.availableBalance ?: 0.0, 0.01)
+        assertEquals(ExpenseCategory.GRANTS, result.category)
+    }
+
+    @Test fun `Pluxee Meal Card wallet spend is recognized as an expense`() {
+        val result = SmsParser.parseOffline(
+            "Rs. 276.99 spent from Pluxee  Meal Card wallet, card no.xx1234 on 11-08-2026 18:15:43 at BIG BASKET . " +
+            "Avl bal Rs.4123.01. Not you call 18002106919",
+            "JD-Pluxee-S"
+        )
+        assertNotNull(result)
+        assertEquals(276.99, result!!.amount, 0.01)
+        assertEquals("EXPENSE", result.type)
+        assertEquals("PLUXEE_WALLET", result.accountRef)
+        assertEquals(4123.01, result.availableBalance ?: 0.0, 0.01)
+    }
+
     @Test fun `Unlisted wallet is still recognized via the generic added-to fallback`() {
         // No curated INDIA_WALLETS entry exists for "Swiggy Money" — this must still create
         // a real, correctly-named wallet account via the generic fallback instead of being

@@ -194,12 +194,21 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
                 return
             }
             val title = if (success) "Backup Completed" else "Backup Failed"
+            val deepLinkIntent = android.content.Intent(applicationContext, com.example.MainActivity::class.java).apply {
+                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(com.example.MainActivity.EXTRA_DEEPLINK_TARGET, "backup")
+            }
+            val pendingIntent = android.app.PendingIntent.getActivity(
+                applicationContext, "backup".hashCode(), deepLinkIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
             val notification = androidx.core.app.NotificationCompat.Builder(applicationContext, channelId)
                 .setSmallIcon(android.R.drawable.stat_sys_upload_done)
                 .setContentTitle(title)
                 .setContentText(detail)
                 .setPriority(if (success) androidx.core.app.NotificationCompat.PRIORITY_DEFAULT else androidx.core.app.NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
                 .build()
             androidx.core.app.NotificationManagerCompat.from(applicationContext).notify(title.hashCode(), notification)
         } catch (_: Exception) {}
@@ -225,16 +234,13 @@ object BackupScheduler {
             else      -> return
         }
 
-        // Initial delay to next midnight
-        val midnight = Calendar.getInstance().apply {
-            add(Calendar.DAY_OF_YEAR, 1)
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }
-        val initialDelayMs = midnight.timeInMillis - System.currentTimeMillis()
-
+        // Previously anchored the first run to "next midnight", which meant enabling Daily
+        // backup at, say, 9am could leave the FIRST backup up to ~15 hours away, and the user
+        // only ever saw it happen once they happened to reopen the app around/after that time.
+        // Instead, don't force an initial delay at all — WorkManager runs the first backup as
+        // soon as it's scheduled (i.e. right when the user enables it), then repeats every
+        // [repeatHours] after that, entirely in the background regardless of the app being open.
         val request = PeriodicWorkRequestBuilder<BackupWorker>(repeatHours, TimeUnit.HOURS)
-            .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
             .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(false).build())
             .build()
 

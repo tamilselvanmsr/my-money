@@ -216,6 +216,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val _recentlyImportedFingerprints = MutableStateFlow<Set<String>>(emptySet())
     val recentlyImportedFingerprints: StateFlow<Set<String>> = _recentlyImportedFingerprints.asStateFlow()
 
+    // ── Deep-link navigation from a tapped system notification ────────────────────
+    sealed class PendingDeepLink {
+        object Backup : PendingDeepLink()
+        data class Budget(val categoryKey: String?) : PendingDeepLink()
+    }
+    private val _pendingDeepLink = MutableStateFlow<PendingDeepLink?>(null)
+    val pendingDeepLink: StateFlow<PendingDeepLink?> = _pendingDeepLink.asStateFlow()
+
+    /** Called by MainActivity when launched/resumed via a notification tap. */
+    fun setPendingDeepLink(target: String?, categoryKey: String?) {
+        _pendingDeepLink.value = when (target) {
+            "backup" -> PendingDeepLink.Backup
+            "budget" -> PendingDeepLink.Budget(categoryKey)
+            else -> null
+        }
+    }
+
+    /** Called once the UI has navigated to the deep-linked section, so it doesn't re-fire. */
+    fun clearPendingDeepLink() {
+        _pendingDeepLink.value = null
+    }
+
     /** Called from MainActivity.onResume — merges fingerprints stored by SmsReceiver. */
     fun mergeReceiverFingerprints() {
         val stored = prefs.getStringSet("receiver_new_fingerprints", null) ?: return
@@ -615,6 +637,25 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         addNotification(title, text)
     }
 
+    /** Builds a PendingIntent that opens MainActivity and routes it to a specific in-app
+     * section — used so tapping a system notification jumps straight to the relevant screen
+     * instead of just opening the app to wherever it last was. */
+    private fun deepLinkPendingIntent(target: String, categoryKey: String? = null): android.app.PendingIntent {
+        val application = getApplication<Application>()
+        val intent = android.content.Intent(application, com.example.MainActivity::class.java).apply {
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(com.example.MainActivity.EXTRA_DEEPLINK_TARGET, target)
+            categoryKey?.let { putExtra(com.example.MainActivity.EXTRA_DEEPLINK_CATEGORY, it) }
+        }
+        // Distinct request code per target+category so Android doesn't collapse a budget-alert
+        // PendingIntent and a backup one (or two different categories') into the same instance.
+        val requestCode = (target + (categoryKey ?: "")).hashCode()
+        return android.app.PendingIntent.getActivity(
+            application, requestCode, intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     /** Posts an OS-level heads-up notification for backup completion/failure — mirrors
      * postBudgetAlert so backup status is as visible as budget alerts, not just the bell. */
     fun postBackupNotification(success: Boolean, detail: String) {
@@ -631,6 +672,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             .setContentText(detail)
             .setPriority(if (success) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            .setContentIntent(deepLinkPendingIntent("backup"))
             .build()
         NotificationManagerCompat.from(application).notify(title.hashCode(), notification)
     }
@@ -663,12 +705,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val lastAlertedSpent = prefs.getFloat(lastSpentKey, 0f).toDouble()
             if (!wasActive || spent > lastAlertedSpent + 0.01) {
                 prefs.edit().putBoolean(activeKey, true).putFloat(lastSpentKey, spent.toFloat()).apply()
-                postBudgetAlert(displayCategoryName, spent, budget.amountLimit, ratio)
+                postBudgetAlert(displayCategoryName, budget.category, spent, budget.amountLimit, ratio)
             }
         }
     }
 
-    private fun postBudgetAlert(categoryName: String, spent: Double, limit: Double, ratio: Double) {
+    private fun postBudgetAlert(categoryName: String, categoryKey: String, spent: Double, limit: Double, ratio: Double) {
         val application = getApplication<Application>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(application, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -693,6 +735,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true)
+            .setContentIntent(deepLinkPendingIntent("budget", categoryKey))
             .build()
 
         NotificationManagerCompat.from(application).notify(categoryName.hashCode() + pct, notification)
@@ -920,6 +963,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
             _toastMessage.emit("Successfully configured account: $cleanName ($type)")
+            addNotification("Account Added", "New account created: $cleanName ($type)")
         }
     }
 
@@ -2543,6 +2587,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                         }
                                         if (linkedAcc != null && !matchesSmsBlocklistPattern(linkedAcc.name) && !matchesSmsBlocklistPattern(sender)) {
                                             if (createBalanceAdjustIfNeeded(linkedAcc, bal, targetTime, body, sender, projectedTransactions)) {
+                                                newImportedFingerprints.add("Balance Sync|$bal|BALANCE_UPDATE|$targetTime")
                                                 matchedCount++
                                             }
                                         }
@@ -2616,7 +2661,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 val pfAcc = repository.getAccountByRef(parsed.accountRef ?: "")
                                     ?: allAccounts.value.find { it.name == walletName }
                                 if (pfAcc != null) {
-                                    createBalanceAdjustIfNeeded(pfAcc, parsed.availableBalance!!, targetTime + 1, body, sender, projectedTransactions)
+                                    if (createBalanceAdjustIfNeeded(pfAcc, parsed.availableBalance!!, targetTime + 1, body, sender, projectedTransactions)) {
+                                        newImportedFingerprints.add("Balance Sync|${parsed.availableBalance!!}|BALANCE_UPDATE|${targetTime + 1}")
+                                    }
                                 }
                             }
                         }
@@ -2678,6 +2725,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
 
         val targetTime = parsed.parsedTimestamp ?: System.currentTimeMillis()
+        // Accumulated across this whole SMS's creations (main tx + any Balance Sync snapshots
+        // it also triggers) so all of them get the "NEW" badge, not just the main transaction.
+        val newFingerprints = mutableSetOf<String>()
 
         // CC Summary / balance-notification SMS: update limits only, no Balance Sync entry
         if (parsed.isBalanceUpdate) {
@@ -2711,14 +2761,17 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             // (previously via deleteAllBalanceSyncForAccount), which was corrupting every
                             // past period's running balance the next time it was viewed.
                             val projected = mutableListOf<TransactionEntry>()
-                            createBalanceAdjustIfNeeded(
-                                limitAcc, snapshot, System.currentTimeMillis(), smsBody, sender, projected,
+                            val syncTs = System.currentTimeMillis()
+                            if (createBalanceAdjustIfNeeded(
+                                limitAcc, snapshot, syncTs, smsBody, sender, projected,
                                 extraNoteTags = com.example.utils.ccSnapshotTags(creditLimit, availLimit),
                                 notificationOverride = "CC Limits Updated" to
                                     "${limitAcc.name}: Credit Limit \u20b9${"%.2f".format(prevCreditLimit)} \u2192 \u20b9${"%.2f".format(creditLimit)}, " +
                                         "Available \u20b9${"%.2f".format(prevAvailableLimit)} \u2192 \u20b9${"%.2f".format(availLimit)}, " +
                                         "Due \u20b9${"%.2f".format(prevDue)} \u2192 \u20b9${"%.2f".format(newDue)}"
-                            )
+                            )) {
+                                newFingerprints += "Balance Sync|$snapshot|BALANCE_UPDATE|$syncTs"
+                            }
                         }
                         _toastMessage.emit("CC limits + balance snapshot updated for ${limitAcc.name}: Due ₹${String.format("%.2f", (creditLimit - availLimit).coerceAtLeast(0.0))}")
                     } else if (enableBalanceSync.value && parsed.availableBalance != null) {
@@ -2727,7 +2780,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         // CC accounts report available credit; convert to snapshot format (avail - limit)
                         val snapshotBal = if (limitAcc.type == "CREDIT_CARD" && limitAcc.creditLimit > 0)
                             parsed.availableBalance - limitAcc.creditLimit else parsed.availableBalance
-                        createBalanceAdjustIfNeeded(limitAcc, snapshotBal, targetTime, smsBody, sender, projected)
+                        if (createBalanceAdjustIfNeeded(limitAcc, snapshotBal, targetTime, smsBody, sender, projected)) {
+                            newFingerprints += "Balance Sync|$snapshotBal|BALANCE_UPDATE|$targetTime"
+                        }
                         parsed.availableLimit?.let { repository.updateAccountAvailableLimit(limitAcc.id, it) }
                         _toastMessage.emit("Balance updated for ${limitAcc.name}.")
                     } else {
@@ -2737,6 +2792,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     _toastMessage.emit("Account not found for ref ${parsed.accountRef}.")
                 }
             }
+            if (newFingerprints.isNotEmpty()) _recentlyImportedFingerprints.value = newFingerprints
             return
         }
 
@@ -2779,9 +2835,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         ?: allAccounts.value.find { it.name == walletName }
                     if (pfAcc != null) {
                         val projected = mutableListOf<TransactionEntry>()
-                        createBalanceAdjustIfNeeded(pfAcc, parsed.availableBalance!!, targetTime + 1, smsBody, sender, projected)
+                        if (createBalanceAdjustIfNeeded(pfAcc, parsed.availableBalance!!, targetTime + 1, smsBody, sender, projected)) {
+                            newFingerprints += "Balance Sync|${parsed.availableBalance!!}|BALANCE_UPDATE|${targetTime + 1}"
+                        }
                     }
                 }
+                if (newFingerprints.isNotEmpty()) _recentlyImportedFingerprints.value = newFingerprints
                 _toastMessage.emit("Detected potential duplicate transaction of ₹${parsed.amount} at ${parsed.title}. Skipped.")
                 addNotification("SMS Import Skipped",
                     "Duplicate detected — ₹${parsed.amount} at ${parsed.title} already exists.\nBody: ${smsBody.take(80)}${if (smsBody.length > 80) "…" else ""}")
@@ -2806,7 +2865,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 )
                 repository.insertTransaction(tx)
                 adjustCcAvailableLimit(tx.note, tx.amount, tx.type, reverse = false, txTimestamp = tx.timestamp)
-                _recentlyImportedFingerprints.value = setOf("${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}")
+                newFingerprints += "${tx.title}|${tx.amount}|${tx.type}|${tx.timestamp}"
                 maybeNotifyBudgetAlert(tx, allTransactions.value + tx)
             }
             // Sync passbook total to PF account balance (only when Bal Sync is enabled)
@@ -2815,7 +2874,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     ?: allAccounts.value.find { it.name == walletName }
                 if (pfAcc != null) {
                     val projected = mutableListOf<TransactionEntry>()
-                    createBalanceAdjustIfNeeded(pfAcc, parsed.availableBalance!!, targetTime + 1, smsBody, sender, projected)
+                    if (createBalanceAdjustIfNeeded(pfAcc, parsed.availableBalance!!, targetTime + 1, smsBody, sender, projected)) {
+                        newFingerprints += "Balance Sync|${parsed.availableBalance!!}|BALANCE_UPDATE|${targetTime + 1}"
+                    }
                 }
             }
 
@@ -2828,7 +2889,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 if (balAcc != null && balAcc.type != "CREDIT_CARD") {
                     val bsTs = targetTime + 1L
                     val projected = mutableListOf<TransactionEntry>()
-                    createBalanceAdjustIfNeeded(balAcc, parsed.availableBalance!!, bsTs, smsBody, sender, projected)
+                    if (createBalanceAdjustIfNeeded(balAcc, parsed.availableBalance!!, bsTs, smsBody, sender, projected)) {
+                        newFingerprints += "Balance Sync|${parsed.availableBalance!!}|BALANCE_UPDATE|$bsTs"
+                    }
                 }
             }
 
@@ -2841,6 +2904,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
 
+            if (newFingerprints.isNotEmpty()) _recentlyImportedFingerprints.value = newFingerprints
             _toastMessage.emit("Auto-Tracked ${if (txType == "INCOME") "Income" else "Expense"}: ₹${parsed.amount} at ${parsed.title}")
     }
 

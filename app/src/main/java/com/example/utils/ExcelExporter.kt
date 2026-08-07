@@ -1,6 +1,5 @@
 package com.example.utils
 
-import androidx.compose.ui.graphics.toArgb
 import com.example.data.Account
 import com.example.data.CustomCategory
 import com.example.data.TransactionEntry
@@ -14,7 +13,6 @@ import java.util.zip.ZipOutputStream
 
 private data class MonthlyCategoryBreakdown(
     val name: String,
-    val colorArgb: String,
     val total: Double,
     val percentage: Double
 )
@@ -44,6 +42,9 @@ private class SheetPlan(val name: String) {
     val rows = mutableListOf<List<CellV>>()
     val merges = mutableListOf<String>()
     var colWidths: List<Double> = emptyList()
+    var hidden: Boolean = false
+    // Raw <dataValidation .../> XML fragments (e.g. list-type dropdowns for a column range).
+    val dataValidations = mutableListOf<String>()
 
     fun addRow(vararg cells: CellV) {
         rows.add(cells.toList())
@@ -228,7 +229,8 @@ object ExcelExporter {
         }
 
         // ── Per-account month-by-month opening/closing balance, for the Account Summary sheet.
-        val accountMonthlyBalances: Map<String, List<AccountMonthBalance>> = computeAccountMonthlyBalances(accounts, transactions)
+        val allMonthKeys = sections.map { it.monthKey }.sorted()
+        val accountMonthlyBalances: Map<String, List<AccountMonthBalance>> = computeAccountMonthlyBalances(accounts, transactions, allMonthKeys)
 
         val styles = StyleSheetBuilder()
         // Raw quote characters here — escapeXml() in StyleSheetBuilder.toXml() escapes them to
@@ -267,6 +269,19 @@ object ExcelExporter {
         val rowSync = styles.xf(plain, styles.fill("FFF1F5F9"))
         val rowAltSync = styles.xf(plain, styles.fill("FFE2E8F0"))
 
+        // Real Excel date values (not inline-string text) for the Date column, so Excel treats
+        // them as genuine dates — sortable, filterable, and showing its native date picker —
+        // one variant per row background so the Date cell still matches its row's tint.
+        val dateFmt = styles.numFmt("yyyy-mm-dd")
+        val dateInc = styles.xf(plain, styles.fill("FFECFDF5"), numFmtId = dateFmt)
+        val dateAltInc = styles.xf(plain, styles.fill("FFD1FAE5"), numFmtId = dateFmt)
+        val dateExp = styles.xf(plain, styles.fill("FFFFF1F2"), numFmtId = dateFmt)
+        val dateAltExp = styles.xf(plain, styles.fill("FFFFE4E6"), numFmtId = dateFmt)
+        val dateXfer = styles.xf(plain, styles.fill("FFEFF6FF"), numFmtId = dateFmt)
+        val dateAltXfer = styles.xf(plain, styles.fill("FFDBEAFE"), numFmtId = dateFmt)
+        val dateSync = styles.xf(plain, styles.fill("FFF1F5F9"), numFmtId = dateFmt)
+        val dateAltSync = styles.xf(plain, styles.fill("FFE2E8F0"), numFmtId = dateFmt)
+
         val amtInc = styles.xf(greenBold, styles.fill("FFECFDF5"), numFmtId = currencyFmt)
         val amtAltInc = styles.xf(greenBold, styles.fill("FFD1FAE5"), numFmtId = currencyFmt)
         val amtExp = styles.xf(redBold, styles.fill("FFFFF1F2"), numFmtId = currencyFmt)
@@ -286,17 +301,11 @@ object ExcelExporter {
         val totValExp = styles.xf(styles.font(12, bold = true, argb = "FFBE123C"), styles.fill("FFFFE4E6"), numFmtId = currencyFmt)
         val grayPlainFill = styles.fill("FFF8FAFC")
 
-        // Dynamic per-category color styles — bold colored text on a light neutral background,
-        // fixes the earlier bug where Compose Color.value was bit-masked directly (giving
-        // wrong/garbage colors, which always rendered as effectively black).
-        val categoryTextStyleCache = mutableMapOf<String, Int>()
-        fun categoryTextStyle(argb: String) = categoryTextStyleCache.getOrPut(argb) {
-            styles.xf(styles.font(10, bold = true, argb = argb), grayPlainFill)
-        }
-        val categoryAmtStyleCache = mutableMapOf<String, Int>()
-        fun categoryAmtStyle(argb: String) = categoryAmtStyleCache.getOrPut(argb) {
-            styles.xf(styles.font(10, bold = true, argb = argb), grayPlainFill, numFmtId = currencyFmt)
-        }
+        // Category names stay plain black in the breakdown tables — only the amount is colored
+        // (red for expense, green for income), so the two blocks read at a glance.
+        val breakdownText = styles.xf(styles.font(10, bold = true, argb = "FF0F172A"), grayPlainFill)
+        val breakdownExpAmt = styles.xf(styles.font(10, bold = true, argb = "FFBE123C"), grayPlainFill, numFmtId = currencyFmt)
+        val breakdownIncAmt = styles.xf(styles.font(10, bold = true, argb = "FF047857"), grayPlainFill, numFmtId = currencyFmt)
         val pctStyle = styles.xf(grayPlain, grayPlainFill, numFmtId = pctFmt)
 
         val sheets = mutableListOf<SheetPlan>()
@@ -354,12 +363,12 @@ object ExcelExporter {
                 val exp = s.breakdown.getOrNull(i)
                 val inc = s.incomeBreakdown.getOrNull(i)
                 summarySheet.addRow(
-                    if (exp != null) CellV.Str(exp.name, categoryTextStyle(exp.colorArgb)) else CellV.Empty(),
+                    if (exp != null) CellV.Str(exp.name, breakdownText) else CellV.Empty(),
                     if (exp != null) CellV.Num(exp.percentage, pctStyle) else CellV.Empty(),
-                    if (exp != null) CellV.Num(exp.total, categoryAmtStyle(exp.colorArgb)) else CellV.Empty(),
-                    if (inc != null) CellV.Str(inc.name, categoryTextStyle(inc.colorArgb)) else CellV.Empty(),
+                    if (exp != null) CellV.Num(exp.total, breakdownExpAmt) else CellV.Empty(),
+                    if (inc != null) CellV.Str(inc.name, breakdownText) else CellV.Empty(),
                     if (inc != null) CellV.Num(inc.percentage, pctStyle) else CellV.Empty(),
-                    if (inc != null) CellV.Num(inc.total, categoryAmtStyle(inc.colorArgb)) else CellV.Empty()
+                    if (inc != null) CellV.Num(inc.total, breakdownIncAmt) else CellV.Empty()
                 )
             }
             summarySheet.addSpacer()
@@ -368,7 +377,7 @@ object ExcelExporter {
 
         // ─── SHEET 2: Account Summary ─────────────────────────────────────────
         val acctSheet = SheetPlan("Account Summary")
-        acctSheet.colWidths = listOf(28.0, 13.0, 17.0, 16.0, 17.0, 17.0, 10.0)
+        acctSheet.colWidths = listOf(28.0, 18.0, 17.0, 16.0, 17.0, 17.0, 10.0)
         acctSheet.addMergeRow("Account Balances & Activity", title, 7)
         acctSheet.addMergeRow("Generated: $generatedAt", subtitle, 7)
         acctSheet.addSpacer()
@@ -419,47 +428,57 @@ object ExcelExporter {
             CellV.Empty()
         )
         acctSheet.addSpacer()
-        acctSheet.addMergeRow("Monthly Opening & Closing Balances", title, 5)
-        acctSheet.addRow(
-            CellV.Str("Account", hdrNavy), CellV.Str("Month", hdrBlue),
-            CellV.Str("Opening Balance", hdrBlue), CellV.Str("Closing Balance", hdrBlue),
-            CellV.Str("Net Change", hdrPurp)
-        )
-        var mbRowIdx = 0
-        accounts.forEach { acc ->
-            val monthly = accountMonthlyBalances[acc.name].orEmpty()
-            if (monthly.isEmpty()) {
-                val rowS = if (mbRowIdx % 2 != 0) rowAlt else rowW
-                acctSheet.addRow(
-                    CellV.Str(acc.name, rowS), CellV.Str("No activity", rowS),
-                    CellV.Num(acc.balance, amtXfer), CellV.Num(acc.balance, amtXfer), CellV.Num(0.0, amtXfer)
-                )
-                mbRowIdx++
-            } else {
-                monthly.forEach { mb ->
-                    val alt = mbRowIdx % 2 != 0
-                    val rowS = if (alt) rowAlt else rowW
-                    val netChange = mb.closing - mb.opening
-                    val netStyle = when {
-                        netChange > 0 -> if (alt) amtAltInc else amtInc
-                        netChange < 0 -> if (alt) amtAltExp else amtExp
-                        else -> if (alt) amtAltXfer else amtXfer
-                    }
-                    acctSheet.addRow(
-                        CellV.Str(acc.name, rowS), CellV.Str(mb.monthKey, rowS),
-                        CellV.Num(mb.opening, if (alt) amtAltXfer else amtXfer),
-                        CellV.Num(mb.closing, if (alt) amtAltXfer else amtXfer),
-                        CellV.Num(netChange, netStyle)
-                    )
-                    mbRowIdx++
+        acctSheet.addMergeRow("Monthly Opening & Closing Balances", title, 4)
+        // Month-wise, like the Monthly Summary breakdown blocks: one mini table per month
+        // listing every account's opening/closing balance for that month.
+        sections.sortedByDescending { it.monthKey }.forEach { s ->
+            acctSheet.addMergeRow(s.monthKey, hdrBlue, 4)
+            acctSheet.addRow(
+                CellV.Str("Account", hdrNavy), CellV.Str("Opening Balance", hdrBlue),
+                CellV.Str("Closing Balance", hdrBlue), CellV.Str("Net Change", hdrPurp)
+            )
+            accounts.forEachIndexed { idx, acc ->
+                val mb = accountMonthlyBalances[acc.name].orEmpty().find { it.monthKey == s.monthKey }
+                    ?: AccountMonthBalance(s.monthKey, acc.balance, acc.balance)
+                val alt = idx % 2 != 0
+                val rowS = if (alt) rowAlt else rowW
+                val netChange = mb.closing - mb.opening
+                val netStyle = when {
+                    netChange > 0 -> if (alt) amtAltInc else amtInc
+                    netChange < 0 -> if (alt) amtAltExp else amtExp
+                    else -> if (alt) amtAltXfer else amtXfer
                 }
+                acctSheet.addRow(
+                    CellV.Str(acc.name, rowS),
+                    CellV.Num(mb.opening, if (alt) amtAltXfer else amtXfer),
+                    CellV.Num(mb.closing, if (alt) amtAltXfer else amtXfer),
+                    CellV.Num(netChange, netStyle)
+                )
             }
+            acctSheet.addSpacer()
         }
         sheets += acctSheet
 
         // ─── PER-MONTH SHEETS ─────────────────────────────────────────────────
-        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+
+        // Source lists for the Account/Category/Date dropdowns (data validation) on every
+        // per-month sheet — kept on a hidden "Lists" sheet since Excel list-validation must
+        // point at cells rather than an inline literal list (which also has a 255-char limit).
+        val distinctAccountNames = accounts.map { it.name }.distinct().sorted()
+        val distinctCategoryNames = (transactions.map { CategoryResolver.resolve(it.category, customCategories).displayName } +
+            listOf("Transfer", "Balance Sync")).distinct().sorted()
+        val distinctDateSerials = transactions.map { excelSerialDate(it.timestamp) }.distinct().sorted()
+        val listsSheet = SheetPlan("Lists")
+        listsSheet.hidden = true
+        val listRows = maxOf(distinctAccountNames.size, distinctCategoryNames.size, distinctDateSerials.size)
+        for (i in 0 until listRows) {
+            listsSheet.addRow(
+                if (i < distinctAccountNames.size) CellV.Str(distinctAccountNames[i], rowW) else CellV.Empty(),
+                if (i < distinctCategoryNames.size) CellV.Str(distinctCategoryNames[i], rowW) else CellV.Empty(),
+                if (i < distinctDateSerials.size) CellV.Num(distinctDateSerials[i], dateXfer) else CellV.Empty()
+            )
+        }
 
         sections.sortedByDescending { it.monthKey }.forEach { s ->
             val wsName = sanitizeWorksheetName(s.monthKey)
@@ -474,6 +493,7 @@ object ExcelExporter {
             )
             sheet.addSpacer()
 
+            val headerRowIdx = sheet.rows.size + 1
             sheet.addRow(
                 CellV.Str("Date", hdrNavy), CellV.Str("Time", hdrNavy),
                 CellV.Str("Payee", hdrBlue), CellV.Str("Account", hdrBlue),
@@ -508,6 +528,13 @@ object ExcelExporter {
                     isExp -> if (alt) rowAltExp else rowExp
                     else -> if (alt) rowAlt else rowW
                 }
+                val dateS = when {
+                    isTransfer -> if (alt) dateAltXfer else dateXfer
+                    isSync -> if (alt) dateAltSync else dateSync
+                    isInc -> if (alt) dateAltInc else dateInc
+                    isExp -> if (alt) dateAltExp else dateExp
+                    else -> dateXfer
+                }
                 val amtS = when {
                     isTransfer -> if (alt) amtAltXfer else amtXfer
                     isSync -> if (alt) amtAltSync else amtSync
@@ -524,7 +551,7 @@ object ExcelExporter {
                 }
 
                 sheet.addRow(
-                    CellV.Str(dateFormat.format(Date(tx.timestamp)), rowS),
+                    CellV.Num(excelSerialDate(tx.timestamp), dateS),
                     CellV.Str(timeFormat.format(Date(tx.timestamp)), rowS),
                     CellV.Str(tx.title, rowS),
                     CellV.Str(walletLabel, rowS),
@@ -533,12 +560,22 @@ object ExcelExporter {
                 )
             }
 
+            if (sortedTx.isNotEmpty()) {
+                val firstDataRow = headerRowIdx + 1
+                val lastDataRow = headerRowIdx + sortedTx.size
+                sheet.dataValidations += "<dataValidation type=\"list\" allowBlank=\"1\" showInputMessage=\"1\" showErrorMessage=\"0\" sqref=\"A$firstDataRow:A$lastDataRow\"><formula1>Lists!\$C\$1:\$C\$${distinctDateSerials.size}</formula1></dataValidation>"
+                sheet.dataValidations += "<dataValidation type=\"list\" allowBlank=\"1\" showInputMessage=\"1\" showErrorMessage=\"0\" sqref=\"D$firstDataRow:D$lastDataRow\"><formula1>Lists!\$A\$1:\$A\$${distinctAccountNames.size}</formula1></dataValidation>"
+                sheet.dataValidations += "<dataValidation type=\"list\" allowBlank=\"1\" showInputMessage=\"1\" showErrorMessage=\"0\" sqref=\"E$firstDataRow:E$lastDataRow\"><formula1>Lists!\$B\$1:\$B\$${distinctCategoryNames.size}</formula1></dataValidation>"
+            }
+
             sheet.addSpacer()
             sheet.addRow(CellV.Str("Carry Over Balance", totLbl), CellV.Num(s.openingBalance, totVal))
             sheet.addRow(CellV.Str("Monthly Net", totLbl), CellV.Num(s.net, if (s.net >= 0) totValInc else totValExp))
             sheet.addRow(CellV.Str("Grand Total", totLbl), CellV.Num(s.closingBalance, totVal))
             sheets += sheet
         }
+
+        sheets += listsSheet
 
         return writeXlsx(sheets, styles)
     }
@@ -590,7 +627,8 @@ object ExcelExporter {
         append("<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">")
         append("<sheets>")
         sheets.forEachIndexed { i, sheet ->
-            append("<sheet name=\"${escapeXml(sheet.name)}\" sheetId=\"${i + 1}\" r:id=\"rId${i + 1}\"/>")
+            val hiddenAttr = if (sheet.hidden) " state=\"hidden\"" else ""
+            append("<sheet name=\"${escapeXml(sheet.name)}\" sheetId=\"${i + 1}\"$hiddenAttr r:id=\"rId${i + 1}\"/>")
         }
         append("</sheets>")
         append("</workbook>")
@@ -634,6 +672,11 @@ object ExcelExporter {
             sheet.merges.forEach { append("<mergeCell ref=\"$it\"/>") }
             append("</mergeCells>")
         }
+        if (sheet.dataValidations.isNotEmpty()) {
+            append("<dataValidations count=\"${sheet.dataValidations.size}\">")
+            sheet.dataValidations.forEach { append(it) }
+            append("</dataValidations>")
+        }
         append("</worksheet>")
     }
 
@@ -659,10 +702,6 @@ object ExcelExporter {
                 val resolved = CategoryResolver.resolve(cat, customCategories)
                 MonthlyCategoryBreakdown(
                     name = resolved.displayName,
-                    // .toArgb() correctly converts a Compose Color (which packs its channels
-                    // very differently from a plain 32-bit ARGB int) — bit-masking .value
-                    // directly, as this used to, produced garbage that always rendered black.
-                    colorArgb = "FF" + String.format("%06X", 0xFFFFFF and resolved.color.toArgb()),
                     total = tot,
                     percentage = if (totExp > 0.0) tot / totExp else 0.0
                 )
@@ -674,7 +713,6 @@ object ExcelExporter {
                 val resolved = CategoryResolver.resolve(cat, customCategories)
                 MonthlyCategoryBreakdown(
                     name = resolved.displayName,
-                    colorArgb = "FF" + String.format("%06X", 0xFFFFFF and resolved.color.toArgb()),
                     total = tot,
                     percentage = if (totInc > 0.0) tot / totInc else 0.0
                 )
@@ -692,7 +730,8 @@ object ExcelExporter {
      * forward across months and resetting it whenever a Balance Sync snapshot occurs. */
     private fun computeAccountMonthlyBalances(
         accounts: List<Account>,
-        transactions: List<TransactionEntry>
+        transactions: List<TransactionEntry>,
+        allMonthKeys: List<String>
     ): Map<String, List<AccountMonthBalance>> {
         val monthFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
         val result = mutableMapOf<String, List<AccountMonthBalance>>()
@@ -707,12 +746,14 @@ object ExcelExporter {
                     else -> false
                 }
             }.sortedWith(compareBy({ it.timestamp }, { if (it.type == "BALANCE_UPDATE") 1 else 0 }))
-            val grouped = relevant.groupBy { monthFormat.format(Date(it.timestamp)) }.toSortedMap()
+            val grouped = relevant.groupBy { monthFormat.format(Date(it.timestamp)) }
             var running = acc.balance
             val monthly = mutableListOf<AccountMonthBalance>()
-            grouped.forEach { (monthKey, txs) ->
+            // Forward-fill every month in the workbook (not just months this account was active
+            // in) so every account has a row in each month's block on the Account Summary sheet.
+            for (monthKey in allMonthKeys) {
                 val opening = running
-                for (tx in txs) {
+                for (tx in grouped[monthKey].orEmpty()) {
                     when {
                         tx.type == "BALANCE_UPDATE" -> running = tx.amount
                         tx.type == "TRANSFER" && tx.getAccountName() == acc.name -> running -= tx.amount
@@ -744,3 +785,24 @@ private fun colLetter(n: Int): String {
 private fun escapeXml(value: String): String = value
     .replace("&", "&amp;").replace("<", "&lt;")
     .replace(">", "&gt;").replace("\"", "&quot;")
+
+// Excel's date system counts days since 1899-12-30; 25569 is the serial number for the Unix
+// epoch (1970-01-01). Whole-number local calendar day (not raw millis/86400000, which keeps a
+// fractional time-of-day component and made the cell display a time alongside the date).
+private fun excelSerialDate(millis: Long): Double {
+    val cal = java.util.Calendar.getInstance()
+    cal.timeInMillis = millis
+    cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+    cal.set(java.util.Calendar.MINUTE, 0)
+    cal.set(java.util.Calendar.SECOND, 0)
+    cal.set(java.util.Calendar.MILLISECOND, 0)
+    val localMidnight = cal.timeInMillis
+
+    val epochCal = java.util.Calendar.getInstance()
+    epochCal.clear()
+    epochCal.set(1970, java.util.Calendar.JANUARY, 1, 0, 0, 0)
+    val epochMidnight = epochCal.timeInMillis
+
+    val days = Math.round((localMidnight - epochMidnight) / 86400000.0)
+    return days + 25569.0
+}

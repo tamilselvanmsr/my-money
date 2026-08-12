@@ -463,7 +463,10 @@ object SmsParser {
             lower.contains("cashback") || lower.contains("reward") -> ExpenseCategory.CASHBACK
             lower.contains("refund")                               -> ExpenseCategory.REFUNDS
             type == "INCOME"                                       -> wallet.incomeCategory ?: ExpenseCategory.INCOME_OTHERS
-            else                                                   -> ExpenseCategory.SHOPPING
+            // Route wallet-sourced expenses through the same merchant-keyword inference used
+            // for regular bank SMS (e.g. "at BIG BASKET" -> Groceries), instead of always
+            // defaulting to Shopping regardless of the actual merchant.
+            else                                                   -> inferCategory(type, title, lower, amount)
         }
 
         // Extract appended wallet balance so the same "Balance Sync" snapshot mechanism used
@@ -692,7 +695,7 @@ object SmsParser {
                 t.contains("max fashion") -> ExpenseCategory.CLOTHES
 
             t.contains("walmart") || t.contains("blinkit") || t.contains("zepto") ||
-                t.contains("mart") || t.contains("dmart") || t.contains("bigbasket") ||
+                t.contains("mart") || t.contains("dmart") || t.contains("bigbasket") || t.contains("big basket") ||
                 t.contains("grocery") || t.contains("departmental") ||
                 t.contains("reliance fresh") || t.contains("reliance smart") ||
                 t.contains("big bazaar") || t.contains("spencer") || t.contains("star bazaar") ||

@@ -30,60 +30,60 @@ enum class ExpenseCategory(
     val type: String = "EXPENSE"
 ) {
     // ── Expense ──────────────────────────────────────────────────────────────
-    FOOD("Food",                       Icons.Default.Restaurant,      Color(0xFFFF9800)),
-    SHOPPING("Shopping",               Icons.Default.ShoppingBag,     Color(0xFFE91E63)),
-    TRANSPORT("Transport",             Icons.Default.LocalTaxi,       Color(0xFF03A9F4)),
-    BILLS("Bills & Utilities",         Icons.AutoMirrored.Filled.ReceiptLong,     Color(0xFF9C27B0)),
-    ENTERTAINMENT("Entertainment",     Icons.Default.LocalPlay,       Color(0xFFFF5722)),
+    FOOD("Food",                       Icons.Default.Restaurant,      Color(0xFFFF9100)),
+    SHOPPING("Shopping",               Icons.Default.ShoppingBag,     Color(0xFFF50057)),
+    TRANSPORT("Transport",             Icons.Default.LocalTaxi,       Color(0xFF40C4FF)),
+    BILLS("Bills & Utilities",         Icons.AutoMirrored.Filled.ReceiptLong,     Color(0xFFE040FB)),
+    ENTERTAINMENT("Entertainment",     Icons.Default.LocalPlay,       Color(0xFFFF3D00)),
     HEALTHCARE("Healthcare",           Icons.Default.MedicalServices, Color(0xFF00ACC1)),
-    EDUCATION("Education",             Icons.Default.School,          Color(0xFF009688)),
+    EDUCATION("Education",             Icons.Default.School,          Color(0xFF1DE9B6)),
     OTHERS("Others / Misc",            Icons.Default.Category,        Color(0xFF607D8B)),
-    CAR("Car",                         Icons.Default.DirectionsCar,   Color(0xFF0288D1)),
-    ELECTRONICS("Electronics",         Icons.Default.Devices,         Color(0xFF7B1FA2)),
-    INSURANCE("Insurance",             Icons.Default.Security,        Color(0xFFEC407A)),
-    SOCIAL("Social",                   Icons.Default.Group,           Color(0xFF26A69A)),
+    CAR("Car",                         Icons.Default.DirectionsCar,   Color(0xFF3D5AFE)),
+    ELECTRONICS("Electronics",         Icons.Default.Devices,         Color(0xFF7C4DFF)),
+    INSURANCE("Insurance",             Icons.Default.Security,        Color(0xFFFF4081)),
+    SOCIAL("Social",                   Icons.Default.Group,           Color(0xFF00E5FF)),
     TAX("Tax",                         Icons.Default.Percent,         Color(0xFF795548)),
-    SPORT("Sport",                     Icons.Default.SportsSoccer,    Color(0xFF8BC34A)),
+    SPORT("Sport",                     Icons.Default.SportsSoccer,    Color(0xFF76FF03)),
     GYM("Gym",                         Icons.Default.FitnessCenter,   Color(0xFF455A64)),
-    RECHARGE("Recharge",               Icons.Default.Smartphone,      Color(0xFF7986CB)),
+    RECHARGE("Recharge",               Icons.Default.Smartphone,      Color(0xFF536DFE)),
     DEBT("Debt",                       Icons.Default.CreditCard,      Color(0xFF5D4037)),
     LOAN_EMI("Loan / EMI",              Icons.Default.CreditScore,     Color(0xFF6D4C41)),
-    LEND("Lend",                       Icons.Default.CallMade,        Color(0xFFD84315)),
-    FUEL("Fuel",                       Icons.Default.LocalGasStation, Color(0xFFF44336)),
-    CLOTHES("Clothes",                 Icons.Default.Checkroom,       Color(0xFFC2185B)),
-    SHOES("Shoes & Footwear",          Icons.AutoMirrored.Filled.DirectionsRun,   Color(0xFF5C6BC0)),
-    POCKET_MONEY("Pocket Money",       Icons.Default.Payments,        Color(0xFFFFA000)),
-    FRUITS("Fruits & Veggies",         Icons.Default.WaterDrop,       Color(0xFF4CAF50)),
-    TRAVEL("Travel & Commute",         Icons.Default.Flight,          Color(0xFF3949AB)),
-    BIKE("Bike & Maintenance",         Icons.Default.TwoWheeler,      Color(0xFFFF8F00)),
-    GIFTING_FRIENDS("Gifting Friends", Icons.Default.CardGiftcard,    Color(0xFFAD1457)),
-    INVESTMENT("Investment",           Icons.AutoMirrored.Filled.TrendingUp,      Color(0xFF1565C0)),
-    MUTUAL_FUND("Mutual Fund",         Icons.Default.AccountBalance,  Color(0xFF00897B)),
-    ETF("ETF",                         Icons.Default.BarChart,        Color(0xFF1976D2)),
-    RENT("Rent",                       Icons.Default.Home,            Color(0xFF7E57C2)),
-    COOKING("Cooking",                 Icons.Default.Kitchen,         Color(0xFFFF7043)),
-    GROCERIES("Groceries",             Icons.Default.ShoppingCart,    Color(0xFF388E3C)),
+    LEND("Lend",                       Icons.Default.CallMade,        Color(0xFFBF360C)),
+    FUEL("Fuel",                       Icons.Default.LocalGasStation, Color(0xFFFF1744)),
+    CLOTHES("Clothes",                 Icons.Default.Checkroom,       Color(0xFFC51162)),
+    SHOES("Shoes & Footwear",          Icons.AutoMirrored.Filled.DirectionsRun,   Color(0xFF651FFF)),
+    FRUITS("Fruits & Veggies",         Icons.Default.WaterDrop,       Color(0xFF00E676)),
+    TRAVEL("Travel & Commute",         Icons.Default.Flight,          Color(0xFF651FFF)),
+    BIKE("Bike & Maintenance",         Icons.Default.TwoWheeler,      Color(0xFFFF9100)),
+    GIFTING_FRIENDS("Gifting Friends", Icons.Default.CardGiftcard,    Color(0xFFFF4081)),
+    ONLINE_SHOPPING("Online Shopping", Icons.Default.Laptop,          Color(0xFF00ACC1)),
+    INVESTMENT("Investment",           Icons.AutoMirrored.Filled.TrendingUp,      Color(0xFF3D5AFE)),
+    MUTUAL_FUND("Mutual Fund",         Icons.Default.AccountBalance,  Color(0xFF1DE9B6)),
+    ETF("ETF",                         Icons.Default.BarChart,        Color(0xFF40C4FF)),
+    RENT("Rent",                       Icons.Default.Home,            Color(0xFFD500F9)),
+    COOKING("Cooking",                 Icons.Default.Kitchen,         Color(0xFFFF6E40)),
+    GROCERIES("Groceries",             Icons.Default.ShoppingCart,    Color(0xFF00E676)),
     SOFT_HOT_DRINKS("Tea & Soft Drinks", Icons.Default.LocalCafe,     Color(0xFF8D6E63)),
-    BEAUTY("Beauty",                   Icons.Default.Spa,             Color(0xFFAD1457)),
+    BEAUTY("Beauty",                   Icons.Default.Spa,             Color(0xFFD50000)),
     PARKING_TOLLS("Parking & Tolls",   Icons.Default.LocalParking,    Color(0xFF546E7A)),
-    DONATION("Donation & Charity",     Icons.Default.VolunteerActivism, Color(0xFF00838F)),
+    DONATION("Donation & Charity",     Icons.Default.VolunteerActivism, Color(0xFF00E5FF)),
 
     // ── Income ───────────────────────────────────────────────────────────────
-    SALARY("Salary",                   Icons.Default.AttachMoney,     Color(0xFF2E7D32), "INCOME"),
-    PROVIDENT_FUND("Provident Fund",   Icons.Default.AccountBalance,  Color(0xFF4527A0), "INCOME"),
-    CASHBACK("Cashback",               Icons.Default.Redeem,          Color(0xFF14B8A6), "INCOME"),
-    COUPONS("Coupons",                 Icons.Default.CardGiftcard,    Color(0xFFFF4081), "INCOME"),
+    SALARY("Salary",                   Icons.Default.AttachMoney,     Color(0xFF00E676), "INCOME"),
+    PROVIDENT_FUND("Provident Fund",   Icons.Default.AccountBalance,  Color(0xFF7C4DFF), "INCOME"),
+    CASHBACK("Cashback",               Icons.Default.Redeem,          Color(0xFFFFC400), "INCOME"),
+    COUPONS("Coupons",                 Icons.Default.CardGiftcard,    Color(0xFFFF3D00), "INCOME"),
     GRANTS("Grants",                   Icons.Default.Handshake,       Color(0xFF00E676), "INCOME"),
-    REFUNDS("Refunds",                 Icons.Default.Cached,          Color(0xFF00B0FF), "INCOME"),
+    REFUNDS("Refunds",                 Icons.Default.Cached,          Color(0xFF00E5FF), "INCOME"),
     RENTAL("Rental",                   Icons.Default.Domain,          Color(0xFF651FFF), "INCOME"),
     SALE("Sale",                       Icons.Default.Storefront,      Color(0xFFFF9100), "INCOME"),
     REWARDS("Rewards",                 Icons.Default.MilitaryTech,    Color(0xFF76FF03), "INCOME"),
-    COINS("Coins",                     Icons.Default.Savings,         Color(0xFFFBC02D), "INCOME"),
-    UPI("UPI",                         Icons.Default.QrCode,          Color(0xFF0EA5E9), "INCOME"),
-    BORROWED_MONEY("Borrowed Money",   Icons.Default.CallReceived,    Color(0xFF43A047), "INCOME"),
+    COINS("Coins",                     Icons.Default.Savings,         Color(0xFFD500F9), "INCOME"),
+    UPI("UPI",                         Icons.Default.QrCode,          Color(0xFF40C4FF), "INCOME"),
+    BORROWED_MONEY("Borrowed Money",   Icons.Default.CallReceived,    Color(0xFF00E676), "INCOME"),
     INTEREST("Interest",               Icons.Default.ShowChart,       Color(0xFF00E5FF), "INCOME"),
     REIMBURSEMENT("Reimbursement",     Icons.Default.CurrencyExchange, Color(0xFFFF1744), "INCOME"),
-    DIVIDEND("Dividend",               Icons.Default.Paid,            Color(0xFFAA00FF), "INCOME"),
+    DIVIDEND("Dividend",               Icons.Default.Paid,            Color(0xFF651FFF), "INCOME"),
     INCOME_OTHERS("Other Income",       Icons.Default.Category,        Color(0xFF607D8B), "INCOME");
 
     companion object {
@@ -303,6 +303,30 @@ object CategoryResolver {
             "maintenance"       -> Icons.Default.Build
             "category"          -> Icons.Default.Category
             "others"            -> Icons.Default.Category
+
+            // Donations / new additions
+            "volunteeractivism" -> Icons.Default.VolunteerActivism
+            "donation"          -> Icons.Default.VolunteerActivism
+            "localparking"      -> Icons.Default.LocalParking
+            "parking"           -> Icons.Default.LocalParking
+            "wifi"              -> Icons.Default.Wifi
+            "locallaundryservice" -> Icons.Default.LocalLaundryService
+            "laundry"           -> Icons.Default.LocalLaundryService
+            "contentcut"        -> Icons.Default.ContentCut
+            "salon"             -> Icons.Default.ContentCut
+            "menubook"          -> Icons.Default.MenuBook
+            "book"              -> Icons.Default.MenuBook
+            "directionsbus"     -> Icons.Default.DirectionsBus
+            "bus"               -> Icons.Default.DirectionsBus
+            "weekend"           -> Icons.Default.Weekend
+            "furniture"         -> Icons.Default.Weekend
+            "sportsesports"     -> Icons.Default.SportsEsports
+            "gaming"            -> Icons.Default.SportsEsports
+            "icecream"          -> Icons.Default.Icecream
+            "localflorist"      -> Icons.Default.LocalFlorist
+            "flowers"           -> Icons.Default.LocalFlorist
+            "accountbalancewallet" -> Icons.Default.AccountBalanceWallet
+            "wallet"            -> Icons.Default.AccountBalanceWallet
 
             else                -> Icons.Default.Category
         }

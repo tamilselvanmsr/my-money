@@ -830,7 +830,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun addCustomCategory(name: String, iconName: String, colorHex: String, type: String = "EXPENSE", onComplete: () -> Unit = {}) {
         viewModelScope.launch {
-            if (name.isBlank()) return@launch
+            if (name.isBlank()) {
+                _toastMessage.emit("Enter a category name")
+                return@launch
+            }
             val trimmed = name.trim()
             val iconNameWithType = "$iconName:$type"
             // Reuse existing ID to avoid duplicate rows
@@ -1223,6 +1226,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     // UI Feedback States
     private val _toastMessage = MutableSharedFlow<String>()
     val toastMessage = _toastMessage.asSharedFlow()
+
+    /** Lets UI code surface a one-off toast without needing its own coroutine scope. */
+    fun showToast(message: String) {
+        viewModelScope.launch { _toastMessage.emit(message) }
+    }
 
     // ── In-app notification centre ─────────────────────────────────────────────
     private fun loadPersistedNotifications(): List<AppNotification> = try {
@@ -1744,6 +1752,19 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Inserts a new transaction copying everything from [tx] except its id and timestamp
+     * (set to now) — used by the "Duplicate" action on a transaction's detail popup. */
+    fun duplicateTransaction(tx: TransactionEntry) {
+        viewModelScope.launch {
+            val copy = tx.copy(id = 0, timestamp = tx.timestamp + 60_000L)
+            repository.insertTransaction(copy)
+            adjustCcAvailableLimit(copy.note, copy.amount, copy.type, reverse = false, txTimestamp = copy.timestamp)
+            maybeNotifyBudgetAlert(copy, allTransactions.value + copy)
+            _toastMessage.emit("Duplicated: ${copy.title}")
+            addNotification("Transaction Duplicated", "${copy.title}: \u20b9${String.format("%.2f", copy.amount)}")
+        }
+    }
+
     fun deleteTransaction(txId: Int) {
         viewModelScope.launch {
             // Reverse CC limit effect before deleting
@@ -2170,8 +2191,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                         // Only delete+recreate when the snapshot amount changed.
                                         val existingAmount = repository.getLatestBalanceSyncAmount(linkedAcc.name)
                                         if (existingAmount == null || Math.abs(existingAmount - snapshot) >= 0.01) {
-                                            val prevDue = (prevCreditLimit - prevAvailableLimit).coerceAtLeast(0.0)
-                                            val newDue = (creditLimit - availLimit).coerceAtLeast(0.0)
                                             // Use actual SMS received date, NOT the parsed statement date from the body.
                                             // createBalanceAdjustIfNeeded only replaces a snapshot at this EXACT
                                             // timestamp — it no longer wipes the account's entire snapshot history
@@ -2182,8 +2201,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                                 extraNoteTags = com.example.utils.ccSnapshotTags(creditLimit, availLimit),
                                                 notificationOverride = "CC Limits Updated" to
                                                     "${linkedAcc.name}: Credit Limit \u20b9${"%.2f".format(prevCreditLimit)} \u2192 \u20b9${"%.2f".format(creditLimit)}, " +
-                                                        "Available \u20b9${"%.2f".format(prevAvailableLimit)} \u2192 \u20b9${"%.2f".format(availLimit)}, " +
-                                                        "Due \u20b9${"%.2f".format(prevDue)} \u2192 \u20b9${"%.2f".format(newDue)}"
+                                                        "Available \u20b9${"%.2f".format(prevAvailableLimit)} \u2192 \u20b9${"%.2f".format(availLimit)}"
                                             )) {
                                                 newImportedFingerprints.add("Balance Sync|${snapshot}|BALANCE_UPDATE|$smsDate")
                                                 matchedCount++
@@ -2355,12 +2373,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     _recentlyImportedFingerprints.value = newImportedFingerprints
                 }
                 if (matchedCount > 0) {
-                    _toastMessage.emit("Imported $matchedCount wallet/PF transaction(s)!")
+                    _toastMessage.emit("Imported $matchedCount wallet transaction(s)!")
                 } else {
                     _toastMessage.emit("Wallets scan complete. No new entries found.")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Wallets/PF scan failed: ${e.message}", e)
+                Log.e(TAG, "Wallets scan failed: ${e.message}", e)
                 _toastMessage.emit("Wallets scan failed. Check SMS permission.")
             } finally {
                 _isWalletPfScanning.value = false
@@ -2385,6 +2403,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         // Check + replace/insert run inside one Room transaction (see
         // FinanceDao.upsertBalanceSync) so a concurrent import path racing to write the same
         // snapshot can't slip past this check and create a duplicate Balance Sync row.
+        // Delta is computed against the account's true last-known balance — a bank Balance
+        // Sync OR a manual Balance Adjustment, whichever is most recent — not just the last
+        // bank sync, so a manual correction right before a new sync isn't silently ignored.
+        val prevSnap = repository.getLatestBalanceAnchorAmount(account.name)
         val tx = TransactionEntry(
             title = "Balance Sync",
             amount = reportedBalance,
@@ -2399,10 +2421,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         if (!inserted) return false
 
         projectedTransactions.add(tx)
+        val deltaTxt = if (prevSnap != null) {
+            val delta = reportedBalance - prevSnap
+            val sign = if (delta >= 0) "+" else "-"
+            " (${sign}\u20b9${String.format("%.2f", kotlin.math.abs(delta))})"
+        } else ""
+        addNotification("Balance Sync", "${account.name}: \u20b9${String.format("%.2f", reportedBalance)}$deltaTxt")
+        // notificationOverride (e.g. "CC Limits Updated") is additional context, not a
+        // replacement — CC accounts still get the Balance Sync delta notification above.
         if (notificationOverride != null) {
             addNotification(notificationOverride.first, notificationOverride.second)
-        } else {
-            addNotification("Balance Sync", "Balance updated for ${account.name}: ₹${String.format("%.2f", reportedBalance)}")
         }
         return true
     }
@@ -2753,8 +2781,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             // the PREVIOUS values — used for the before/after notification below.
                             val prevCreditLimit = limitAcc.creditLimit
                             val prevAvailableLimit = limitAcc.availableLimit
-                            val prevDue = (prevCreditLimit - prevAvailableLimit).coerceAtLeast(0.0)
-                            val newDue = (creditLimit - availLimit).coerceAtLeast(0.0)
                             // Use current time for manual imports — NOT the parsed statement date from the
                             // body. createBalanceAdjustIfNeeded only replaces a snapshot at this EXACT
                             // timestamp — it no longer wipes the account's entire snapshot history
@@ -2767,13 +2793,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 extraNoteTags = com.example.utils.ccSnapshotTags(creditLimit, availLimit),
                                 notificationOverride = "CC Limits Updated" to
                                     "${limitAcc.name}: Credit Limit \u20b9${"%.2f".format(prevCreditLimit)} \u2192 \u20b9${"%.2f".format(creditLimit)}, " +
-                                        "Available \u20b9${"%.2f".format(prevAvailableLimit)} \u2192 \u20b9${"%.2f".format(availLimit)}, " +
-                                        "Due \u20b9${"%.2f".format(prevDue)} \u2192 \u20b9${"%.2f".format(newDue)}"
+                                        "Available \u20b9${"%.2f".format(prevAvailableLimit)} \u2192 \u20b9${"%.2f".format(availLimit)}"
                             )) {
                                 newFingerprints += "Balance Sync|$snapshot|BALANCE_UPDATE|$syncTs"
                             }
                         }
-                        _toastMessage.emit("CC limits + balance snapshot updated for ${limitAcc.name}: Due ₹${String.format("%.2f", (creditLimit - availLimit).coerceAtLeast(0.0))}")
+                        _toastMessage.emit("CC limits updated for ${limitAcc.name}: Available ₹${String.format("%.2f", availLimit)}")
                     } else if (enableBalanceSync.value && parsed.availableBalance != null) {
                         // Regular bank balance SMS: create Balance Sync when Bal Sync is ON
                         val projected = mutableListOf<TransactionEntry>()

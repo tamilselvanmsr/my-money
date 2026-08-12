@@ -175,6 +175,10 @@ class FinanceRepository(private val financeDao: FinanceDao) {
         return financeDao.getLatestBalanceSyncAmount(accountName)
     }
 
+    suspend fun getLatestBalanceAnchorAmount(accountName: String): Double? {
+        return financeDao.getLatestBalanceAnchorAmount(accountName)
+    }
+
     suspend fun getLatestBalanceSyncTimestamp(accountName: String): Long? {
         return financeDao.getLatestBalanceSyncTimestamp(accountName)
     }

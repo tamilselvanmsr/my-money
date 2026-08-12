@@ -170,6 +170,13 @@ interface FinanceDao {
     @Query("SELECT amount FROM transactions WHERE type = 'BALANCE_UPDATE' AND title = 'Balance Sync' AND note LIKE '%[Acc: ' || :accountName || ']%' ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatestBalanceSyncAmount(accountName: String): Double?
 
+    /** Returns the most-recent BALANCE_UPDATE amount for an account, from EITHER a bank
+     *  Balance Sync OR a manual Balance Adjustment — whichever happened most recently. Used
+     *  to compute the Balance Sync notification's delta against the account's true last-known
+     *  balance (so a manual correction right before a new sync isn't ignored). */
+    @Query("SELECT amount FROM transactions WHERE type = 'BALANCE_UPDATE' AND note LIKE '%[Acc: ' || :accountName || ']%' ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLatestBalanceAnchorAmount(accountName: String): Double?
+
     /** Returns the timestamp of the most-recent Balance Sync for an account.
      *  Used by adjustCcAvailableLimit to skip pre-CC-Summary transactions. */
     @Query("SELECT timestamp FROM transactions WHERE type = 'BALANCE_UPDATE' AND title = 'Balance Sync' AND note LIKE '%[Acc: ' || :accountName || ']%' ORDER BY timestamp DESC LIMIT 1")

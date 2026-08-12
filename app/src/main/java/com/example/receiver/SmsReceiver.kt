@@ -79,7 +79,6 @@ class SmsReceiver : BroadcastReceiver() {
                                     if (limitAcc != null) {
                                         val prevCreditLimit = limitAcc.creditLimit
                                         val prevAvailableLimit = limitAcc.availableLimit
-                                        val prevDue = (prevCreditLimit - prevAvailableLimit).coerceAtLeast(0.0)
                                         parsed.availableLimit?.let { dao.updateAccountAvailableLimit(limitAcc.id, it) }
                                         parsed.totalCreditLimit?.let { dao.updateAccountCreditLimit(limitAcc.id, it) }
                                         // Create a negative-outstanding BALANCE_UPDATE snapshot (same as bank Balance Sync)
@@ -87,6 +86,7 @@ class SmsReceiver : BroadcastReceiver() {
                                         val creditLimit = parsed.totalCreditLimit ?: limitAcc.creditLimit
                                         if (creditLimit > 0) {
                                             val snapshot = availLimit - creditLimit  // negative = outstanding debt
+                                            val prevSnap = dao.getLatestBalanceAnchorAmount(limitAcc.name)
                                             val snapTx = TransactionEntry(
                                                 title = "Balance Sync",
                                                 amount = snapshot,
@@ -100,20 +100,30 @@ class SmsReceiver : BroadcastReceiver() {
                                             // Check + replace/insert in one Room transaction — avoids a
                                             // duplicate snapshot if this same SMS is also mid-processing
                                             // via a concurrent Scan Inbox run.
-                                            dao.upsertBalanceSync(limitAcc.name, timestampMillis, snapTx)
+                                            if (dao.upsertBalanceSync(limitAcc.name, timestampMillis, snapTx)) {
+                                                saveReceiverFingerprint(context, "Balance Sync|$snapshot|BALANCE_UPDATE|$timestampMillis")
+                                                val deltaTxt = if (prevSnap != null) {
+                                                    val delta = snapshot - prevSnap
+                                                    val sign = if (delta >= 0) "+" else "-"
+                                                    " (${sign}\u20b9${"%.2f".format(kotlin.math.abs(delta))})"
+                                                } else ""
+                                                appendPersistedNotification(
+                                                    context,
+                                                    "Balance Sync",
+                                                    "${limitAcc.name}: \u20b9${"%.2f".format(snapshot)}$deltaTxt"
+                                                )
+                                            }
                                         }
-                                        val newDue = (creditLimit - availLimit).coerceAtLeast(0.0)
                                         if (kotlin.math.abs(prevCreditLimit - creditLimit) > 0.01 || kotlin.math.abs(prevAvailableLimit - availLimit) > 0.01) {
                                             appendPersistedNotification(
                                                 context,
                                                 "CC Limits Updated",
                                                 "${limitAcc.name}: Credit Limit ₹${"%.2f".format(prevCreditLimit)} → ₹${"%.2f".format(creditLimit)}, " +
-                                                    "Available ₹${"%.2f".format(prevAvailableLimit)} → ₹${"%.2f".format(availLimit)}, " +
-                                                    "Due ₹${"%.2f".format(prevDue)} → ₹${"%.2f".format(newDue)}"
+                                                    "Available ₹${"%.2f".format(prevAvailableLimit)} → ₹${"%.2f".format(availLimit)}"
                                             )
                                         }
                                         withContext(Dispatchers.Main) {
-                                            Toast.makeText(context, "AutoLedger: CC limits updated for ${limitAcc.name} (Due ₹${"%.2f".format(newDue)})", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "AutoLedger: CC limits updated for ${limitAcc.name} (Available ₹${"%.2f".format(availLimit)})", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }
@@ -135,6 +145,7 @@ class SmsReceiver : BroadcastReceiver() {
                                         // so that the display formula (creditLimit + bal) gives the correct available credit.
                                         val snapshotBal = if (linkedAcc.type == "CREDIT_CARD" && linkedAcc.creditLimit > 0)
                                             bal - linkedAcc.creditLimit else bal
+                                        val prevSnap = dao.getLatestBalanceAnchorAmount(linkedAcc.name)
                                         val snapTx = TransactionEntry(
                                             title = "Balance Sync",
                                             amount = snapshotBal,
@@ -149,6 +160,17 @@ class SmsReceiver : BroadcastReceiver() {
                                         // duplicate snapshot if Scan Inbox re-processes this same SMS
                                         // around the same time.
                                         if (dao.upsertBalanceSync(linkedAcc.name, targetTime, snapTx)) {
+                                            saveReceiverFingerprint(context, "Balance Sync|$snapshotBal|BALANCE_UPDATE|$targetTime")
+                                            val deltaTxt = if (prevSnap != null) {
+                                                val delta = snapshotBal - prevSnap
+                                                val sign = if (delta >= 0) "+" else "-"
+                                                " (${sign}\u20b9${"%.2f".format(kotlin.math.abs(delta))})"
+                                            } else ""
+                                            appendPersistedNotification(
+                                                context,
+                                                "Balance Sync",
+                                                "${linkedAcc.name}: \u20b9${String.format("%.2f", bal)}$deltaTxt"
+                                            )
                                             withContext(Dispatchers.Main) {
                                     Toast.makeText(context, "AutoLedger: Balance ₹${String.format("%.2f", bal)} → ${linkedAcc.name}", Toast.LENGTH_LONG).show()
                                             }
@@ -271,6 +293,7 @@ class SmsReceiver : BroadcastReceiver() {
                             // transaction that happened to also report its resulting balance.
                             if (balanceSyncEnabled && parsed.availableBalance != null && linkedAcc != null && linkedAcc.type != "CREDIT_CARD") {
                                 val bsTs = targetTime + 1L
+                                val prevSnap = dao.getLatestBalanceAnchorAmount(linkedAcc.name)
                                 val snapTx = TransactionEntry(
                                     title = "Balance Sync",
                                     amount = parsed.availableBalance,
@@ -286,6 +309,16 @@ class SmsReceiver : BroadcastReceiver() {
                                 // around the same time.
                                 if (dao.upsertBalanceSync(linkedAcc.name, bsTs, snapTx)) {
                                     saveReceiverFingerprint(context, "Balance Sync|${parsed.availableBalance}|BALANCE_UPDATE|$bsTs")
+                                    val deltaTxt = if (prevSnap != null) {
+                                        val delta = parsed.availableBalance - prevSnap
+                                        val sign = if (delta >= 0) "+" else "-"
+                                        " (${sign}\u20b9${"%.2f".format(kotlin.math.abs(delta))})"
+                                    } else ""
+                                    appendPersistedNotification(
+                                        context,
+                                        "Balance Sync",
+                                        "${linkedAcc.name}: \u20b9${"%.2f".format(parsed.availableBalance)}$deltaTxt"
+                                    )
                                 }
                             }
 

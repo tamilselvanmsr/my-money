@@ -292,6 +292,7 @@ class SmsParserTest {
         assertEquals("EXPENSE", result.type)
         assertEquals("PLUXEE_WALLET", result.accountRef)
         assertEquals(4123.01, result.availableBalance ?: 0.0, 0.01)
+        assertEquals(ExpenseCategory.GROCERIES, result.category)
     }
 
     @Test fun `Unlisted wallet is still recognized via the generic added-to fallback`() {

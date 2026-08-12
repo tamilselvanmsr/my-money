@@ -1224,9 +1224,7 @@ fun MainAppScreen(viewModel: FinanceViewModel = viewModel()) {
                                         val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
                                         if (hasPerm) viewModel.scanDeviceSmsInbox(context, smsScanMonthsBack)
                                     }
-                                    "BACKUP"  -> viewModel.executeBackupNow("Gesture") { success, _ ->
-                                        if (success) Toast.makeText(context, "Backup saved!", Toast.LENGTH_SHORT).show()
-                                    }
+                                    "BACKUP"  -> viewModel.executeBackupNow("Gesture") { _, _ -> }
                                     "RESTORE" -> {
                                         viewModel.refreshAvailableBackups()
                                         showGestureRestoreConfirm = true
@@ -3133,9 +3131,12 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
             onDismiss = { showAnalyticsProUpgrade = false }
         )
     }
-    var categoryDetailItem by remember { mutableStateOf<Pair<DisplayCategorySpend, List<TransactionEntry>>?>(null) }
+    // Only the identity is stored (not a frozen transaction list) so the detail dialog's
+    // transaction list stays live — duplicating/editing/deleting a transaction while the
+    // dialog is open now reflects immediately instead of requiring a close + reopen.
+    var categoryDetailItem by remember { mutableStateOf<DisplayCategorySpend?>(null) }
     var expandedNotesTxId by remember { mutableStateOf<Int?>(null) }  // null = none, -1 = all
-    var accountDetailItem by remember { mutableStateOf<Pair<AccountAnalyticsSummary, List<TransactionEntry>>?>(null) }
+    var accountDetailItem by remember { mutableStateOf<AccountAnalyticsSummary?>(null) }
     var flowDayItem by remember { mutableStateOf<Pair<AnalyticsFlowPoint, List<TransactionEntry>>?>(null) }
     val allAccountsForAnalytics by viewModel.allAccounts.collectAsStateWithLifecycle()
     // Per-mode category filters — each overview keeps its own independent selection
@@ -3520,8 +3521,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         emptyMessage = "No expense data available for this period.",
                         decimalPlaces = accountAmountDecimals,
                         onCategoryTap = { cat ->
-                            val txs = overviewTransactions.filter { it.category.equals(cat.category.name, ignoreCase = true) }
-                            categoryDetailItem = cat to txs
+                            categoryDetailItem = cat
                         }
                     )
                 }
@@ -3538,8 +3538,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         emptyMessage = "No income data available for this period.",
                         decimalPlaces = accountAmountDecimals,
                         onCategoryTap = { cat ->
-                            val txs = overviewTransactions.filter { it.category.equals(cat.category.name, ignoreCase = true) }
-                            categoryDetailItem = cat to txs
+                            categoryDetailItem = cat
                         }
                     )
                 }
@@ -3601,15 +3600,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         accountStats = accountStats,
                         decimalPlaces = accountAmountDecimals,
                         onAccountTap = { stats ->
-                            // Include inbound transfers too (destination == this account) —
-                            // previously only transactions where this account was the SOURCE
-                            // ([Acc: ...] tag) were shown, so a transfer INTO this account
-                            // from elsewhere never appeared in its own transaction list.
-                            val accTxs = categoryFilteredTxns.filter { tx ->
-                                tx.getAccountName() == stats.accountName ||
-                                    (tx.type == "TRANSFER" && tx.getTransferDestName() == stats.accountName)
-                            }
-                            accountDetailItem = stats to accTxs
+                            accountDetailItem = stats
                         }
                     )
                 }
@@ -3618,7 +3609,15 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
     }
 
     // Account breakdown detail dialog
-    accountDetailItem?.let { (stats, txList) ->
+    accountDetailItem?.let { stats ->
+        // Recomputed live (not a frozen snapshot) so duplicating/editing/deleting a
+        // transaction while this dialog is open updates the list immediately. Includes
+        // inbound transfers too (destination == this account), not just ones where this
+        // account was the source ([Acc: ...] tag).
+        val txList = categoryFilteredTxns.filter { tx ->
+            tx.getAccountName() == stats.accountName ||
+                (tx.type == "TRANSFER" && tx.getTransferDestName() == stats.accountName)
+        }
         val decFormat = remember(accountAmountDecimals) {
             DecimalFormat(if (accountAmountDecimals <= 0) "₹#,##0" else "₹#,##0." + "0".repeat(accountAmountDecimals))
         }
@@ -3626,6 +3625,9 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
         val dateFormatter = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
         var expandedAccountNoteIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
         var allAccountNotesExpanded by remember { mutableStateOf(false) }
+        var acctTxOptionsFor by remember { mutableStateOf<TransactionEntry?>(null) }
+        var acctTxForEdit by remember { mutableStateOf<TransactionEntry?>(null) }
+        var acctTxForDeleteConfirm by remember { mutableStateOf<TransactionEntry?>(null) }
         val txsWithNotes = txList.filter { userNoteFrom(it.note).isNotBlank() }
         val periodLabelAcc = formatAnalyticsPeriodLabel(rawMonthYear, timeFilter, anchorTime)
 
@@ -3898,9 +3900,7 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                                 color = if (c.isBorderless) Color.Transparent else if (isNoteExpanded && hasNote) c.accent.copy(alpha = 0.06f) else c.divider,
                                                 shape = RoundedCornerShape(if (c.isBorderless) 0.dp else 10.dp),
                                                 border = if (!c.isBorderless && isNoteExpanded && hasNote) BorderStroke(1.dp, c.accent.copy(alpha = 0.3f)) else null,
-                                                modifier = Modifier.fillMaxWidth().then(if (hasNote) Modifier.clickable {
-                                                    expandedAccountNoteIds = if (tx.id in expandedAccountNoteIds) expandedAccountNoteIds - tx.id else expandedAccountNoteIds + tx.id
-                                                } else Modifier)
+                                                modifier = Modifier.fillMaxWidth().clickable { acctTxOptionsFor = tx }
                                             ) {
                                                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -3918,7 +3918,13 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                                                     // the outer Row) instead of an empty/odd category line above it.
                                                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                                         Text(tx.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                                                                        if (hasNote) Icon(Icons.Default.Notes, contentDescription = "Has note", tint = if (isNoteExpanded) c.accent else c.textTertiary, modifier = Modifier.size(10.dp))
+                                                                        if (hasNote) Icon(
+                                                                            Icons.Default.Notes, contentDescription = "Has note",
+                                                                            tint = if (isNoteExpanded) c.accent else c.textTertiary,
+                                                                            modifier = Modifier.size(12.dp).clickable {
+                                                                                expandedAccountNoteIds = if (tx.id in expandedAccountNoteIds) expandedAccountNoteIds - tx.id else expandedAccountNoteIds + tx.id
+                                                                            }
+                                                                        )
                                                                     }
                                                                 } else {
                                                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -3938,7 +3944,13 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                                                     }
                                                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                                         Text(tx.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                                                                        if (hasNote) Icon(Icons.Default.Notes, contentDescription = "Has note", tint = if (isNoteExpanded) c.accent else c.textTertiary, modifier = Modifier.size(10.dp))
+                                                                        if (hasNote) Icon(
+                                                                            Icons.Default.Notes, contentDescription = "Has note",
+                                                                            tint = if (isNoteExpanded) c.accent else c.textTertiary,
+                                                                            modifier = Modifier.size(12.dp).clickable {
+                                                                                expandedAccountNoteIds = if (tx.id in expandedAccountNoteIds) expandedAccountNoteIds - tx.id else expandedAccountNoteIds + tx.id
+                                                                            }
+                                                                        )
                                                                     }
                                                                 }
                                                             }
@@ -3969,6 +3981,58 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         Spacer(Modifier.height(2.dp))
                     }
                 }
+            }
+        }
+
+        acctTxOptionsFor?.let { optTx ->
+            TransactionOptionsPopup(
+                tx = optTx,
+                customCategories = customCats,
+                onDismiss = { acctTxOptionsFor = null },
+                onDuplicate = { viewModel.duplicateTransaction(optTx) },
+                onEdit = { acctTxForEdit = optTx },
+                onDelete = { acctTxForDeleteConfirm = optTx }
+            )
+        }
+        acctTxForDeleteConfirm?.let { delTx ->
+            AlertDialog(
+                onDismissRequest = { acctTxForDeleteConfirm = null },
+                title = { Text("Delete Transaction", color = c.text) },
+                text = { Text("Are you absolutely sure you want to delete this recorded transaction?", color = c.text.copy(alpha = 0.7f)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = { viewModel.deleteTransaction(delTx.id); acctTxForDeleteConfirm = null },
+                        colors = ButtonDefaults.textButtonColors(contentColor = c.expense)
+                    ) { Text("Delete", fontWeight = FontWeight.Bold) }
+                },
+                dismissButton = { TextButton(onClick = { acctTxForDeleteConfirm = null }) { Text("Cancel", color = c.text) } },
+                containerColor = c.surface
+            )
+        }
+        acctTxForEdit?.let { editTx ->
+            var showAcctEditDeleteConfirm by remember { mutableStateOf(false) }
+            if (showAcctEditDeleteConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showAcctEditDeleteConfirm = false },
+                    title = { Text("Delete Transaction", color = c.text) },
+                    text = { Text("Are you absolutely sure you want to delete this recorded transaction?", color = c.text.copy(alpha = 0.7f)) },
+                    confirmButton = {
+                        TextButton(
+                            onClick = { viewModel.deleteTransaction(editTx.id); acctTxForEdit = null; showAcctEditDeleteConfirm = false },
+                            colors = ButtonDefaults.textButtonColors(contentColor = c.expense)
+                        ) { Text("Delete", fontWeight = FontWeight.Bold) }
+                    },
+                    dismissButton = { TextButton(onClick = { showAcctEditDeleteConfirm = false }) { Text("Cancel", color = c.text) } },
+                    containerColor = c.surface
+                )
+            } else {
+                EditTransactionDialog(
+                    tx = editTx,
+                    viewModel = viewModel,
+                    onDismiss = { acctTxForEdit = null },
+                    onDelete = { showAcctEditDeleteConfirm = true },
+                    onConfirm = { updated, applyToAll -> viewModel.updateTransaction(updated, applyToAll); acctTxForEdit = null }
+                )
             }
         }
     }
@@ -4098,11 +4162,17 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
     }
 
     // Category detail dialog
-    categoryDetailItem?.let { (cat, txList) ->
+    categoryDetailItem?.let { cat ->
+        // Recomputed live (not a frozen snapshot) so duplicating/editing/deleting a
+        // transaction while this dialog is open updates the list immediately.
+        val txList = overviewTransactions.filter { it.category.equals(cat.category.name, ignoreCase = true) }
         val amtFormatter = remember { java.text.DecimalFormat("#,##0.00") }
         val dateFormatter = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
         val txsWithNotesCat = txList.filter { userNoteFrom(it.note).isNotBlank() }
         val periodLabelA = formatAnalyticsPeriodLabel(rawMonthYear, timeFilter, anchorTime)
+        var catTxOptionsFor by remember { mutableStateOf<TransactionEntry?>(null) }
+        var catTxForEdit by remember { mutableStateOf<TransactionEntry?>(null) }
+        var catTxForDeleteConfirm by remember { mutableStateOf<TransactionEntry?>(null) }
         // Amounts show the income/expense color (not the category's own color) so a
         // transaction's amount always reads as money in/out, matching every other list.
         val catAmtColor = if (cat.category.type == "INCOME") c.income else c.expense
@@ -4227,13 +4297,19 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                                             val userNote = userNoteFrom(tx.note); val hasNote = userNote.isNotBlank()
                                             val isExpanded = expandedNotesTxId == -1 || expandedNotesTxId == tx.id
                                             if (c.isBorderless && idx > 0) HorizontalDivider(color = c.flatDivider, thickness = if (c.isDark) 0.5.dp else 1.dp)
-                                            Surface(color = if (c.isBorderless) Color.Transparent else if (isExpanded && hasNote) acctColor.copy(0.06f) else c.divider, shape = RoundedCornerShape(if (c.isBorderless) 0.dp else 10.dp), border = if (!c.isBorderless && isExpanded && hasNote) BorderStroke(1.dp, acctColor.copy(0.3f)) else null, modifier = Modifier.fillMaxWidth().then(if (hasNote) Modifier.clickable { expandedNotesTxId = if (expandedNotesTxId == -1) null else if (isExpanded) null else tx.id } else Modifier)) {
+                                            Surface(color = if (c.isBorderless) Color.Transparent else if (isExpanded && hasNote) acctColor.copy(0.06f) else c.divider, shape = RoundedCornerShape(if (c.isBorderless) 0.dp else 10.dp), border = if (!c.isBorderless && isExpanded && hasNote) BorderStroke(1.dp, acctColor.copy(0.3f)) else null, modifier = Modifier.fillMaxWidth().clickable { catTxOptionsFor = tx }) {
                                                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                         Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                                 Text(tx.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                                                                if (hasNote) Icon(Icons.Default.Notes, null, tint = if (isExpanded) c.accent else c.textTertiary, modifier = Modifier.size(10.dp))
+                                                                if (hasNote) Icon(
+                                                                    Icons.Default.Notes, null,
+                                                                    tint = if (isExpanded) c.accent else c.textTertiary,
+                                                                    modifier = Modifier.size(12.dp).clickable {
+                                                                        expandedNotesTxId = if (expandedNotesTxId == -1) null else if (isExpanded) null else tx.id
+                                                                    }
+                                                                )
                                                             }
                                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                                 Surface(color = acctColor.copy(0.12f), shape = RoundedCornerShape(4.dp)) {
@@ -4263,6 +4339,58 @@ fun AnalyticsScreen(viewModel: FinanceViewModel, listState: LazyListState = reme
                         Spacer(Modifier.height(2.dp))
                     }
                 }
+            }
+        }
+
+        catTxOptionsFor?.let { optTx ->
+            TransactionOptionsPopup(
+                tx = optTx,
+                customCategories = customCats,
+                onDismiss = { catTxOptionsFor = null },
+                onDuplicate = { viewModel.duplicateTransaction(optTx) },
+                onEdit = { catTxForEdit = optTx },
+                onDelete = { catTxForDeleteConfirm = optTx }
+            )
+        }
+        catTxForDeleteConfirm?.let { delTx ->
+            AlertDialog(
+                onDismissRequest = { catTxForDeleteConfirm = null },
+                title = { Text("Delete Transaction", color = c.text) },
+                text = { Text("Are you absolutely sure you want to delete this recorded transaction?", color = c.text.copy(alpha = 0.7f)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = { viewModel.deleteTransaction(delTx.id); catTxForDeleteConfirm = null },
+                        colors = ButtonDefaults.textButtonColors(contentColor = c.expense)
+                    ) { Text("Delete", fontWeight = FontWeight.Bold) }
+                },
+                dismissButton = { TextButton(onClick = { catTxForDeleteConfirm = null }) { Text("Cancel", color = c.text) } },
+                containerColor = c.surface
+            )
+        }
+        catTxForEdit?.let { editTx ->
+            var showCatEditDeleteConfirm by remember { mutableStateOf(false) }
+            if (showCatEditDeleteConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showCatEditDeleteConfirm = false },
+                    title = { Text("Delete Transaction", color = c.text) },
+                    text = { Text("Are you absolutely sure you want to delete this recorded transaction?", color = c.text.copy(alpha = 0.7f)) },
+                    confirmButton = {
+                        TextButton(
+                            onClick = { viewModel.deleteTransaction(editTx.id); catTxForEdit = null; showCatEditDeleteConfirm = false },
+                            colors = ButtonDefaults.textButtonColors(contentColor = c.expense)
+                        ) { Text("Delete", fontWeight = FontWeight.Bold) }
+                    },
+                    dismissButton = { TextButton(onClick = { showCatEditDeleteConfirm = false }) { Text("Cancel", color = c.text) } },
+                    containerColor = c.surface
+                )
+            } else {
+                EditTransactionDialog(
+                    tx = editTx,
+                    viewModel = viewModel,
+                    onDismiss = { catTxForEdit = null },
+                    onDelete = { showCatEditDeleteConfirm = true },
+                    onConfirm = { updated, applyToAll -> viewModel.updateTransaction(updated, applyToAll); catTxForEdit = null }
+                )
             }
         }
     }
@@ -5296,77 +5424,90 @@ private fun buildAccountAnalytics(transactions: List<TransactionEntry>, appColor
         .sortedByDescending { it.income + it.expense }
 }
 
+// Sorted alphabetically by iconLabel() so the icon picker reads top-to-bottom, left-to-right
+// in alphabetical order instead of an arbitrary hand-maintained order.
 val suitableIconsList = listOf(
-    "restaurant" to Icons.Default.Restaurant,
-    "shopping" to Icons.Default.ShoppingBag,
-    "car" to Icons.Default.DirectionsCar,
-    "bills" to Icons.AutoMirrored.Filled.ReceiptLong,
-    "recharge" to Icons.Default.Smartphone,
-    "gym" to Icons.Default.FitnessCenter,
-    "sport" to Icons.Default.SportsSoccer,
-    "electronics" to Icons.Default.Devices,
-    "insurance" to Icons.Default.Security,
-    "social" to Icons.Default.Group,
-    "tax" to Icons.Default.Percent,
-    "transportation" to Icons.Default.AirportShuttle,
-    "education" to Icons.Default.School,
-    "healthcare" to Icons.Default.MedicalServices,
-    "entertainment" to Icons.Default.LocalPlay,
-    "awards" to Icons.Default.EmojiEvents,
-    "coupons" to Icons.Default.CardGiftcard,
-    "grants" to Icons.Default.Handshake,
-    "refunds" to Icons.Default.Cached,
-    "rental" to Icons.Default.Domain,
-    "salary" to Icons.Default.AttachMoney,
-    "sale" to Icons.Default.Storefront,
-    "rewards" to Icons.Default.MilitaryTech,
-    "coins" to Icons.Default.Savings,
-    "upi" to Icons.Default.QrCode,
-    "interest" to Icons.Default.ShowChart,
-    "reimbursement" to Icons.Default.CurrencyExchange,
-    "dividend" to Icons.Default.Paid,
-    "localgasstation" to Icons.Default.LocalGasStation,
-    "checkroom" to Icons.Default.Checkroom,
-    "payments" to Icons.Default.Payments,
-    "eco" to Icons.Default.Eco,
-    "twowheeler" to Icons.Default.TwoWheeler,
-    "bolt" to Icons.Default.Bolt,
-    "creditcard" to Icons.Default.CreditCard,
-    "coffee" to Icons.Default.LocalCafe,
-    "flight" to Icons.Default.Flight,
-    "home" to Icons.Default.Home,
-    "kitchen" to Icons.Default.Kitchen,
-    "outside_food" to Icons.Default.Fastfood,
-    "groceries" to Icons.Default.ShoppingCart,
-    "cashback" to Icons.Default.Redeem,
-    "investment" to Icons.AutoMirrored.Filled.TrendingUp,
-    "mutual_fund" to Icons.Default.AccountBalance,
-    "etf" to Icons.Default.BarChart,
     "adjust" to Icons.Default.SwapVert,
+    "awards" to Icons.Default.EmojiEvents,
+    "beauty" to Icons.Default.Spa,
+    "twowheeler" to Icons.Default.TwoWheeler,
+    "bills" to Icons.AutoMirrored.Filled.ReceiptLong,
+    "birthday" to Icons.Default.Cake,
+    "book" to Icons.Default.MenuBook,
+    "borrowed_money" to Icons.Default.CallReceived,
+    "bus" to Icons.Default.DirectionsBus,
+    "cab" to Icons.Default.LocalTaxi,
+    "coffee" to Icons.Default.LocalCafe,
+    "campfire" to Icons.Default.Fireplace,
+    "car" to Icons.Default.DirectionsCar,
+    "creditcard" to Icons.Default.CreditCard,
+    "cashback" to Icons.Default.Redeem,
+    "checkroom" to Icons.Default.Checkroom,
+    "coupons" to Icons.Default.CardGiftcard,
+    "restaurant" to Icons.Default.Restaurant,
+    "dividend" to Icons.Default.Paid,
+    "donation" to Icons.Default.VolunteerActivism,
+    "drinks" to Icons.Default.LocalBar,
+    "eco" to Icons.Default.Eco,
+    "education" to Icons.Default.School,
+    "bolt" to Icons.Default.Bolt,
+    "etf" to Icons.Default.BarChart,
+    "flight" to Icons.Default.Flight,
+    "flowers" to Icons.Default.LocalFlorist,
+    "fruits" to Icons.Default.WaterDrop,
+    "localgasstation" to Icons.Default.LocalGasStation,
+    "entertainment" to Icons.Default.LocalPlay,
+    "mutual_fund" to Icons.Default.AccountBalance,
+    "furniture" to Icons.Default.Weekend,
+    "gaming" to Icons.Default.SportsEsports,
+    "gift" to Icons.Default.CardGiftcard,
+    "grants" to Icons.Default.Handshake,
+    "groceries" to Icons.Default.ShoppingCart,
+    "gym" to Icons.Default.FitnessCenter,
+    "healthcare" to Icons.Default.MedicalServices,
+    "home" to Icons.Default.Home,
     "hotel" to Icons.Default.Hotel,
+    "insurance" to Icons.Default.Security,
+    "interest" to Icons.Default.ShowChart,
+    "wifi" to Icons.Default.Wifi,
+    "investment" to Icons.AutoMirrored.Filled.TrendingUp,
+    "children" to Icons.Default.ChildCare,
+    "kitchen" to Icons.Default.Kitchen,
+    "laundry" to Icons.Default.LocalLaundryService,
+    "lend" to Icons.Default.CallMade,
+    "loan_emi" to Icons.Default.CreditScore,
     "movie" to Icons.Default.Movie,
     "music" to Icons.Default.MusicNote,
-    "gift" to Icons.Default.CardGiftcard,
-    "children" to Icons.Default.ChildCare,
+    "online_shopping" to Icons.Default.Laptop,
+    "others" to Icons.Default.Category,
+    "parking" to Icons.Default.LocalParking,
+    "party" to Icons.Default.Celebration,
+    "payments" to Icons.Default.Payments,
     "pet" to Icons.Default.Pets,
     "pharmacy" to Icons.Default.LocalPharmacy,
-    "work" to Icons.Default.Work,
-    // New icons
-    "online_shopping" to Icons.Default.Laptop,
+    "recharge" to Icons.Default.Smartphone,
+    "refunds" to Icons.Default.Cached,
+    "reimbursement" to Icons.Default.CurrencyExchange,
+    "rental" to Icons.Default.Domain,
     "maintenance" to Icons.Default.Build,
-    "drinks" to Icons.Default.LocalBar,
-    "fruits" to Icons.Default.WaterDrop,
-    "campfire" to Icons.Default.Fireplace,
+    "rewards" to Icons.Default.MilitaryTech,
+    "salary" to Icons.Default.AttachMoney,
+    "sale" to Icons.Default.Storefront,
+    "salon" to Icons.Default.ContentCut,
+    "coins" to Icons.Default.Savings,
     "shoes" to Icons.AutoMirrored.Filled.DirectionsRun,
-    "party" to Icons.Default.Celebration,
-    "birthday" to Icons.Default.Cake,
+    "shopping" to Icons.Default.ShoppingBag,
+    "social" to Icons.Default.Group,
+    "sport" to Icons.Default.SportsSoccer,
+    "outside_food" to Icons.Default.Fastfood,
+    "tax" to Icons.Default.Percent,
+    "electronics" to Icons.Default.Devices,
+    "transportation" to Icons.Default.AirportShuttle,
+    "icecream" to Icons.Default.Icecream,
+    "upi" to Icons.Default.QrCode,
     "vacation" to Icons.Default.BeachAccess,
-    "beauty" to Icons.Default.Spa,
-    "cab" to Icons.Default.LocalTaxi,
-    "loan_emi" to Icons.Default.CreditScore,
-    "lend" to Icons.Default.CallMade,
-    "borrowed_money" to Icons.Default.CallReceived,
-    "others" to Icons.Default.Category
+    "wallet" to Icons.Default.AccountBalanceWallet,
+    "work" to Icons.Default.Work
 )
 
 fun iconLabel(key: String): String = when (key) {
@@ -5439,10 +5580,116 @@ fun iconLabel(key: String): String = when (key) {
     "lend" -> "Lend"
     "borrowed_money" -> "Borrowed"
     "others" -> "Others"
+    "donation" -> "Donation"
+    "parking" -> "Parking"
+    "wifi" -> "Internet"
+    "laundry" -> "Laundry"
+    "salon" -> "Salon"
+    "book" -> "Books"
+    "bus" -> "Bus"
+    "furniture" -> "Furniture"
+    "icecream" -> "Treats"
+    "flowers" -> "Flowers"
+    "gaming" -> "Gaming"
+    "wallet" -> "Wallet"
     else -> key.split("_").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }.take(9)
 }
 
+/** Default swatch color shown for each icon in the picker BEFORE the user has picked a
+ * color — so the grid reads as colorful/informative from the start instead of all-gray,
+ * reusing the same color its matching built-in category (if any) already uses. */
+fun iconDefaultColor(key: String): Color = when (key) {
+    "restaurant", "outside_food" -> Color(0xFFFF9800)
+    "shopping" -> Color(0xFFE91E63)
+    "car" -> Color(0xFF0288D1)
+    "bills" -> Color(0xFF9C27B0)
+    "recharge" -> Color(0xFF7986CB)
+    "gym" -> Color(0xFF455A64)
+    "sport" -> Color(0xFF8BC34A)
+    "electronics" -> Color(0xFF7B1FA2)
+    "insurance" -> Color(0xFFEC407A)
+    "social" -> Color(0xFF26A69A)
+    "tax" -> Color(0xFF795548)
+    "transportation", "bus", "cab" -> Color(0xFF3949AB)
+    "education", "book" -> Color(0xFF009688)
+    "healthcare", "pharmacy" -> Color(0xFF00ACC1)
+    "entertainment", "movie", "music", "party", "gaming" -> Color(0xFFFF5722)
+    "awards", "rewards" -> Color(0xFF76FF03)
+    "coupons", "gift" -> Color(0xFFE65100)
+    "grants", "donation" -> Color(0xFF00E676)
+    "refunds" -> Color(0xFF00B0FF)
+    "rental", "furniture" -> Color(0xFF651FFF)
+    "salary" -> Color(0xFF2E7D32)
+    "sale" -> Color(0xFFFF9100)
+    "coins" -> Color(0xFFD500F9)
+    "upi", "wallet" -> Color(0xFF0EA5E9)
+    "interest" -> Color(0xFF00E5FF)
+    "reimbursement" -> Color(0xFFFF1744)
+    "dividend" -> Color(0xFF651FFF)
+    "localgasstation" -> Color(0xFFF44336)
+    "checkroom" -> Color(0xFFC2185B)
+    "payments" -> Color(0xFFFFA000)
+    "eco", "fruits", "groceries" -> Color(0xFF4CAF50)
+    "twowheeler" -> Color(0xFFFF8F00)
+    "bolt" -> Color(0xFFFFC107)
+    "creditcard" -> Color(0xFF5D4037)
+    "coffee", "drinks" -> Color(0xFF8D6E63)
+    "flight", "vacation" -> Color(0xFF3949AB)
+    "flowers" -> Color(0xFFE91E63)
+    "home", "rent" -> Color(0xFF7E57C2)
+    "kitchen", "campfire" -> Color(0xFFFF7043)
+    "cashback" -> Color(0xFFFFC400)
+    "investment" -> Color(0xFF1565C0)
+    "mutual_fund" -> Color(0xFF00897B)
+    "etf" -> Color(0xFF1976D2)
+    "adjust" -> Color(0xFF64748B)
+    "hotel" -> Color(0xFF3949AB)
+    "children" -> Color(0xFF26A69A)
+    "pet" -> Color(0xFF8D6E63)
+    "work" -> Color(0xFF37474F)
+    "online_shopping" -> Color(0xFF00ACC1)
+    "maintenance" -> Color(0xFF6D4C41)
+    "shoes" -> Color(0xFF5C6BC0)
+    "birthday", "icecream" -> Color(0xFFEC407A)
+    "beauty", "salon" -> Color(0xFFD50000)
+    "loan_emi" -> Color(0xFF6D4C41)
+    "lend" -> Color(0xFFD84315)
+    "borrowed_money" -> Color(0xFF43A047)
+    "parking" -> Color(0xFF546E7A)
+    "wifi" -> Color(0xFF0EA5E9)
+    "laundry" -> Color(0xFF3949AB)
+    "others" -> Color(0xFF607D8B)
+    else -> Color(0xFF607D8B)
+}
+
 val categoryColorsList = listOf(
+    // ── Vivid / neon shades (shown first) ────────────────────────────────────
+    "#FF1744" to Color(0xFFFF1744),  // Vivid Red
+    "#F50057" to Color(0xFFF50057),  // Vivid Pink
+    "#AD1457" to Color(0xFFAD1457),  // Vivid Maroon
+    "#C51162" to Color(0xFFC51162),  // Vivid Fuchsia
+    "#FF4081" to Color(0xFFFF4081),  // Vivid Rose
+    "#D500F9" to Color(0xFFD500F9),  // Vivid Magenta
+    "#E040FB" to Color(0xFFE040FB),  // Vivid Purple
+    "#651FFF" to Color(0xFF651FFF),  // Vivid Indigo
+    "#7C4DFF" to Color(0xFF7C4DFF),  // Vivid Violet
+    "#3D5AFE" to Color(0xFF3D5AFE),  // Vivid Blue
+    "#536DFE" to Color(0xFF536DFE),  // Vivid Periwinkle
+    "#00E5FF" to Color(0xFF00E5FF),  // Vivid Cyan
+    "#40C4FF" to Color(0xFF40C4FF),  // Vivid Sky Blue
+    "#00ACC1" to Color(0xFF00ACC1),  // Vivid Turquoise
+    "#1DE9B6" to Color(0xFF1DE9B6),  // Vivid Teal
+    "#00E676" to Color(0xFF00E676),  // Vivid Green
+    "#76FF03" to Color(0xFF76FF03),  // Vivid Lime
+    "#FFD700" to Color(0xFFFFD700),  // Vivid Gold
+    "#FFEA00" to Color(0xFFFFEA00),  // Vivid Yellow
+    "#FFC400" to Color(0xFFFFC400),  // Vivid Amber
+    "#FF9100" to Color(0xFFFF9100),  // Vivid Orange
+    "#FF6E40" to Color(0xFFFF6E40),  // Vivid Coral
+    "#FF3D00" to Color(0xFFFF3D00),  // Vivid Deep Orange
+    "#BF360C" to Color(0xFFBF360C),  // Vivid Rust
+
+    // ── Standard shades ───────────────────────────────────────────────────────
     "#FF9800" to Color(0xFFFF9800),  // Orange
     "#E91E63" to Color(0xFFE91E63),  // Pink
     "#0288D1" to Color(0xFF0288D1),  // Light Blue
@@ -5453,7 +5700,6 @@ val categoryColorsList = listOf(
     "#EC407A" to Color(0xFFEC407A),  // Pink Light
     "#00BCD4" to Color(0xFF00BCD4),  // Cyan
     "#795548" to Color(0xFF795548),  // Brown
-    "#607D8B" to Color(0xFF607D8B),  // Blue Grey
     "#F44336" to Color(0xFFF44336),  // Red
     "#673AB7" to Color(0xFF673AB7),  // Deep Purple
     "#3F51B5" to Color(0xFF3F51B5),  // Indigo
@@ -5462,22 +5708,15 @@ val categoryColorsList = listOf(
     "#FFD600" to Color(0xFFFFD600),  // Yellow
     "#FF6D00" to Color(0xFFFF6D00),  // Deep Orange Accent
     "#AA00FF" to Color(0xFFAA00FF),  // Purple Accent
-    "#43A047" to Color(0xFF43A047),  // Green Medium
-    "#FB8C00" to Color(0xFFFB8C00),  // Orange Medium
-    // ── Extra vibrant / neon shades ──────────────────────────────────────────
-    "#FF1744" to Color(0xFFFF1744),  // Vivid Red
-    "#F50057" to Color(0xFFF50057),  // Vivid Pink
-    "#D500F9" to Color(0xFFD500F9),  // Vivid Magenta
-    "#651FFF" to Color(0xFF651FFF),  // Vivid Indigo
-    "#3D5AFE" to Color(0xFF3D5AFE),  // Vivid Blue
-    "#00E5FF" to Color(0xFF00E5FF),  // Vivid Cyan
-    "#1DE9B6" to Color(0xFF1DE9B6),  // Vivid Teal
-    "#00E676" to Color(0xFF00E676),  // Vivid Green
-    "#76FF03" to Color(0xFF76FF03),  // Vivid Lime
-    "#FFEA00" to Color(0xFFFFEA00),  // Vivid Yellow
-    "#FFC400" to Color(0xFFFFC400),  // Vivid Amber
-    "#FF9100" to Color(0xFFFF9100),  // Vivid Orange
-    "#FF3D00" to Color(0xFFFF3D00),  // Vivid Deep Orange
+
+    // ── Grey / brown / dark shades (kept — no vibrant equivalent exists for these) ──
+    "#607D8B" to Color(0xFF607D8B),  // Blue Grey
+    "#455A64" to Color(0xFF455A64),  // Dark Blue Grey
+    "#546E7A" to Color(0xFF546E7A),  // Slate Grey
+    "#5D4037" to Color(0xFF5D4037),  // Dark Brown
+    "#6D4C41" to Color(0xFF6D4C41),  // Medium Brown
+    "#8D6E63" to Color(0xFF8D6E63),  // Light Brown
+    "#D50000" to Color(0xFFD50000),  // Dark Red
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -6361,7 +6600,7 @@ fun BudgetsScreen(
 
             Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(58.dp),
+                columns = GridCells.Fixed(5),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
@@ -6379,7 +6618,7 @@ fun BudgetsScreen(
                     ) {
                         Surface(
                             shape = CircleShape,
-                            color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
+                            color = if (isSelected) selectedColor.copy(alpha = 0.25f) else iconDefaultColor(iconName).copy(alpha = 0.12f),
                             border = BorderStroke(if (isSelected) 2.dp else 0.dp, if (isSelected) selectedColor else Color.Transparent),
                             modifier = Modifier.size(44.dp)
                         ) {
@@ -6387,7 +6626,7 @@ fun BudgetsScreen(
                                 Icon(
                                     imageVector = iconVec,
                                     contentDescription = iconName,
-                                    tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
+                                    tint = if (isSelected) selectedColor else iconDefaultColor(iconName),
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
@@ -6519,7 +6758,7 @@ fun BudgetsScreen(
     showBudgetCategoryDetailFor?.let { cat ->
         val amtFmt = remember { java.text.DecimalFormat("#,##0.00") }
         val sdf = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
-        val categoryTxs = remember(cat.name, rawMonthYear, activeCategoryTypeTab) {
+        val categoryTxs = remember(cat.name, rawMonthYear, activeCategoryTypeTab, txs) {
             if (activeCategoryTypeTab == "EXPENSE") {
                 monthExpenses.filter { it.category.equals(cat.name, ignoreCase = true) }.sortedByDescending { it.timestamp }
             } else {
@@ -6590,6 +6829,9 @@ fun BudgetsScreen(
         }
         var expandedBudgetNoteIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
         var allBudgetNotesExpanded by remember { mutableStateOf(false) }
+        var budgetTxOptionsFor by remember { mutableStateOf<TransactionEntry?>(null) }
+        var budgetTxForEdit by remember { mutableStateOf<TransactionEntry?>(null) }
+        var budgetTxForDeleteConfirm by remember { mutableStateOf<TransactionEntry?>(null) }
         val txsWithNotes = categoryTxs.filter { userNoteFrom(it.note).isNotBlank() }
         // Group transactions by date — Today / Yesterday / full date — matching the
         // Records (Dashboard) section's grouping style instead of a flat list.
@@ -6812,14 +7054,20 @@ fun BudgetsScreen(
                                 color = if (c.isBorderless) Color.Transparent else if (isNoteExpanded && hasNote) c.accent.copy(alpha = 0.06f) else c.divider,
                                 shape = RoundedCornerShape(if (c.isBorderless) 0.dp else 10.dp),
                                 border = if (!c.isBorderless && isNoteExpanded && hasNote) BorderStroke(1.dp, c.accent.copy(alpha = 0.3f)) else null,
-                                modifier = Modifier.fillMaxWidth().then(if (hasNote) Modifier.clickable { expandedBudgetNoteIds = if (tx.id in expandedBudgetNoteIds) expandedBudgetNoteIds - tx.id else expandedBudgetNoteIds + tx.id } else Modifier)
+                                modifier = Modifier.fillMaxWidth().clickable { budgetTxOptionsFor = tx }
                             ) {
                                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                 Text(tx.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                                                if (hasNote) Icon(Icons.Default.Notes, contentDescription = "Has note", tint = if (isNoteExpanded) c.accent else c.textTertiary, modifier = Modifier.size(10.dp))
+                                                if (hasNote) Icon(
+                                                    Icons.Default.Notes, contentDescription = "Has note",
+                                                    tint = if (isNoteExpanded) c.accent else c.textTertiary,
+                                                    modifier = Modifier.size(12.dp).clickable {
+                                                        expandedBudgetNoteIds = if (tx.id in expandedBudgetNoteIds) expandedBudgetNoteIds - tx.id else expandedBudgetNoteIds + tx.id
+                                                    }
+                                                )
                                             }
                                             val bAccName = tx.getAccountName()
                                             val bAccObj = accountsForBudget.find { it.name == bAccName }
@@ -6861,13 +7109,65 @@ fun BudgetsScreen(
                 }
             }
         }
+
+        budgetTxOptionsFor?.let { optTx ->
+            TransactionOptionsPopup(
+                tx = optTx,
+                customCategories = customCats,
+                onDismiss = { budgetTxOptionsFor = null },
+                onDuplicate = { viewModel.duplicateTransaction(optTx) },
+                onEdit = { budgetTxForEdit = optTx },
+                onDelete = { budgetTxForDeleteConfirm = optTx }
+            )
+        }
+        budgetTxForDeleteConfirm?.let { delTx ->
+            AlertDialog(
+                onDismissRequest = { budgetTxForDeleteConfirm = null },
+                title = { Text("Delete Transaction", color = c.text) },
+                text = { Text("Are you absolutely sure you want to delete this recorded transaction?", color = c.text.copy(alpha = 0.7f)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = { viewModel.deleteTransaction(delTx.id); budgetTxForDeleteConfirm = null },
+                        colors = ButtonDefaults.textButtonColors(contentColor = c.expense)
+                    ) { Text("Delete", fontWeight = FontWeight.Bold) }
+                },
+                dismissButton = { TextButton(onClick = { budgetTxForDeleteConfirm = null }) { Text("Cancel", color = c.text) } },
+                containerColor = c.surface
+            )
+        }
+        budgetTxForEdit?.let { editTx ->
+            var showBudgetEditDeleteConfirm by remember { mutableStateOf(false) }
+            if (showBudgetEditDeleteConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showBudgetEditDeleteConfirm = false },
+                    title = { Text("Delete Transaction", color = c.text) },
+                    text = { Text("Are you absolutely sure you want to delete this recorded transaction?", color = c.text.copy(alpha = 0.7f)) },
+                    confirmButton = {
+                        TextButton(
+                            onClick = { viewModel.deleteTransaction(editTx.id); budgetTxForEdit = null; showBudgetEditDeleteConfirm = false },
+                            colors = ButtonDefaults.textButtonColors(contentColor = c.expense)
+                        ) { Text("Delete", fontWeight = FontWeight.Bold) }
+                    },
+                    dismissButton = { TextButton(onClick = { showBudgetEditDeleteConfirm = false }) { Text("Cancel", color = c.text) } },
+                    containerColor = c.surface
+                )
+            } else {
+                EditTransactionDialog(
+                    tx = editTx,
+                    viewModel = viewModel,
+                    onDismiss = { budgetTxForEdit = null },
+                    onDelete = { showBudgetEditDeleteConfirm = true },
+                    onConfirm = { updated, applyToAll -> viewModel.updateTransaction(updated, applyToAll); budgetTxForEdit = null }
+                )
+            }
+        }
     }
 
     if (showAddCategoryDialog) {
         var newCatName by remember { mutableStateOf("") }
         var selectedIconName by remember { mutableStateOf("restaurant") }
-        var selectedColorHex by remember { mutableStateOf("#00E5FF") }
-        var selectedColor by remember { mutableStateOf(c.accent) }
+        var selectedColorHex by remember { mutableStateOf("#FF9800") }
+        var selectedColor by remember { mutableStateOf(Color(0xFFFF9800)) }
         var selectedType by remember { mutableStateOf("EXPENSE") }
         var initialBudgetAmt by remember { mutableStateOf("") }
         val addCatIconVec = suitableIconsList.firstOrNull { it.first == selectedIconName }?.second ?: Icons.Default.Category
@@ -6897,8 +7197,10 @@ fun BudgetsScreen(
                             if (selectedType == "EXPENSE" && budgetLimit > 0) {
                                 viewModel.saveBudget(cleanName, cleanName, budgetLimit)
                             }
+                            showAddCategoryDialog = false
+                        } else {
+                            viewModel.showToast("Enter a category name")
                         }
-                        showAddCategoryDialog = false
                     },
                     shape = RoundedCornerShape(percent = 50),
                     colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
@@ -6980,7 +7282,7 @@ fun BudgetsScreen(
 
             Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(58.dp),
+                columns = GridCells.Fixed(5),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
@@ -6992,13 +7294,18 @@ fun BudgetsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable { selectedIconName = iconName }
+                            .clickable {
+                                selectedIconName = iconName
+                                val defColor = iconDefaultColor(iconName)
+                                selectedColor = defColor
+                                selectedColorHex = String.format("#%06X", defColor.toArgb() and 0xFFFFFF)
+                            }
                             .padding(vertical = 4.dp)
                             .testTag("add_icon_$iconName")
                     ) {
                         Surface(
                             shape = CircleShape,
-                            color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
+                            color = if (isSelected) selectedColor.copy(alpha = 0.25f) else iconDefaultColor(iconName).copy(alpha = 0.12f),
                             border = BorderStroke(if (isSelected) 2.dp else 0.dp, if (isSelected) selectedColor else Color.Transparent),
                             modifier = Modifier.size(44.dp)
                         ) {
@@ -7006,7 +7313,7 @@ fun BudgetsScreen(
                                 Icon(
                                     imageVector = iconVec,
                                     contentDescription = iconName,
-                                    tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
+                                    tint = if (isSelected) selectedColor else iconDefaultColor(iconName),
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
@@ -7419,13 +7726,12 @@ fun AccountScreen(viewModel: FinanceViewModel, listState: LazyListState = rememb
                                             fontWeight = FontWeight.SemiBold,
                                             color = c.accent
                                         )
-                                        if (!useLimitBalance && acc.creditLimit > 0) {
-                                            val outstanding = (acc.creditLimit - acc.availableLimit).coerceAtLeast(0.0)
+                                        if (acc.creditLimit > 0) {
                                             Text(
-                                                text = "Due: ${decFormat.format(outstanding)}",
+                                                text = "Limit: ${decFormat.format(acc.creditLimit)}",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = Color(0xFFE05A00)
+                                                color = c.textSecondary
                                             )
                                         }
                                     }
@@ -9786,6 +10092,94 @@ private fun AdaptiveEditorDialog(
     }
 }
 
+/** Small popup shown when a transaction row is tapped in a full-screen detail dialog
+ * (Account Details, Category Details) — offers Duplicate / Edit / Delete instead of
+ * jumping straight into editing. Edit/Delete are wired by the caller via [onEdit]/[onDelete]
+ * so each screen can reuse its own existing EditTransactionDialog + delete-confirm flow. */
+@Composable
+fun TransactionOptionsPopup(
+    tx: TransactionEntry,
+    customCategories: List<CustomCategory>,
+    onDismiss: () -> Unit,
+    onDuplicate: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val c = LocalAppColors.current
+    val isTransfer = tx.type == "TRANSFER"
+    val isSync = tx.type == "BALANCE_UPDATE"
+    val transferColor = Color(0xFF3B82F6)
+    val resolvedCat = CategoryResolver.resolve(tx.category, customCategories)
+    val catColor = when { isSync -> c.textTertiary; isTransfer -> transferColor; else -> resolvedCat.color }
+    val catIcon = when { isSync -> Icons.Default.Autorenew; isTransfer -> Icons.Default.SwapHoriz; else -> resolvedCat.icon }
+    val amountColor = when {
+        isSync -> c.textTertiary
+        isTransfer -> transferColor
+        tx.type == "INCOME" -> c.income
+        tx.type == "EXPENSE" -> c.expense
+        else -> c.text
+    }
+    val amountSign = when { isTransfer -> "\u21c4 "; tx.type == "INCOME" -> "+"; tx.type == "EXPENSE" -> "-"; else -> "" }
+    val userNote = userNoteFrom(tx.note)
+    val popupAmtFmt = remember { java.text.DecimalFormat("#,##0.00") }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(20.dp), color = c.surface, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Surface(shape = CircleShape, color = catColor.copy(alpha = 0.15f), modifier = Modifier.size(44.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(catIcon, contentDescription = null, tint = catColor, modifier = Modifier.size(22.dp))
+                        }
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text(tx.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            if (isTransfer) "Transfer" else if (isSync) "Balance Sync" else resolvedCat.displayName,
+                            fontSize = 11.sp, color = catColor, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("$amountSign\u20b9${popupAmtFmt.format(tx.amount)}", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = amountColor, maxLines = 1)
+                        Spacer(Modifier.height(2.dp))
+                        Text(SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(tx.timestamp)), fontSize = 10.sp, color = c.textSecondary, maxLines = 1)
+                    }
+                }
+                if (userNote.isNotBlank()) {
+                    HorizontalDivider(color = c.divider)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)
+                    ) {
+                        Icon(Icons.Default.Notes, contentDescription = "Note", tint = c.textTertiary, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(userNote, fontSize = 12.sp, color = c.text.copy(alpha = 0.85f), fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                    }
+                }
+                HorizontalDivider(color = c.divider)
+                listOf(
+                    Triple("Duplicate", Icons.Default.ContentCopy, onDuplicate),
+                    Triple("Edit", Icons.Default.Edit, onEdit),
+                    Triple("Delete", Icons.Default.Delete, onDelete)
+                ).forEach { (label, icon, action) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { action(); onDismiss() }.padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(icon, contentDescription = label, tint = if (label == "Delete") c.expense else c.text, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(16.dp))
+                        Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (label == "Delete") c.expense else c.text)
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** Dialog to update an existing transaction.
  * Supports type change, amount edit, category/account reassignment,
  * note editing, timestamp change, and optional batch-apply to all
@@ -10762,6 +11156,7 @@ private fun QuickAddCategoryDialog(
     onAdd: (String, String, String, String, Double) -> Unit
 ) {
     val c = LocalAppColors.current
+    val quickAddCtx = LocalContext.current
     var name by remember { mutableStateOf("") }
     var type by remember { mutableStateOf(defaultType) }
     var selectedIconName by remember { mutableStateOf(if (defaultType == "INCOME") "salary" else "others") }
@@ -10785,7 +11180,13 @@ private fun QuickAddCategoryDialog(
                 modifier = Modifier.weight(1f)
             ) { Text("Cancel", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             Button(
-                onClick = { onAdd(name, type, selectedIconName, selectedColorHex, initialBudgetAmt.toDoubleOrNull() ?: 0.0) },
+                onClick = {
+                    if (name.isBlank()) {
+                        Toast.makeText(quickAddCtx, "Enter a category name", Toast.LENGTH_SHORT).show()
+                    } else {
+                        onAdd(name, type, selectedIconName, selectedColorHex, initialBudgetAmt.toDoubleOrNull() ?: 0.0)
+                    }
+                },
                 shape = RoundedCornerShape(percent = 50),
                 colors = ButtonDefaults.buttonColors(containerColor = c.accent, contentColor = c.bg),
                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
@@ -10850,7 +11251,7 @@ private fun QuickAddCategoryDialog(
 
         Text("Select Icon", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Bold)
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(58.dp),
+            columns = GridCells.Fixed(5),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
@@ -10862,12 +11263,17 @@ private fun QuickAddCategoryDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable { selectedIconName = iconName }
+                        .clickable {
+                            selectedIconName = iconName
+                            val defColor = iconDefaultColor(iconName)
+                            selectedColor = defColor
+                            selectedColorHex = String.format("#%06X", defColor.toArgb() and 0xFFFFFF)
+                        }
                         .padding(vertical = 4.dp)
                 ) {
                     Surface(
                         shape = CircleShape,
-                        color = if (isSelected) selectedColor.copy(alpha = 0.25f) else c.text.copy(alpha = 0.05f),
+                        color = if (isSelected) selectedColor.copy(alpha = 0.25f) else iconDefaultColor(iconName).copy(alpha = 0.12f),
                         border = BorderStroke(if (isSelected) 2.dp else 0.dp, if (isSelected) selectedColor else Color.Transparent),
                         modifier = Modifier.size(44.dp)
                     ) {
@@ -10875,7 +11281,7 @@ private fun QuickAddCategoryDialog(
                             Icon(
                                 imageVector = iconVec,
                                 contentDescription = iconName,
-                                tint = if (isSelected) selectedColor else c.text.copy(alpha = 0.7f),
+                                tint = if (isSelected) selectedColor else iconDefaultColor(iconName),
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -11370,17 +11776,9 @@ fun BackupDialog(
                                         delay(500)
                                         viewModel.executeBackupNow { success, errMsg ->
                                             isBackingUp = false
-                                            if (success) {
-                                                val isCloud = customBackupPath.contains("com.google.android.apps.docs") ||
-                                                    customBackupPath.contains("onedrive") || customBackupPath.contains("dropbox")
-                                                val dest = when {
-                                                    isCloud && customBackupPath.contains("com.google.android.apps.docs") -> "Google Drive"
-                                                    isCloud -> "Cloud"
-                                                    customBackupPath.startsWith("content://") -> "Selected Folder"
-                                                    else -> "Local Storage"
-                                                }
-                                                Toast.makeText(context, "Backup saved to $dest!", Toast.LENGTH_SHORT).show()
-                                            } else {
+                                            // No success toast — postBackupNotification (system) and
+                                            // addNotification (in-app bell) already cover completion.
+                                            if (!success) {
                                                 Toast.makeText(context, "Backup failed: ${errMsg ?: "Unknown error"}", Toast.LENGTH_LONG).show()
                                             }
                                         }
@@ -12311,7 +12709,7 @@ fun AccountCenterSettingsDialog(
                 Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Show Credit Card Details", color = c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text("Display available limit & due amount on cards", color = c.textSecondary, fontSize = 11.sp)
+                    Text("Display available limit & credit limit on cards", color = c.textSecondary, fontSize = 11.sp)
                 }
                 Switch(checked = showCreditCardDetails, onCheckedChange = { viewModel.setShowCreditCardDetails(it) }, colors = switchColors)
             }

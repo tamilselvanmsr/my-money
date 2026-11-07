@@ -52,21 +52,25 @@ enum class ExpenseCategory(
     FUEL("Fuel",                       Icons.Default.LocalGasStation, Color(0xFFFF1744)),
     CLOTHES("Clothes",                 Icons.Default.Checkroom,       Color(0xFFC51162)),
     SHOES("Shoes & Footwear",          Icons.AutoMirrored.Filled.DirectionsRun,   Color(0xFF651FFF)),
-    FRUITS("Fruits & Veggies",         Icons.Default.WaterDrop,       Color(0xFF00E676)),
-    TRAVEL("Travel & Commute",         Icons.Default.Flight,          Color(0xFF651FFF)),
-    BIKE("Bike & Maintenance",         Icons.Default.TwoWheeler,      Color(0xFFFF9100)),
-    GIFTING_FRIENDS("Gifting Friends", Icons.Default.CardGiftcard,    Color(0xFFFF4081)),
+    FRUITS("Fruits & Veggies",         Icons.Default.Eco,             Color(0xFF00E676)),
+    NON_VEG("Non Veg",                 Icons.Default.SetMeal,         Color(0xFFBF360C)),
+    EGGS("Eggs",                       Icons.Default.Egg,             Color(0xFFFFD700)),
+    TRAVEL("Travel",                   Icons.Default.Flight,          Color(0xFF651FFF)),
+    BIKE("Bike",                       Icons.Default.TwoWheeler,      Color(0xFFFF9100)),
+    REPAIR("Repair & Maintenance",     Icons.Default.Build,           Color(0xFF6D4C41)),
+    GIFTING_FRIENDS("Gifts",           Icons.Default.CardGiftcard,    Color(0xFFFF4081)),
     ONLINE_SHOPPING("Online Shopping", Icons.Default.Laptop,          Color(0xFF00ACC1)),
     INVESTMENT("Investment",           Icons.AutoMirrored.Filled.TrendingUp,      Color(0xFF3D5AFE)),
     MUTUAL_FUND("Mutual Fund",         Icons.Default.AccountBalance,  Color(0xFF1DE9B6)),
     ETF("ETF",                         Icons.Default.BarChart,        Color(0xFF40C4FF)),
     RENT("Rent",                       Icons.Default.Home,            Color(0xFFD500F9)),
-    COOKING("Cooking",                 Icons.Default.Kitchen,         Color(0xFFFF6E40)),
+    COOKING("Cook",                    Icons.Default.Kitchen,         Color(0xFFFF6E40)),
     GROCERIES("Groceries",             Icons.Default.ShoppingCart,    Color(0xFF00E676)),
-    SOFT_HOT_DRINKS("Tea & Soft Drinks", Icons.Default.LocalCafe,     Color(0xFF8D6E63)),
-    BEAUTY("Beauty",                   Icons.Default.Spa,             Color(0xFFD50000)),
+    SOFT_HOT_DRINKS("Cafe",            Icons.Default.LocalCafe,     Color(0xFF8D6E63)),
+    BEAUTY("Grooming",                 Icons.Default.Spa,             Color(0xFFD50000)),
     PARKING_TOLLS("Parking & Tolls",   Icons.Default.LocalParking,    Color(0xFF546E7A)),
-    DONATION("Donation & Charity",     Icons.Default.VolunteerActivism, Color(0xFF00E5FF)),
+    DONATION("Donation",     Icons.Default.VolunteerActivism, Color(0xFF00E5FF)),
+    VACATION("Vacation",               Icons.Default.BeachAccess,     Color(0xFF3949AB)),
 
     // ── Income ───────────────────────────────────────────────────────────────
     SALARY("Salary",                   Icons.Default.AttachMoney,     Color(0xFF00E676), "INCOME"),
@@ -301,8 +305,15 @@ object CategoryResolver {
             "electronics"       -> Icons.Default.Devices
             "build"             -> Icons.Default.Build
             "maintenance"       -> Icons.Default.Build
+            "repair"            -> Icons.Default.Build
             "category"          -> Icons.Default.Category
             "others"            -> Icons.Default.Category
+
+            // Food additions
+            "setmeal"           -> Icons.Default.SetMeal
+            "non_veg"           -> Icons.Default.SetMeal
+            "egg"               -> Icons.Default.Egg
+            "eggs"              -> Icons.Default.Egg
 
             // Donations / new additions
             "volunteeractivism" -> Icons.Default.VolunteerActivism

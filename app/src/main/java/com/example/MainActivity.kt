@@ -1560,6 +1560,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     val c = LocalAppColors.current
     val isPaid by viewModel.isPaidFeaturesEnabled.collectAsStateWithLifecycle()
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
+    val hiddenAccountIds by viewModel.hiddenAccountIds.collectAsStateWithLifecycle()
     val activeMode by viewModel.displayMode.collectAsStateWithLifecycle()
     val anchorTime by viewModel.anchorDate.collectAsStateWithLifecycle()
     val carryOverPreviousAmount by viewModel.carryOverPreviousAmount.collectAsStateWithLifecycle()
@@ -1620,6 +1621,18 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
         computeWalletBalances(historicalTxs, accounts, carryOverPreviousAmount = true, consolidate = consolidateAccounts)
     } else {
         computeWalletBalances(periodTransactions, accounts, carryOverPreviousAmount = false, consolidate = consolidateAccounts)
+    }
+
+    // Accounts actually shown in Records: hides ones the Account Center marked hidden, and
+    // auto-hides a zero-balance account with no activity in the viewed period — UNLESS it's
+    // the currently selected wallet filter, or it has a transaction in this period (a hidden
+    // account should still surface here if money actually moved through it), so "ALL" (and
+    // the chip row) never silently drop real activity just because of the hide setting.
+    val visibleRecordsAccounts = accounts.filter { acc ->
+        val hasPeriodActivity = periodTransactions.any { it.getAccountName() == acc.name || it.getTransferDestName() == acc.name }
+        val notHidden = !hiddenAccountIds.contains(acc.id)
+        acc.name == selectedWallet || hasPeriodActivity ||
+            (notHidden && kotlin.math.abs(walletsBalances[acc.name] ?: 0.0) >= 0.01)
     }
 
     // Running balance per transaction — walks the full transaction history in chronological order
@@ -1715,7 +1728,7 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
     val totalIncome = monthTransactions.filter { it.type == "INCOME" }.sumOf { it.amount }
     val totalExpense = monthTransactions.filter { it.type == "EXPENSE" }.sumOf { it.amount }
     val netBalance = totalIncome - totalExpense
-    val totalWealth = walletsBalances.values.sum()
+    val totalWealth = visibleRecordsAccounts.sumOf { walletsBalances[it.name] ?: 0.0 }
 
     // Pro savings banner: remember must be outside LazyColumn (LazyListScope is not @Composable)
     val sdfBanner = remember { SimpleDateFormat("yyyy-MM", Locale.getDefault()) }
@@ -2141,7 +2154,9 @@ fun DashboardScreen(viewModel: FinanceViewModel, listState: LazyListState) {
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        val walletList = listOf("All") + accounts.map { it.name }
+                        // Same visibility rule used for the "ALL" total above, so the chip
+                        // row and the aggregate never disagree about which accounts count.
+                        val walletList = listOf("All") + visibleRecordsAccounts.map { it.name }
                         items(walletList) { name ->
                             val isSelected = selectedWallet == name
 
@@ -5449,12 +5464,14 @@ val suitableIconsList = listOf(
     "donation" to Icons.Default.VolunteerActivism,
     "drinks" to Icons.Default.LocalBar,
     "eco" to Icons.Default.Eco,
+    "eggs" to Icons.Default.Egg,
     "education" to Icons.Default.School,
     "bolt" to Icons.Default.Bolt,
     "etf" to Icons.Default.BarChart,
     "flight" to Icons.Default.Flight,
     "flowers" to Icons.Default.LocalFlorist,
     "fruits" to Icons.Default.WaterDrop,
+    "non_veg" to Icons.Default.SetMeal,
     "localgasstation" to Icons.Default.LocalGasStation,
     "entertainment" to Icons.Default.LocalPlay,
     "mutual_fund" to Icons.Default.AccountBalance,
@@ -5543,6 +5560,7 @@ fun iconLabel(key: String): String = when (key) {
     "checkroom" -> "Clothing"
     "payments" -> "Payment"
     "eco" -> "Eco"
+    "eggs" -> "Eggs"
     "twowheeler" -> "Bike"
     "bolt" -> "Electric"
     "creditcard" -> "Card"
@@ -5569,6 +5587,7 @@ fun iconLabel(key: String): String = when (key) {
     "maintenance" -> "Repair"
     "drinks" -> "Drinks"
     "fruits" -> "Fruits"
+    "non_veg" -> "Non Veg"
     "campfire" -> "Camp"
     "shoes" -> "Shoes"
     "party" -> "Party"
@@ -5630,6 +5649,8 @@ fun iconDefaultColor(key: String): Color = when (key) {
     "checkroom" -> Color(0xFFC2185B)
     "payments" -> Color(0xFFFFA000)
     "eco", "fruits", "groceries" -> Color(0xFF4CAF50)
+    "non_veg" -> Color(0xFFBF360C)
+    "eggs" -> Color(0xFFFFD700)
     "twowheeler" -> Color(0xFFFF8F00)
     "bolt" -> Color(0xFFFFC107)
     "creditcard" -> Color(0xFF5D4037)

@@ -80,6 +80,8 @@ private val SENDER_CODE_MAP: List<Pair<String, String>> = listOf(
     "NAINITAL" to "NAINITAL",
     // Jammu & Kashmir Bank
     "JKBSNK"   to "JKB",
+    // City Union Bank
+    "CUBLTD"   to "CUB",  "CUBBNK"  to "CUB",  "CUB"    to "CUB",
 )
 
 /** Infers bank short-code from the DLT sender header ONLY.
@@ -164,6 +166,7 @@ fun smsDisplayBankName(bankCode: String): String {
         "BANDHAN"  -> "Bandhan Bank"
         "KBL"      -> "Karnataka Bank"
         "NAINITAL" -> "Nainital Bank"
+        "CUB"      -> "City Union Bank"
         "BANK"     -> "Bank"
         else       -> bankCode   // preserve as-is (e.g. custom short codes)
     }
@@ -195,6 +198,7 @@ fun smsBankMatchesAccount(bankCode: String, accountName: String): Boolean {
         "CENTRAL" -> n.contains("CENTRAL BANK")
         "SIB"     -> n.contains("SOUTH INDIAN")
         "DCB"     -> n.contains("DCB")
+        "CUB"     -> n.contains("CUB") || n.contains("CITY UNION")
         "BANK", ""-> true
         else      -> n.contains(bankCode.uppercase())
     }
@@ -223,6 +227,7 @@ fun inferSmsCardKind(smsBody: String, senderHeader: String?): SmsCardKind {
     return when {
         body.contains("debit card") -> SmsCardKind.DEBIT
         body.contains("credit card") || body.contains("card") ||
+            Regex("\\bcc\\b").containsMatchIn(body) ||
             (senderHeader ?: "").uppercase().contains("CARD") -> SmsCardKind.CREDIT
         else -> SmsCardKind.NONE
     }
